@@ -1,65 +1,167 @@
-# BIG - Project template (your repo name here)
+# STGraph
 
-[![build](https://github.com/big-unibo/experimental-project/actions/workflows/build.yml/badge.svg)](https://github.com/big-unibo/experimental-project/actions/workflows/build.yml)
+STGraph is a Kotlin/JVM library and evaluation project for querying spatio-temporal graphs whose graph topology is connected to time-series data.
 
-## How to run the project
+The codebase contains:
 
-- Change `rootProject.name` in `settings.gradle` accordingly to the project name
-- The project *must* build with Gradle (i.e., `./gradlew` produces a successful build)
-- Once completed, `./gradlew` creates `build/libs/*.jar` files. To execute Spark code
-    - If *no* external library is needed, `spark-submit` the jar (i.e., `project-name.jar`)
-    - If external libraries are needed, `spark-submit` the fat jar (i.e., `project-name-all.jar`)
+- graph abstractions for nodes, relationships, properties, paths, and time-series managers;
+- in-memory, persistent in-memory, RocksDB, and AsterixDB-backed implementations;
+- a query engine with temporal filtering, joins, spatial predicates, aggregation, and time-series pushdown;
+- loaders and JUnit workloads for synthetic, SmartBench, and MIMIC-IV datasets;
+- Docker and scripts used to run AsterixDB-backed evaluations.
 
-## Project structure
+## Repository Structure
 
-    datasets/   -- where datasets are stored (heavy datasets cannot be committed)
-    outputs/    -- where generated datasets are stored (should not be committed)
-    results/    -- where experiment/thesis results are stored (must be committed)
-    src/        -- source code
+```text
+src/main/kotlin/it/unibo/graph/
+  interfaces/        Core graph, element, property, path, TS, and TSManager APIs
+  query/             Query model, filters, comparisons, aggregation, and execution
+  inmemory/          In-memory graph and time-series implementations
+  rocksdb/           RocksDB-backed graph and time-series implementations
+  asterixdb/         AsterixDB HTTP client, syntax parser, and TS managers
+  utils/             Constants, labels, encoding helpers, and shared utilities
 
-## Working on this project
+src/main/kotlin/it/unibo/stats/
+  Loader.kt          Common ingestion and benchmark statistics helpers
+  Querying.kt        Query execution/statistics helpers
+  TestConfig.kt      YAML-driven benchmark matrix configuration
 
-Import this project as Gradle project (this is tested with IntelliJ IDEA).
+src/main/resources/
+  config.properties          AsterixDB and ingestion defaults
+  test_config.yml            Active benchmark matrix
+  test_config.example.yml    Small example configuration
+  labels.yaml                Domain label definitions
+  time_constraints.yaml      Temporal ranges used by benchmark queries
 
-### Guidelines
+src/test/kotlin/it/unibo/tests/
+  ci/               Fast CI/regression tests for graph, TS, and query behavior
+  smartbench/       SmartBench ingestion and query workloads
+  mimic/            MIMIC-IV ingestion and query workloads
+  synth/            Synthetic ingestion and query workloads
 
-#### Code
+scripts/           Dataset download and evaluation helper scripts
+results/           Committed experiment output CSVs
+```
 
-- Add as many *useful* comments as possible
-- Delete all *useless* code / resources
-- Test *early*, Test *often*, Test *everything* you can
-- Write a proper `README.md` (i.e., override this one) that explains:
-    - the project structure
-    - the algorithmic parameters
-    - how to run the project
-- Check the output of `./gradlew` to look for warnings (especially in code style)
+## Requirements
 
-#### Dataset conventions
+- JDK 17
+- Gradle wrapper from this repository (`./gradlew` or `gradlew.bat`)
+- Docker, when running tests or workloads that use AsterixDB
+- Enough local memory for benchmark runs. The Gradle test task is configured with a `64g` max heap.
 
-- All datasets must be named as follows: `ProjectName-par1_val1-...-parN_valN.csv`
-- The only exception is for hive tables: `ProjectName__par1_val1__...__parN_valN.csv`
-    - All Spark applications *must* read/write from/to `.csv` files as well as Hive tables
-- Schemas for trajectory databases: `(userid, trajectoryid, latitude, longitude, timestamp)` where `timestamp` is unix timestamp (i.e., seconds since 01/01/1970)
-    - In `src/main/python/sample.py` you can find an example to transform an uncompliant dataset schema
+The project uses Kotlin `2.3.20` and targets JVM 17.
 
-### Dependency management
+## Build
 
-All Java/Scala dependencies must be managed through Gradle (`build.gradle`). See [here](https://docs.gradle.org/current/userguide/core_dependency_management.html).
+On Linux/macOS:
 
-> Software projects rarely work in isolation. In most cases, a project relies on reusable functionality in the form of libraries or is broken up into individual components to compose a modularized system. Dependency management is a technique for declaring, resolving and using dependencies required by the project in an automated fashion. Gradle has built-in support for dependency management and lives up to the task of fulfilling typical scenarios encountered in modern software projects. 
+```bash
+./gradlew build
+```
 
-All Python dependencies must be managed through virtual environments. See [here](https://docs.python.org/3/library/venv.html).
+On Windows PowerShell:
 
-> The venv module provides support for creating lightweight “virtual environments” with their own site directories, optionally isolated from system site directories. Each virtual environment has its own Python binary (which matches the version of the binary that was used to create this environment) and can have its own independent set of installed Python packages in its site directories.
+```powershell
+.\gradlew.bat build
+```
 
-    cd src/main/python
-    python -m venv venv
-    pip install -r requirements.txt
+The default Gradle task is `clean build check`.
 
-To activate venv in Windows (with bash shell; e.g., git bash)
+## Running Tests
 
-    source venv/Scripts/activate
+The CI suite starts AsterixDB and runs the `it.unibo.tests.ci` tests:
 
-To activate venv in Linux
+```bash
+docker compose -f docker-compose_asterix.yaml up -d
+./wait-for-it.sh localhost:19006 -t 30
+./gradlew test --tests "it.unibo.tests.ci*"
+```
 
-    source venv/bin/activate
+Individual benchmark suites can be launched with JUnit filters:
+
+```bash
+./gradlew test --tests it.unibo.tests.smartbench.TestSmartBenchIngestion
+./gradlew test --tests it.unibo.tests.smartbench.TestSmartBenchQuery
+./gradlew test --tests it.unibo.tests.mimic.TestMimicIngestion
+./gradlew test --tests it.unibo.tests.mimic.TestMimicQuery
+./gradlew test --tests it.unibo.tests.synth.TestSynthIngestion
+./gradlew test --tests it.unibo.tests.synth.TestSynthQuery
+```
+
+The `runTests.sh` script currently runs the MIMIC ingestion/query tests and keeps the SmartBench commands commented as examples.
+
+## Configuration
+
+Benchmark runs are driven by `src/main/resources/test_config.yml`.
+
+The configuration defines:
+
+- `datasets`: available dataset names and sizes;
+- `setups`: AsterixDB host/controller IP layouts;
+- `defaults`: default query modes, setups, and thread counts;
+- `runs`: query benchmark matrices;
+- `ingestion`: ingestion benchmark matrix and enable flag.
+
+Use `src/main/resources/test_config.example.yml` as a smaller starting point when running locally.
+
+`src/main/resources/config.properties` contains AsterixDB defaults such as the dataverse name, controller port, and ingestion attribute names.
+
+## Datasets
+
+Large datasets are not committed to the repository.
+
+Expected local dataset/output paths include:
+
+```text
+datasets/original/
+datasets/dump/
+results/
+```
+
+The helper script downloads and extracts SmartBench archives:
+
+```bash
+./scripts/download_dataset.sh small
+```
+
+Dataset-dependent tests expect the dataset files and graph dumps referenced by `test_config.yml` to exist locally.
+
+## Docker
+
+Start only AsterixDB:
+
+```bash
+docker compose -f docker-compose_asterix.yaml up -d
+```
+
+Run the combined AsterixDB + STGraph compose file:
+
+```bash
+cp .env.example .env
+docker compose up
+```
+
+The STGraph service mounts `./results` into the container so benchmark CSVs can be collected on the host.
+
+## Query Model
+
+Queries are built in Kotlin with `Step`, `EdgeStep`, `Filter`, `Compare`, and `Aggregate`.
+
+The query engine supports:
+
+- graph pattern search over node/edge paths;
+- traversal between graph nodes and time-series nodes through `HasTS`;
+- temporal validity with `from`/`to` ranges;
+- spatial comparisons through JTS geometries;
+- joins across multiple patterns;
+- grouping and aggregation over graph or time-series properties;
+- `NAIVE` and `OPTIMIZED` query modes, where the optimized mode pushes applicable filters and aggregations into time-series access.
+
+See `src/test/kotlin/it/unibo/tests/ci/TestKotlin.kt` for compact executable examples of the core API.
+
+## Results
+
+Experiment outputs are committed under `results/`, including ingestion and query statistics CSVs for DTGraph/STGraph evaluations.
+
+Generated heavyweight datasets, dumps, and local AsterixDB data should remain outside version control.
