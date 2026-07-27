@@ -1,0 +1,38 @@
+services:
+  asterixdb:
+    image: mp4sini/asterixdb:latest
+    hostname: asterixdb
+    container_name: asterixdb
+    volumes:
+      - ./asterix_data:/workspace/apache-asterixdb-0.9.9/opt/local/data
+    command:
+      - /bin/bash
+      - -c
+      - |
+        opt/local/bin/start-sample-cluster.sh
+        tail -f /dev/null
+    ports:
+      - 19006:19006
+      - 19002:19002
+      - 19001:19001
+      - 19003:19003
+      - 1009:1009
+      - 1098:1098
+
+  dtgraph:
+    image: mp4sini/stgraph
+    hostname: stgraph
+    container_name: stgraph
+    volumes:
+      - "./results:/dt_graph/results"
+    env_file: .env
+    depends_on:
+      - asterixdb
+    command:
+      - /bin/bash
+      - -c
+      - |
+        ./wait-for-it.sh asterixdb:19006 -t 90 -- echo "AsterixDB running, starting to ingest data..."
+        tail -f /dev/null
+        chmod +x scripts/run_smartbench_evaluation.sh
+        ./scripts/run_smartbench_evaluation.sh

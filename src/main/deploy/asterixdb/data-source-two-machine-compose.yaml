@@ -1,0 +1,144 @@
+version: "3.9"
+services:
+#   asterix_cc:
+#     image: mp4sini/asterixdb:1.0
+#     ports:
+#       - 49006:19006
+#     volumes:
+#       - asterix_cc_conf:/workspace/asterixdb/asterixdb/asterix-server/target/asterix-server-0.9.10-SNAPSHOT-binary-assembly/apache-asterixdb-0.9.10-SNAPSHOT/opt/local/conf
+#       - datasource_jar:/asterixsetup/
+#     command:
+#       - /bin/bash
+#       - -c
+#       - |
+#         sleep 10
+#         bin/asterixcc -config-file /workspace/asterixdb/asterixdb/asterix-server/target/asterix-server-0.9.10-SNAPSHOT-binary-assembly/apache-asterixdb-0.9.10-SNAPSHOT/opt/local/conf/cc.conf > asterix_cc.log 2>&1 &
+#         sleep 150
+#         curl -X POST "http://127.0.0.1:19002/query/service" \
+#         -H "Content-Type: application/x-www-form-urlencoded" \
+#         --data-urlencode "statement=$$(cat /asterixsetup/setup.txt)" \
+#         --data-urlencode "pretty=true" \
+#         --data-urlencode "mode=immediate"
+#         tail -f /dev/null
+#     deploy:
+#       placement:
+#         constraints:
+#           - node.hostname == ISI-BIGCLUSTER-PNRR06
+#     networks:
+#       - asterix-network
+#
+#   asterix_nc1:
+#     image: mp4sini/asterixdb:1.0
+#     command:
+#       - /bin/bash
+#       - -c
+#       - |
+#         bin/asterixncservice > asterix_nc1.log 2>&1 &
+#         tail -f /dev/null
+#     deploy:
+#       placement:
+#         constraints:
+#           - node.hostname != CB-Mass-Node1
+#           - node.hostname == ISI-BIGCLUSTER-PNRR04
+#     networks:
+#       - asterix-network
+#
+#   asterix_nc2:
+#     image: mp4sini/asterixdb:1.0
+#     command:
+#       - /bin/bash
+#       - -c
+#       - |
+#         bin/asterixncservice > asterix_nc2.log 2>&1 &
+#         tail -f /dev/null
+#     deploy:
+#       placement:
+#         constraints:
+#           - node.hostname != CB-Mass-Node1
+#           - node.hostname == ISI-BIGCLUSTER-PNRR05
+#     networks:
+#       - asterix-network
+
+   redis:
+      image: redis:latest
+      command: /bin/sh -c "redis-server --appendonly yes & sleep 5 && redis-cli SET INGESTION_BARRIER 0 && redis-cli SET RUN_COMPLETED 0 && redis-cli SET RUN_FAILED 0 && wait"
+      ports:
+        - 6379:6379
+      deploy:
+        restart_policy:
+          condition: none
+        placement:
+          constraints:
+            - node.hostname == ISI-BIGCLUSTER-PNRR02
+      networks:
+        - asterix-network
+
+   dataSources:
+      image: openjdk:21-jdk-slim
+      volumes:
+        - asterix_test_results:/asterix_statistics_nfs/
+        - datasource_jar:/asterix/
+        - logs_dir:/logs_dir/
+      command: ["/asterix/startup.sh"]
+      deploy:
+        restart_policy:
+          condition: none
+        replicas: 256
+        placement:
+          constraints:
+            - node.hostname != CB-Mass-Node1
+            - node.hostname != ISI-BIGCLUSTER-PNRR06
+      networks:
+        - asterix-network
+      environment:
+        INGESTION_LATENCY: 0
+        ASTERIX_IP: 192.168.30.106
+        MAX_ITERATION: 1000000
+        TEST_ID: 1
+        ASTERIX_MACHINES_COUNT: 4
+        DATASOURCES_NUMBER: 128
+        REDIS_HOST: redis
+        LOCK_NAME: datafeed_lock
+        BARRIER_READY_NAME: INGESTION_BARRIER
+        BARRIER_COMPLETED_NAME: RUN_COMPLETED
+        BARRIER_FAILED_NAME: RUN_FAILED
+        DATAVERSE: Events_Dataverse
+
+volumes:
+  asterix_cc_conf:
+    driver_opts:
+      type: nfs
+      o: addr=192.168.30.249,rw,nfsvers=4,nolock,hard
+      device: ":/nfsshare/asterixdb/conf/cc_conf/"
+
+  asterix_nc_conf:
+    driver_opts:
+      type: nfs
+      o: addr=192.168.30.249,rw,nfsvers=4,nolock,hard
+      device: ":/nfsshare/asterixdb/conf/nc1_conf/"
+
+  datasource_jar:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.30.249,rw,nfsvers=4,nolock,hard
+      device: ":/nfsshare/asterixdb/jar/"
+
+  asterix_test_results:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.30.249,rw,nfsvers=4,nolock,hard
+      device: ":/nfsshare/asterixdb/results/"
+
+  logs_dir:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.30.249,rw,nfsvers=4,nolock,hard
+      device: ":/nfsshare/asterixdb/logs_dir/"
+
+
+networks:
+  asterix-network:
+    external: true

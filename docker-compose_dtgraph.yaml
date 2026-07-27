@@ -1,0 +1,16 @@
+services:
+  dtgraph:
+    image: mp4sini/stgraph
+    hostname: stgraph
+    container_name: stgraph
+    volumes:
+      - "./results:/dt_graph/results"
+      - "./logs:/dt_graph/logs"
+    env_file: .env
+    command:
+      - /bin/bash
+      - -c
+      - |
+        chmod +x scripts/download_dataset.sh
+        chmod +x scripts/run_smartbench_evaluation.sh
+        ./scripts/run_smartbench_evaluation.sh

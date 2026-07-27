@@ -1,0 +1,21 @@
+datasets:
+  smartbench:
+    sizes: [ "small"]
+
+  mimic:
+    sizes: [ 1692200 ]
+
+setups:
+  c0:
+    host: localhost
+    controllerIPs: [ "localhost" ]
+
+defaults:
+  modes: [ "OPTIMIZED" ]
+  setups: [ "c0" ]
+  threads: [ 1 ]
+
+runs:
+  - approaches: [ "stgraph" ]
+    datasets: [ "smartbench", "mimic" ]
+    modes: [ "NAIVE", "OPTIMIZED" ]

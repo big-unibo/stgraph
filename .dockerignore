@@ -1,0 +1,16 @@
+.gradle/
+.github
+.idea
+.next
+build
+node_modules
+out
+venv
+asterix_data
+results
+outputs
+db_graph
+db_graphm
+db_properties
+src/main/resources/dataset/smartbench/big
+src/main/resources/dataset/smartbench/large
