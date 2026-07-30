@@ -1,8 +1,12 @@
 {
   "name": "stgraph-java21",
-  "image": "mcr.microsoft.com/devcontainers/java:1-21-bookworm",
+  // "image": "mcr.microsoft.com/devcontainers/java:1-21-bookworm",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "features": {
-  //   "ghcr.io/devcontainers/features/gradle:1": {}
+    //   "ghcr.io/devcontainers/features/gradle:1": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:3": {}
   },
   "customizations": {
     "vscode": {
