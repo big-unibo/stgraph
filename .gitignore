@@ -7,6 +7,8 @@ db_*
 .kotlin/
 /asterix_data
 datasets/**
+test_config.yml
+mimic-iv_subjectids_tsids.csv
 
 # These are useless since we use gradle import
 .idea/

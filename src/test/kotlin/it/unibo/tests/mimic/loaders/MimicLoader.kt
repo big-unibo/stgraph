@@ -15,11 +15,11 @@ interface MimicIVLoader: Loader {
     fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean)
 }
 
-abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int): MimicIVLoader {
+abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, host: String = "localhost", port: Int = 5434, user: String = "postgres", pwd: String = "password"): MimicIVLoader {
     val logger = Logger.getLogger(this.javaClass.name)
-    val url = "jdbc:postgresql://137.204.72.88:5434/mimic-iv"
-    val user = "postgres"
-    val password = "p0st615*"
+    val url = "jdbc:postgresql://$host:$port/mimic-iv"
+    val user = user
+    val password = pwd
     var gsTime: Long = 0
     var tsTime: Long = 0
     var gsCard: Long = 0

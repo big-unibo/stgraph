@@ -18,3 +18,17 @@ services:
       - 10001-11000:10001-11000
       - 1009:1009
       - 1098:1098
+
+  mimic-postgres:
+    image: postgres:18
+    hostname: postgres
+    container_name: mimic-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mimic-iv
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./datasets/original/mimic:/dump:ro
+      - ./datasets:/docker-entrypoint-initdb.d:ro

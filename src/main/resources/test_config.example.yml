@@ -20,3 +20,9 @@ runs:
   - approaches: [ "stgraph" ]
     datasets: [ "smartbench", "mimic" ]
     modes: [ "NAIVE", "OPTIMIZED" ]
+
+ingestion:
+  enabled: true
+  datasets: [ "synth", "smartbench", "mimic" ]
+  setups: [ "c0" ]
+  threads: [ 1 ]

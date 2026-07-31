@@ -171,7 +171,6 @@ class TestMimicQuery {
 
     class Q2Neo4J(uri: String) : QNeo4J(uri) {
         override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 RETURN m.label, avg(toFloat(m.value))"
-        // override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 UNWIND labels(m) AS label RETURN label, avg(toFloat(m.value))" same timing
     }
 
     class Q2PGAge(graph: String) : QPgAge(graph) {
@@ -239,40 +238,40 @@ class TestMimicQuery {
         if (mode == QueryMode.NAIVE && size == "full") null else Q3(graph)
     }
 
-    @Test
-    fun testMode() {
-        val dataset = "mimic"
-        val size = "full" // "full" // "1692200"
-        val path = "datasets/dump/$dataset/$size/"
-        val graph = MemoryGraphACID.readFromDisk(path)
-        val tsm = AsterixDBTSM.createDefault(
-            graph,
-            host = "192.168.30.110",
-            controllerIps = listOf("192.168.30.110"),
-            dataverse = "${dataset}_$size",
-            multiTs = false // I only need to read the data
-        )
-        graph.tsm = tsm
-        File("src/main/resources/mimic-iv_subjectids_tsids.csv").useLines { lines ->
-            lines
-                .toList()
-                .map { it.trim().split(",") }
-                .map { Triple(it[0].toLong(), it[1].toLong(), it[2].toLong()) }
-                .groupBy { it.first }
-                .map { Pair(it.key, it.value.sumOf { it.third }) }
-                .filterIndexed { index, _ -> index % 10 == 0 }
-                .take(100)
-                .forEach { (subject_id, c) ->
-                    listOf(1, 2).forEach {
-                        QueryMode.entries.forEach { mode ->
-                            runQuery(Q1(graph, subject_id, c), "stgraph", threads = 1, numMachines = 1, dataset, size = size, mode = mode)
-                            runQuery(Q2(graph, subject_id, c), "stgraph", threads = 1, numMachines = 1, dataset, size = size, mode = mode)
-                        }
-                    }
-                }
-        }
-        graph.close()
-    }
+    // @Test
+    // fun testMode() {
+    //     val dataset = "mimic"
+    //     val size = "1692200" // "full"
+    //     val path = "datasets/dump/$dataset/$size/"
+    //     val graph = MemoryGraphACID.readFromDisk(path)
+    //     val tsm = AsterixDBTSM.createDefault(
+    //         graph,
+    //         host = "192.168.30.110",
+    //         controllerIps = listOf("192.168.30.110"),
+    //         dataverse = "${dataset}_$size",
+    //         multiTs = false // I only need to read the data
+    //     )
+    //     graph.tsm = tsm
+    //     File("src/main/resources/mimic-iv_subjectids_tsids.csv").useLines { lines ->
+    //         lines
+    //             .toList()
+    //             .map { it.trim().split(",") }
+    //             .map { Triple(it[0].toLong(), it[1].toLong(), it[2].toLong()) }
+    //             .groupBy { it.first }
+    //             .map { Pair(it.key, it.value.sumOf { it.third }) }
+    //             .filterIndexed { index, _ -> index % 10 == 0 }
+    //             .take(100)
+    //             .forEach { (subjectId, c) ->
+    //                 listOf(1, 2).forEach {
+    //                     QueryMode.entries.forEach { mode ->
+    //                         runQuery(Q1(graph, subjectId, c), "stgraph", threads = 1, numMachines = 1, dataset, size = size, mode = mode)
+    //                         runQuery(Q2(graph, subjectId, c), "stgraph", threads = 1, numMachines = 1, dataset, size = size, mode = mode)
+    //                     }
+    //                 }
+    //             }
+    //     }
+    //     graph.close()
+    // }
 }
 
 fun main() {

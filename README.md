@@ -73,7 +73,7 @@ The default Gradle task is `clean build check`.
 The CI suite starts AsterixDB and runs the `it.unibo.tests.ci` tests:
 
 ```bash
-docker compose -f docker-compose_asterix.yaml up -d
+docker compose -f docker-compose.yaml up -d
 ./wait-for-it.sh localhost:19006 -t 30
 ./gradlew test --tests "it.unibo.tests.ci*"
 ```
@@ -132,7 +132,7 @@ Dataset-dependent tests expect the dataset files and graph dumps referenced by `
 Start only AsterixDB:
 
 ```bash
-docker compose -f docker-compose_asterix.yaml up -d
+docker compose -f docker-compose.yaml up -d
 ```
 
 Run the combined AsterixDB + STGraph compose file:
