@@ -133,7 +133,7 @@ Useful benchmark filters:
 ./gradlew test --tests it.unibo.tests.synth.TestSynthQuery
 ```
 
-`runTests.sh` runs the MIMIC and SmartBench ingestion/query tests in sequence.
+`run.sh` runs the MIMIC and SmartBench ingestion/query tests in sequence.
 
 ## Configuration
 
