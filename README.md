@@ -1,84 +1,109 @@
 # STGraph
 
-STGraph is a Kotlin/JVM library and evaluation project for querying spatio-temporal graphs whose graph topology is connected to time-series data.
+STGraph is a Kotlin/JVM library and evaluation project for spatio-temporal graphs whose topology is connected to time-series data.
 
-The codebase contains:
+The repository contains:
 
-- graph abstractions for nodes, relationships, properties, paths, and time-series managers;
+- core graph abstractions for nodes, relationships, properties, paths, labels, and time-series managers;
 - in-memory, persistent in-memory, RocksDB, and AsterixDB-backed implementations;
-- a query engine with temporal filtering, joins, spatial predicates, aggregation, and time-series pushdown;
-- loaders and JUnit workloads for synthetic, SmartBench, and MIMIC-IV datasets;
-- Docker and scripts used to run AsterixDB-backed evaluations.
+- a Kotlin query model with temporal filtering, joins, spatial predicates, aggregation, and time-series pushdown;
+- ingestion and query workloads for CI, SmartBench, MIMIC-IV, and synthetic datasets;
+- Docker and helper scripts for AsterixDB-backed experiments;
+- committed CSV outputs from selected experiment runs.
 
 ## Repository Structure
 
 ```text
-src/main/kotlin/it/unibo/graph/
-  interfaces/        Core graph, element, property, path, TS, and TSManager APIs
-  query/             Query model, filters, comparisons, aggregation, and execution
-  inmemory/          In-memory graph and time-series implementations
-  rocksdb/           RocksDB-backed graph and time-series implementations
-  asterixdb/         AsterixDB HTTP client, syntax parser, and TS managers
-  utils/             Constants, labels, encoding helpers, and shared utilities
-
-src/main/kotlin/it/unibo/stats/
-  Loader.kt          Common ingestion and benchmark statistics helpers
-  Querying.kt        Query execution/statistics helpers
-  TestConfig.kt      YAML-driven benchmark matrix configuration
-
-src/main/resources/
-  config.properties          AsterixDB and ingestion defaults
-  test_config.yml            Active benchmark matrix
-  test_config.example.yml    Small example configuration
-  labels.yaml                Domain label definitions
-  time_constraints.yaml      Temporal ranges used by benchmark queries
-
-src/test/kotlin/it/unibo/tests/
-  ci/               Fast CI/regression tests for graph, TS, and query behavior
-  smartbench/       SmartBench ingestion and query workloads
-  mimic/            MIMIC-IV ingestion and query workloads
-  synth/            Synthetic ingestion and query workloads
-
-scripts/           Dataset download and evaluation helper scripts
-results/           Committed experiment output CSVs
+.
+|-- build.gradle.kts                    Gradle build, Kotlin/JVM 17 toolchain, dependencies, test settings
+|-- settings.gradle.kts                 Gradle project name and build scan configuration
+|-- Dockerfile                          Development/evaluation image that builds the project without tests
+|-- docker-compose_asterix.yaml         Local single-node AsterixDB service used by tests/workloads
+|-- runTests.sh                         Convenience script for MIMIC and SmartBench benchmark tests
+|-- scripts/
+|   `-- download_dataset.sh             SmartBench dataset downloader/extractor
+|-- results/                            Committed benchmark result CSVs
+|-- src/main/deploy/asterixdb/          Cluster-oriented AsterixDB/data-source compose files
+|-- src/main/kotlin/it/unibo/graph/
+|   |-- interfaces/                     Graph, element, property, path, label, TS, and TSManager APIs
+|   |-- query/                          Query steps, filters, comparisons, aggregation, and execution model
+|   |-- inmemory/                       In-memory graph and time-series implementations
+|   |-- rocksdb/                        RocksDB-backed graph and time-series implementations
+|   |-- asterixdb/                      AsterixDB HTTP client, syntax parser, TS, and TS manager
+|   `-- utils/                          Constants, encoders, time ranges, ports, and shared helpers
+|-- src/main/kotlin/it/unibo/stats/
+|   |-- Loader.kt                       Common ingestion/statistics helpers
+|   |-- Querying.kt                     Query execution/statistics helpers
+|   `-- TestConfig.kt                   YAML-driven benchmark matrix configuration
+|-- src/main/resources/
+|   |-- labels.yaml                     Domain label definitions loaded by Label.kt
+|   |-- logback.xml                     Logging configuration
+|   |-- test_config.example.yml         Example benchmark matrix; copy to test_config.yml before benchmark runs
+|   |-- time_constraints.yaml           Temporal ranges used by benchmark queries
+|   |-- mimic-iv_subjectids.csv         MIMIC-IV subject id helper data
+|   |-- mimic-iv_subjectids_tsids_short.csv
+|   `-- smartbench_small_tsid-3166_timestamps.csv
+`-- src/test/kotlin/it/unibo/tests/
+    |-- ci/                             Fast regression tests for graph, TS, temporal, and query behavior
+    |-- smartbench/                     SmartBench ingestion/query workloads and loader
+    |-- mimic/                          MIMIC-IV ingestion/query workloads and loaders
+    `-- synth/                          Synthetic ingestion/query workloads, loaders, and query definitions
 ```
 
 ## Requirements
 
-- JDK 17
-- Gradle wrapper from this repository (`./gradlew` or `gradlew.bat`)
-- Docker, when running tests or workloads that use AsterixDB
-- Enough local memory for benchmark runs. The Gradle test task is configured with a `64g` max heap.
+- JDK 17. The Gradle Foojay resolver can provision a matching toolchain when configured locally.
+- Gradle wrapper from this repository: `./gradlew` on Linux/macOS or `.\gradlew.bat` on Windows.
+- Docker, when running AsterixDB-backed tests or workloads.
+- A large heap for benchmark runs. The Gradle test task sets `maxHeapSize = "64g"`.
 
-The project uses Kotlin `2.3.20` and targets JVM 17.
+The project currently uses Kotlin `2.3.20`, JUnit 6, RocksDB JNI, JTS, Jackson, SnakeYAML, PostgreSQL, and the Neo4j Java driver.
 
 ## Build
 
-On Linux/macOS:
+Linux/macOS:
 
 ```bash
 ./gradlew build
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 .\gradlew.bat build
 ```
 
-The default Gradle task is `clean build check`.
+The default Gradle tasks are `clean`, `build`, and `check`.
+
+To build the Docker image:
+
+```bash
+docker build -t stgraph .
+```
 
 ## Running Tests
 
-The CI suite starts AsterixDB and runs the `it.unibo.tests.ci` tests:
+Run all tests:
 
 ```bash
-docker compose -f docker-compose.yaml up -d
+./gradlew test
+```
+
+Run the fast CI/regression package:
+
+```bash
+./gradlew test --tests "it.unibo.tests.ci.*"
+```
+
+Start the local AsterixDB service before tests or workloads that use the AsterixDB backend:
+
+```bash
+docker compose -f docker-compose_asterix.yaml up -d
 ./wait-for-it.sh localhost:19006 -t 30
 ./gradlew test --tests "it.unibo.tests.ci*"
 ```
 
-Individual benchmark suites can be launched with JUnit filters:
+Useful benchmark filters:
 
 ```bash
 ./gradlew test --tests it.unibo.tests.smartbench.TestSmartBenchIngestion
@@ -89,29 +114,39 @@ Individual benchmark suites can be launched with JUnit filters:
 ./gradlew test --tests it.unibo.tests.synth.TestSynthQuery
 ```
 
-The `runTests.sh` script currently runs the MIMIC ingestion/query tests and keeps the SmartBench commands commented as examples.
+`runTests.sh` runs the MIMIC and SmartBench ingestion/query tests in sequence.
 
 ## Configuration
 
-Benchmark runs are driven by `src/main/resources/test_config.yml`.
+Benchmark matrix execution is implemented in `src/main/kotlin/it/unibo/stats/TestConfig.kt`.
 
-The configuration defines:
+By default, benchmark helpers load:
 
-- `datasets`: available dataset names and sizes;
-- `setups`: AsterixDB host/controller IP layouts;
-- `defaults`: default query modes, setups, and thread counts;
+```text
+src/main/resources/test_config.yml
+```
+
+That file is intentionally local and is not present in a fresh checkout. Create it from the committed example before running benchmark workloads:
+
+```bash
+cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
+```
+
+The config defines:
+
+- `datasets`: dataset names and sizes;
+- `setups`: AsterixDB hosts, ports, and controller IPs;
+- `defaults`: fallback modes, setups, and thread counts;
 - `runs`: query benchmark matrices;
 - `ingestion`: ingestion benchmark matrix and enable flag.
 
-Use `src/main/resources/test_config.example.yml` as a smaller starting point when running locally.
-
-`src/main/resources/config.properties` contains AsterixDB defaults such as the dataverse name, controller port, and ingestion attribute names.
+Temporal benchmark ranges are loaded from `src/main/resources/time_constraints.yaml`. Label metadata is loaded from `src/main/resources/labels.yaml`.
 
 ## Datasets
 
-Large datasets are not committed to the repository.
+Large datasets and graph dumps are not committed.
 
-Expected local dataset/output paths include:
+Workloads expect local paths such as:
 
 ```text
 datasets/original/
@@ -119,34 +154,46 @@ datasets/dump/
 results/
 ```
 
-The helper script downloads and extracts SmartBench archives:
+The SmartBench helper script downloads and extracts a requested dataset size into `datasets/original/smartbench` by default:
 
 ```bash
 ./scripts/download_dataset.sh small
 ```
 
-Dataset-dependent tests expect the dataset files and graph dumps referenced by `test_config.yml` to exist locally.
-
-## Docker
-
-Start only AsterixDB:
+You can pass a custom output directory as the second argument:
 
 ```bash
-docker compose -f docker-compose.yaml up -d
+docker compose -f docker-compose_asterix.yaml up -d
 ```
 
-Run the combined AsterixDB + STGraph compose file:
+Query benchmarks read graph dumps from:
+
+```text
+datasets/dump/<dataset>/<size>/
+```
+
+MIMIC-IV workloads also reference local helper files that are not all committed, including `src/main/resources/mimic-iv_subjectids_tsids.csv`.
+
+## Docker And Deployment Files
+
+For local AsterixDB:
 
 ```bash
-cp .env.example .env
-docker compose up
+docker compose -f docker-compose_asterix.yaml up -d
 ```
 
-The STGraph service mounts `./results` into the container so benchmark CSVs can be collected on the host.
+For cluster/data-source experiments, see:
+
+```text
+src/main/deploy/asterixdb/data-source-single-machine-compose.yaml
+src/main/deploy/asterixdb/data-source-two-machine-compose.yaml
+```
+
+Those deployment compose files assume external infrastructure such as an `asterix-network`, NFS-backed volumes, Redis, and host placement constraints.
 
 ## Query Model
 
-Queries are built in Kotlin with `Step`, `EdgeStep`, `Filter`, `Compare`, and `Aggregate`.
+Queries are built in Kotlin with `Step`, `Filter`, `Compare`, and `Aggregate`.
 
 The query engine supports:
 
@@ -156,12 +203,12 @@ The query engine supports:
 - spatial comparisons through JTS geometries;
 - joins across multiple patterns;
 - grouping and aggregation over graph or time-series properties;
-- `NAIVE` and `OPTIMIZED` query modes, where the optimized mode pushes applicable filters and aggregations into time-series access.
+- `NAIVE` and `OPTIMIZED` query modes, where optimized mode pushes applicable filters and aggregations into time-series access.
 
 See `src/test/kotlin/it/unibo/tests/ci/TestKotlin.kt` for compact executable examples of the core API.
 
 ## Results
 
-Experiment outputs are committed under `results/`, including ingestion and query statistics CSVs for DTGraph/STGraph evaluations.
+Committed experiment outputs live under `results/`, including ingestion and query statistics CSVs.
 
-Generated heavyweight datasets, dumps, and local AsterixDB data should remain outside version control.
+Generated heavyweight datasets, graph dumps, local benchmark configs, and AsterixDB runtime data should remain outside version control.
