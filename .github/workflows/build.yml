@@ -26,7 +26,7 @@ jobs:
           ./downloadDataset.sh mimic 1692200.dump
           docker compose up -d
           sleep 120
-          ./gradlew test --tests "it.unibo.tests.ci*"
+          ./gradlew
 
   release:
     needs:

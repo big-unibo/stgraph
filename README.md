@@ -1,6 +1,27 @@
 # STGraph
 
+[![Artifact reproduction](https://github.com/big-unibo/stgraph/actions/workflows/build.yml/badge.svg)](https://github.com/big-unibo/stgraph/actions/workflows/build.yml)
+
 STGraph is a Kotlin/JVM library and evaluation project for spatio-temporal graphs whose topology is connected to time-series data.
+
+## Artifact Reproduction
+
+This repository is set up to fully reproduce the paper's artifact through GitHub Actions using the small dataset versions of SmartBench and MIMIC-IV. The workflow in `.github/workflows/build.yml` contains the complete executable recipe: it prepares the benchmark configuration, copies the short MIMIC subject/time-series mapping, downloads the SmartBench and MIMIC-IV small inputs, starts the Docker services, and runs the CI experiment suite.
+
+The same steps can be run locally on Linux:
+
+```bash
+chmod +x ./gradlew
+cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
+cp src/main/resources/mimic-iv_subjectids_tsids_short.csv src/main/resources/mimic-iv_subjectids_tsids.csv
+./downloadDataset.sh smartbench small.tar.gz
+./downloadDataset.sh mimic 1692200.dump
+docker compose up -d
+sleep 120
+./gradlew
+```
+
+The workflow is intentionally the authoritative reproduction path for the VLDB artifact evaluation badge: any reviewer can inspect the action to see every setup, data download, service startup, and experiment command needed to run the artifact.
 
 The repository contains:
 
@@ -8,7 +29,7 @@ The repository contains:
 - in-memory, persistent in-memory, RocksDB, and AsterixDB-backed implementations;
 - a Kotlin query model with temporal filtering, joins, spatial predicates, aggregation, and time-series pushdown;
 - ingestion and query workloads for CI, SmartBench, MIMIC-IV, and synthetic datasets;
-- Docker and helper scripts for AsterixDB-backed experiments;
+- Docker and helper scripts for AsterixDB/PostgreSQL-backed experiments;
 - committed CSV outputs from selected experiment runs.
 
 ## Repository Structure
@@ -18,10 +39,11 @@ The repository contains:
 |-- build.gradle.kts                    Gradle build, Kotlin/JVM 17 toolchain, dependencies, test settings
 |-- settings.gradle.kts                 Gradle project name and build scan configuration
 |-- Dockerfile                          Development/evaluation image that builds the project without tests
-|-- docker-compose_asterix.yaml         Local single-node AsterixDB service used by tests/workloads
+|-- docker-compose.yaml                 Local AsterixDB and PostgreSQL services used by tests/workloads
+|-- downloadDataset.sh                  SmartBench and MIMIC-IV dataset downloader/extractor
 |-- runTests.sh                         Convenience script for MIMIC and SmartBench benchmark tests
-|-- scripts/
-|   `-- download_dataset.sh             SmartBench dataset downloader/extractor
+|-- datasets/
+|   `-- init-mimic-pg.sh                PostgreSQL init script that restores a local MIMIC-IV dump
 |-- results/                            Committed benchmark result CSVs
 |-- src/main/deploy/asterixdb/          Cluster-oriented AsterixDB/data-source compose files
 |-- src/main/kotlin/it/unibo/graph/
@@ -40,9 +62,7 @@ The repository contains:
 |   |-- logback.xml                     Logging configuration
 |   |-- test_config.example.yml         Example benchmark matrix; copy to test_config.yml before benchmark runs
 |   |-- time_constraints.yaml           Temporal ranges used by benchmark queries
-|   |-- mimic-iv_subjectids.csv         MIMIC-IV subject id helper data
-|   |-- mimic-iv_subjectids_tsids_short.csv
-|   `-- smartbench_small_tsid-3166_timestamps.csv
+|   `-- mimic-iv_subjectids_tsids_short.csv
 `-- src/test/kotlin/it/unibo/tests/
     |-- ci/                             Fast regression tests for graph, TS, temporal, and query behavior
     |-- smartbench/                     SmartBench ingestion/query workloads and loader
@@ -98,9 +118,8 @@ Run the fast CI/regression package:
 Start the local AsterixDB service before tests or workloads that use the AsterixDB backend:
 
 ```bash
-docker compose -f docker-compose_asterix.yaml up -d
-./wait-for-it.sh localhost:19006 -t 30
-./gradlew test --tests "it.unibo.tests.ci*"
+docker compose up -d
+./gradlew
 ```
 
 Useful benchmark filters:
@@ -142,6 +161,22 @@ The config defines:
 
 Temporal benchmark ranges are loaded from `src/main/resources/time_constraints.yaml`. Label metadata is loaded from `src/main/resources/labels.yaml`.
 
+## Reproducing The Artifact Locally
+
+The GitHub Actions workflow is the reference for artifact reproduction. It runs the small SmartBench input and the short MIMIC-IV input used for reproducible CI-scale experiments:
+
+```bash
+cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
+cp src/main/resources/mimic-iv_subjectids_tsids_short.csv src/main/resources/mimic-iv_subjectids_tsids.csv
+./downloadDataset.sh smartbench small.tar.gz
+./downloadDataset.sh mimic 1692200.dump
+docker compose up -d
+sleep 120
+./gradlew
+```
+
+This is the same sequence used by `.github/workflows/build.yml`.
+
 ## Datasets
 
 Large datasets and graph dumps are not committed.
@@ -154,16 +189,18 @@ datasets/dump/
 results/
 ```
 
-The SmartBench helper script downloads and extracts a requested dataset size into `datasets/original/smartbench` by default:
+The dataset helper downloads inputs into `datasets/original/<dataset>` and extracts `.tar.gz` files:
 
 ```bash
-./scripts/download_dataset.sh small
+./downloadDataset.sh smartbench small.tar.gz
+./downloadDataset.sh mimic 1692200.dump
 ```
 
-You can pass a custom output directory as the second argument:
+The helper accepts either a size, which is expanded to `<size>.tar.gz`, or an explicit filename:
 
 ```bash
-docker compose -f docker-compose_asterix.yaml up -d
+./downloadDataset.sh smartbench small
+./downloadDataset.sh smartbench small.tar.gz
 ```
 
 Query benchmarks read graph dumps from:
@@ -172,15 +209,21 @@ Query benchmarks read graph dumps from:
 datasets/dump/<dataset>/<size>/
 ```
 
-MIMIC-IV workloads also reference local helper files that are not all committed, including `src/main/resources/mimic-iv_subjectids_tsids.csv`.
+MIMIC-IV workloads expect `src/main/resources/mimic-iv_subjectids_tsids.csv`. For the reproducible small artifact run, create it from the committed short version:
+
+```bash
+cp src/main/resources/mimic-iv_subjectids_tsids_short.csv src/main/resources/mimic-iv_subjectids_tsids.csv
+```
 
 ## Docker And Deployment Files
 
 For local AsterixDB:
 
 ```bash
-docker compose -f docker-compose_asterix.yaml up -d
+docker compose up -d
 ```
+
+The local compose file also starts PostgreSQL for MIMIC-IV experiments. The PostgreSQL service mounts `datasets/original/mimic` as `/dump` and `datasets/` as `/docker-entrypoint-initdb.d`, so `datasets/init-mimic-pg.sh` restores the downloaded dump on container initialization.
 
 For cluster/data-source experiments, see:
 
