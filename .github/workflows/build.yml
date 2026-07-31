@@ -21,7 +21,7 @@ jobs:
         run: |
           docker compose -f docker-compose_asterix.yaml up -d
           chmod +x ./gradlew
-          sleep 100
+          sleep 120
           ./gradlew test --tests "it.unibo.tests.ci*"
 
   release:
