@@ -163,19 +163,8 @@ Temporal benchmark ranges are loaded from `src/main/resources/time_constraints.y
 
 ## Reproducing The Artifact Locally
 
-The GitHub Actions workflow is the reference for artifact reproduction. It runs the small SmartBench input and the short MIMIC-IV input used for reproducible CI-scale experiments:
-
-```bash
-cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
-cp src/main/resources/mimic-iv_subjectids_tsids_short.csv src/main/resources/mimic-iv_subjectids_tsids.csv
-./downloadDataset.sh smartbench small.tar.gz
-./downloadDataset.sh mimic 1692200.dump
-docker compose up -d
-sleep 120
-./gradlew
-```
-
-This is the same sequence used by `.github/workflows/build.yml`.
+The GitHub Actions workflow is the reference for artifact reproduction. 
+Refer to the same sequence used by `.github/workflows/build.yml`.
 
 ## Datasets
 
@@ -194,13 +183,6 @@ The dataset helper downloads inputs into `datasets/original/<dataset>` and extra
 ```bash
 ./downloadDataset.sh smartbench small.tar.gz
 ./downloadDataset.sh mimic 1692200.dump
-```
-
-The helper accepts either a size, which is expanded to `<size>.tar.gz`, or an explicit filename:
-
-```bash
-./downloadDataset.sh smartbench small
-./downloadDataset.sh smartbench small.tar.gz
 ```
 
 Query benchmarks read graph dumps from:
