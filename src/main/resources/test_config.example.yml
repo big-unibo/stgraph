@@ -1,4 +1,7 @@
 datasets:
+  synth:
+    sizes: [ "full" ]
+
   smartbench:
     sizes: [ "small"]
 

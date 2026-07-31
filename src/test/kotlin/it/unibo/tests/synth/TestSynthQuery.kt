@@ -24,8 +24,8 @@ class TestSynthQuery {
         val graph = MemoryGraphACID.readFromDisk(path)
         val tsm = AsterixDBTSM.createDefault(
             graph,
-            host = "192.168.30.110",
-            controllerIps = listOf("192.168.30.110"),
+            host = "localhost",
+            controllerIps = listOf("localhost"),
             dataverse = "${dataset}_$size"
         )
         graph.tsm = tsm
