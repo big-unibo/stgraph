@@ -7,15 +7,12 @@ import it.unibo.graph.interfaces.TsMode
 import it.unibo.graph.utils.DATASET_PREFIX
 import it.unibo.graph.utils.FIRSTFEEDPORT
 import it.unibo.graph.utils.LASTFEEDPORT
-import it.unibo.graph.utils.loadProps
 import kotlin.random.Random
-
-val props = loadProps()
 
 class AsterixDBTSM private constructor(
     override val g: Graph,
     val host: String,
-    val port: String,
+    val port: Int,
     val dataverse: String,
     val nodeControllersIPs: List<String>,
     val maxConnections: Int? = 100,
@@ -74,10 +71,10 @@ class AsterixDBTSM private constructor(
     companion object {
         fun createDefault(
             g: Graph,
-            dataverse: String = props["default_dataverse"].toString(),
-            host: String = System.getenv("ASTERIXDB_CC_HOST") ?: "localhost",
-            port: String = props["default_cc_port"].toString(),
-            controllerIps: List<String> = System.getenv("DEFAULT_NC_POOL")?.split(',') ?: listOf("localhost"),
+            dataverse: String = "Events_Dataverse",
+            host: String = "localhost", // = System.getenv("ASTERIXDB_CC_HOST")
+            port: Int = 19002,
+            controllerIps: List<String> = listOf("localhost"), // = System.getenv("DEFAULT_NC_POOL")?.split(',')
             maxConnections: Int? = (LASTFEEDPORT - FIRSTFEEDPORT) / 2,
             multiTs: Boolean = false
         ): AsterixDBTSM {

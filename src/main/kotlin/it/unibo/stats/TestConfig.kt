@@ -70,6 +70,7 @@ class TestConfig {
                 .mapValues { (_, v) ->
                     SetupConfig(
                         host = v["host"] as String,
+                        port = v["port"] as Int,
                         controllerIPs = v["controllerIPs"] as List<String>
                     )
                 }
@@ -174,6 +175,7 @@ class TestConfig {
                             val tsm = AsterixDBTSM.createDefault(
                                 graph,
                                 host = setup.host,
+                                port = setup.port,
                                 controllerIps = setup.controllerIPs,
                                 dataverse = "${dataset}_$size",
                                 multiTs = false // I only need to read the data
@@ -233,6 +235,7 @@ data class DatasetConfig(
 
 data class SetupConfig(
     val host: String,
+    val port: Int,
     val controllerIPs: List<String>
 )
 

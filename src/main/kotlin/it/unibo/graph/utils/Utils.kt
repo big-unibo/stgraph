@@ -82,14 +82,6 @@ fun remove3DfromWkt(wkt: String): String {
     return result
 }
 
-fun loadProps(): Properties {
-    return Properties().apply {
-        load(ClassLoader.getSystemResourceAsStream("config.properties"))
-    }
-}
-
-typealias TemporalRanges = Map<Int, TimeRange>
-
 data class TimeRange(
     val from: Long,
     val to: Long

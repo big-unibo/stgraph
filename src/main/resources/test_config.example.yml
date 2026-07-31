@@ -8,6 +8,7 @@ datasets:
 setups:
   c0:
     host: localhost
+    port: 19002
     controllerIPs: [ "localhost" ]
 
 defaults:
