@@ -6,22 +6,16 @@ STGraph is a Kotlin/JVM library and evaluation project for spatio-temporal graph
 
 ## Artifact Reproduction
 
-This repository is set up to fully reproduce the paper's artifact through GitHub Actions using the small dataset versions of SmartBench and MIMIC-IV. The workflow in `.github/workflows/build.yml` contains the complete executable recipe: it prepares the benchmark configuration, copies the short MIMIC subject/time-series mapping, downloads the SmartBench and MIMIC-IV small inputs, starts the Docker services, and runs the CI experiment suite.
+This repository is set up to reproduce the paper's artifact through GitHub Actions using compact SmartBench and MIMIC-IV inputs. The workflow in `.github/workflows/build.yml` is the executable recipe: it makes the scripts executable and runs `./run.sh`, which prepares configuration, downloads inputs, starts Docker services, and runs Gradle.
 
 The same steps can be run locally on Linux:
 
 ```bash
-chmod +x ./gradlew
-cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
-cp src/main/resources/mimic-iv_subjectids_tsids_short.csv src/main/resources/mimic-iv_subjectids_tsids.csv
-./downloadDataset.sh smartbench small.tar.gz
-./downloadDataset.sh mimic 1692200.dump
-docker compose up -d
-sleep 120
-./gradlew
+chmod +x ./gradlew *.sh
+./run.sh
 ```
 
-The workflow is intentionally the authoritative reproduction path for the VLDB artifact evaluation badge: any reviewer can inspect the action to see every setup, data download, service startup, and experiment command needed to run the artifact.
+The workflow is the reference path for the VLDB artifact evaluation badge.
 
 The repository contains:
 
@@ -41,7 +35,7 @@ The repository contains:
 |-- Dockerfile                          Development/evaluation image that builds the project without tests
 |-- docker-compose.yaml                 Local AsterixDB and PostgreSQL services used by tests/workloads
 |-- downloadDataset.sh                  SmartBench and MIMIC-IV dataset downloader/extractor
-|-- runTests.sh                         Convenience script for MIMIC and SmartBench benchmark tests
+|-- run.sh                              CI/artifact reproduction script
 |-- datasets/
 |   `-- init-mimic-pg.sh                PostgreSQL init script that restores a local MIMIC-IV dump
 |-- results/                            Committed benchmark result CSVs
@@ -133,7 +127,7 @@ Useful benchmark filters:
 ./gradlew test --tests it.unibo.tests.synth.TestSynthQuery
 ```
 
-`run.sh` runs the MIMIC and SmartBench ingestion/query tests in sequence.
+`run.sh` runs the artifact reproduction sequence used by GitHub Actions.
 
 ## Configuration
 
@@ -163,8 +157,12 @@ Temporal benchmark ranges are loaded from `src/main/resources/time_constraints.y
 
 ## Reproducing The Artifact Locally
 
-The GitHub Actions workflow is the reference for artifact reproduction. 
-Refer to the same sequence used by `.github/workflows/build.yml`.
+Run the same entry point used by `.github/workflows/build.yml`:
+
+```bash
+chmod +x ./gradlew *.sh
+./run.sh
+```
 
 ## Datasets
 
