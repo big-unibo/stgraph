@@ -1,3 +1,22 @@
+## 1.0.0 (2026-07-31)
+
+### Bug Fixes
+
+* remove qodana ([09fa1d1](https://github.com/big-unibo/stgraph/commit/09fa1d1dc22efbfdf30be54f1690f5b95f7e7610))
+
+### Build and continuous integration
+
+* add shadowJar ([0028de9](https://github.com/big-unibo/stgraph/commit/0028de93787d14812731968673247b8707596aab))
+* working on CI ([bcbd653](https://github.com/big-unibo/stgraph/commit/bcbd653fe7c5b567ca97765dd6ff19401bca8d15))
+* working on CI ([87d0494](https://github.com/big-unibo/stgraph/commit/87d049418cdf7fa377c3a7271c841bd0746eae9d))
+* working on CI ([3085cba](https://github.com/big-unibo/stgraph/commit/3085cbac6e7aa3495db3ec129da2515a2781fe7e))
+* working on CI ([b14fe68](https://github.com/big-unibo/stgraph/commit/b14fe6821b2244de0498bd71abd3bd978fe0c148))
+
+### General maintenance
+
+* reworking the project ([5ddd912](https://github.com/big-unibo/stgraph/commit/5ddd9120c69d2c609f4eabc74511794d6855cc1b))
+* update readme ([16630ff](https://github.com/big-unibo/stgraph/commit/16630fff3a33a8741ba10859ac97f7d04dc08dc3))
+
 ## [1.2.13](https://github.com/w4bo/dt-graph/compare/1.2.12...1.2.13) (2025-11-20)
 
 ### Bug Fixes
