@@ -2,7 +2,7 @@
 
 [![Artifact reproduction](https://github.com/big-unibo/stgraph/actions/workflows/build.yml/badge.svg)](https://github.com/big-unibo/stgraph/actions/workflows/build.yml)
 
-STGraph is a Kotlin/JVM library and evaluation project for spatio-temporal graphs whose topology is connected to time-series data.
+STGraph is multistore for spatio-temporal graphs including time-series. Its implementation and evaluation are based on Kotlin.
 
 ## Artifact Reproduction
 
