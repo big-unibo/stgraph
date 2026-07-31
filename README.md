@@ -56,7 +56,6 @@ The repository contains:
 |   |-- logback.xml                     Logging configuration
 |   |-- test_config.example.yml         Example benchmark matrix; copy to test_config.yml before benchmark runs
 |   |-- time_constraints.yaml           Temporal ranges used by benchmark queries
-|   `-- mimic-iv_subjectids_tsids_short.csv
 `-- src/test/kotlin/it/unibo/tests/
     |-- ci/                             Fast regression tests for graph, TS, temporal, and query behavior
     |-- smartbench/                     SmartBench ingestion/query workloads and loader
@@ -189,12 +188,6 @@ Query benchmarks read graph dumps from:
 
 ```text
 datasets/dump/<dataset>/<size>/
-```
-
-MIMIC-IV workloads expect `src/main/resources/mimic-iv_subjectids_tsids.csv`. For the reproducible small artifact run, create it from the committed short version:
-
-```bash
-cp src/main/resources/mimic-iv_subjectids_tsids_short.csv src/main/resources/mimic-iv_subjectids_tsids.csv
 ```
 
 ## Docker And Deployment Files
