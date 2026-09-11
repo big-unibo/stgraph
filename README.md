@@ -175,7 +175,9 @@ datasets/dump/
 results/
 ```
 
-Complete [SmartBench](https://damslabumbc.github.io/publication/vldb2-2020/) datasets should be generated with the original SmartBench generator. Full [MIMIC-IV](https://physionet.org/content/mimiciv/) must be obtained from the official PhysioNet page because access requires satisfying its privacy and credentialing constraints before download.
+Complete [SmartBench](https://damslabumbc.github.io/publication/vldb2-2020/) datasets should be generated with the original SmartBench generator. A simplified generation procedure containing also the generation parameters is provided in [this repository](https://github.com/ManuelePasini/smart_benchmark). To generate data, update the .env DATASET_SIZE variable to the desired size and run "docker compose up" from the project directory.
+
+Full [MIMIC-IV](https://physionet.org/content/mimiciv/) must be obtained from the official PhysioNet page because access requires satisfying its privacy and credentialing constraints before download.
 
 The dataset helper downloads inputs into `datasets/original/<dataset>` and extracts `.tar.gz` files:
 
