@@ -1,0 +1,53 @@
+datasets:
+  synth:
+    sizes: [ "full" ]
+
+  smartbench:
+    sizes: [ "small", "medium", "large", "extralarge" ] #
+
+  mimic:
+    sizes: [ 1692200, 16922000, 9223372036854775807 ] #
+
+setups:
+  c0:
+    host: localhost
+    controllerIPs: [ "localhost" ]
+
+  c1:
+    host: 192.168.30.110
+    controllerIPs: [ "192.168.30.110", "192.168.30.110" ]
+
+  c2:
+    host: 192.168.30.101
+    controllerIPs: [ "192.168.30.102", "192.168.30.103" ]
+
+  c4:
+    host: 192.168.30.104
+    controllerIPs: [ "192.168.30.105", "192.168.30.106", "192.168.30.107", "192.168.30.109" ]
+
+defaults:
+  modes: [ "OPTIMIZED" ]
+  setups: [ "c0" ]
+  threads: [ 1 ]
+
+runs:
+  - approaches: [ "stgraph" ]
+    datasets: [ "smartbench", "mimic" ]
+    modes: [ "OPTIMIZED", "NAIVE" ] #,
+    setups: [ "c1" ]
+
+  - approaches: [ "stgraph" ]
+    datasets: [ "smartbench", "mimic" ]
+    threads: [ 1, 4, 8, 16 ]
+    setups: [ "c1", "c4" ]
+
+  - approaches: [ "stgraph" ]
+    datasets: [ "smartbench", "mimic" ]
+    threads: [ 16 ]
+    setups: [ "c2" ]
+
+ingestion:
+  enabled: true
+  datasets: [ "synth", "smartbench", "mimic" ]
+  setups: [ "c1", "c2", "c4" ] #
+  threads: [ 1 ]
