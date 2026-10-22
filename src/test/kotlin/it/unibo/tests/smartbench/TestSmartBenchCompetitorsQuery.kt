@@ -1,11 +1,9 @@
 package it.unibo.tests.smartbench
 
-import it.unibo.graph.query.QueryMode
-import it.unibo.graph.utils.getTime
-import it.unibo.stats.QueryResultData
-import it.unibo.stats.Querying
 import it.unibo.stats.TestConfig
-import it.unibo.tests.graphix.GraphixQuery
+import it.unibo.tests.systems.GraphixQuery
+import it.unibo.tests.systems.Neo4JQuery
+import it.unibo.tests.systems.PGAgeQuery
 import org.json.JSONArray
 import org.neo4j.driver.Session
 import java.sql.Connection
@@ -16,7 +14,7 @@ import java.sql.Connection
  *
  * Each query is a template, src/test/resources/smartbench/queries/<system>/<queryId>.txt: as in the Python evaluation,
  * {TSTAMPFROM_PARAM} and {TSTAMPTO_PARAM} become the time window [rangeIndex] of [selectivity] in time_constraints.yaml.
- * The connections are opened by the caller, so that runQuery (which times the whole call) times only the query.
+ * The runners (connections, timing) are the ones of it.unibo.tests.systems, shared with MIMIC-IV.
  */
 class TestSmartBenchCompetitorsQuery {
     companion object {
@@ -35,55 +33,30 @@ class TestSmartBenchCompetitorsQuery {
         }
     }
 
-    /** Timed: execution of the query and transfer of the whole result (as driver.execute_query in neo4j_query.py) */
+    /** A query on the graph loaded by SmartBenchNeo4J, on an open [session] */
     class QNeo4J(
         override val queryId: String,
         size: String,
-        private val session: Session,
+        session: Session,
         selectivity: String = "increased",
         rangeIndex: Int = 0
-    ) : Querying {
+    ) : Neo4JQuery(session) {
         private val text = queryText("neo4j", queryId, size, selectivity, rangeIndex)
 
-        override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
-            var rows = 0
-            val time = getTime { rows = session.run(text).list().size }
-            return QueryResultData(time, rows)
-        }
+        override fun statement() = text
     }
 
-    /**
-     * Timed: execution of the query and transfer of the whole result (cur.execute in pg_connector.py, which fetches
-     * the rows). [connection] must have the session settings of pg_connector.py (see [pgAgeSession])
-     */
+    /** A query on the graph and the hypertable loaded by SmartBenchPGAge, on an open [connection] (see pgAgeConnection) */
     class QPGAge(
         override val queryId: String,
         size: String,
-        private val connection: Connection,
+        connection: Connection,
         selectivity: String = "increased",
         rangeIndex: Int = 0
-    ) : Querying {
+    ) : PGAgeQuery(connection) {
         private val text = queryText("pgage", queryId, size, selectivity, rangeIndex)
 
-        override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
-            var rows = 0
-            val time = getTime {
-                connection.createStatement().use { st -> st.executeQuery(text).use { rs -> while (rs.next()) rows++ } }
-            }
-            return QueryResultData(time, rows)
-        }
-
-        companion object {
-            /** The settings that pg_connector.py applies before each query */
-            fun pgAgeSession(connection: Connection): Connection = connection.apply {
-                createStatement().use { st ->
-                    st.execute("LOAD 'age';")
-                    st.execute("SET search_path = ag_catalog, \"\$user\", public;")
-                    st.execute("SET max_parallel_workers_per_gather = 0;")
-                    st.execute("SET max_parallel_workers = 0;")
-                }
-            }
-        }
+        override fun statement() = text
     }
 
     /** A query on the graph created by SmartBenchGraphix */

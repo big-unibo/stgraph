@@ -1,4 +1,4 @@
-package it.unibo.tests.graphix
+package it.unibo.tests.systems
 
 import it.unibo.graph.asterixdb.AsterixDBHTTPClient
 import it.unibo.graph.query.QueryMode

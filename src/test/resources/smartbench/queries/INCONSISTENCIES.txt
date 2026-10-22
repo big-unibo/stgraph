@@ -64,9 +64,13 @@ Timing
 - Queries: as the Python code, the evaluation runs every window of the configured selectivities, queries.iterations
   times, for every system (STGraph included). The tests of STGraph (and the CI) still run the first window of
   "increased" once.
-- runQuery (Querying.kt) records the time of the whole Querying.runQuery call, not the time the query measures.
-  The SmartBench competitors receive connections already open, so only the query is timed; the MIMIC competitors
-  (TestMimicQuery: QNeo4J, QPgAge) open the driver/connection inside runQuery, so their times include it.
+- runQuery (Querying.kt) records the time of the whole Querying.runQuery call, not the time the query measures. The
+  runners of Neo4j, PGAge and Graphix (it.unibo.tests.systems), shared by SmartBench and MIMIC-IV, receive connections
+  already open, so only the query is timed (execution and transfer of the whole result). The MIMIC-IV competitors
+  opened the driver/connection (and, for PGAge, ran LOAD 'age') inside the timed call before: their times in
+  results/paper include it.
+- MimicIVPGAge ran LOAD 'age' and SET search_path before each graph statement, inside the timed ingestion; it now
+  sets them once, as SmartBenchPGAge (the results in results/paper include them).
 - SmartBenchGraphix now serializes the events (JSON, 2D WKT) inside the timed region, as STGraph does in ts.add; the
   graph definition (references, CREATE GRAPH) is graph-store time. Before, both were prepared before timing.
 - SmartBenchSTGraph vs SmartBenchDataLoader: see the KDoc of SmartBenchSTGraph.

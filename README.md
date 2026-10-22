@@ -56,6 +56,7 @@ The repository contains:
     |-- evaluation/                     Evaluation against the competitors (./gradlew evaluate)
     |-- smartbench/                     SmartBench workloads and loaders (STGraph and competitors)
     |-- mimic/                          MIMIC-IV ingestion/query workloads and loaders
+    |-- systems/                        Connections and timed queries of the competitors (Neo4j, PGAge, Graphix)
     `-- synth/                          Synthetic ingestion/query workloads, loaders, and query definitions
 ```
 

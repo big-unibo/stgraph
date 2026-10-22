@@ -3,7 +3,7 @@ package it.unibo.tests.mimic.loaders
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import it.unibo.graph.utils.EVENT
 import it.unibo.graph.utils.getTime
-import it.unibo.tests.graphix.GraphixClient
+import it.unibo.tests.systems.GraphixClient
 import it.unibo.tests.smartbench.loaders.TSRecord
 
 /**

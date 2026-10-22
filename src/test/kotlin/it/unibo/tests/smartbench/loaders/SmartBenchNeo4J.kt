@@ -3,9 +3,8 @@ package it.unibo.tests.smartbench.loaders
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import it.unibo.graph.utils.getTime
-import org.neo4j.driver.AuthTokens
+import it.unibo.tests.systems.neo4jDriver
 import org.neo4j.driver.Driver
-import org.neo4j.driver.GraphDatabase
 import org.neo4j.driver.Session
 import java.nio.file.Files
 import java.nio.file.Path
@@ -26,7 +25,7 @@ class SmartBenchNeo4J(
     private val batchSize: Int = 10_000
 ) : AbstractSmartBenchLoader(size, threads = 1) {
     private val dumpPath: Path = projectRoot.resolve("datasets/original/smartbench/neo4j/$size")
-    private val driver: Driver = GraphDatabase.driver(uri, AuthTokens.none())
+    private val driver: Driver = neo4jDriver(uri)
     private val session: Session = driver.session()
     private val mapper = jacksonObjectMapper()
 

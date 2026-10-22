@@ -3,8 +3,8 @@ package it.unibo.tests.smartbench.loaders
 import it.unibo.graph.utils.TYPE
 import org.locationtech.jts.io.WKTReader
 import org.locationtech.jts.io.WKTWriter
+import it.unibo.tests.systems.pgAgeConnection
 import java.sql.Connection
-import java.sql.DriverManager
 import java.util.*
 
 /**
@@ -27,20 +27,11 @@ class SmartBenchPGAge(
     private val batchSize: Int = 20_000
 ) : SmartBenchJsonLoader(size, threads = 1) {
     private val measurementTable = "public.measurements"
-    private val conn: Connection = DriverManager.getConnection(url, Properties().apply {
-        setProperty("user", user)
-        setProperty("password", password)
-        // Multi-row INSERTs from a batch, as execute_values in the Python code
-        setProperty("reWriteBatchedInserts", "true")
-    })
+    // With the session settings of the Python code (applied once); multi-row INSERTs from a batch, as execute_values
+    private val conn: Connection = pgAgeConnection(url, user, password, mapOf("reWriteBatchedInserts" to "true"))
     private var skippedEvents = 0L
 
     init {
-        // Session settings: the Python code sets them before each statement
-        execute("LOAD 'age';")
-        execute("SET search_path = ag_catalog, \"\$user\", public;")
-        execute("SET max_parallel_workers_per_gather = 0;")
-        execute("SET max_parallel_workers = 0;")
         // Clean-up and schema (not timed). The first two fail when graph and table do not exist yet
         runCatching { execute("SELECT * FROM ag_catalog.drop_graph('$graphName', true);") }
         runCatching { execute("TRUNCATE TABLE $measurementTable;") }

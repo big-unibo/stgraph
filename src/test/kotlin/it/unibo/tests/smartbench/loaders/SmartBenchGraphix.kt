@@ -4,7 +4,7 @@ import it.unibo.graph.utils.EVENT
 import it.unibo.graph.utils.LOCATION
 import it.unibo.graph.utils.TYPE
 import it.unibo.graph.utils.VALUE
-import it.unibo.tests.graphix.GraphixClient
+import it.unibo.tests.systems.GraphixClient
 import org.locationtech.jts.io.WKTReader
 import org.locationtech.jts.io.WKTWriter
 

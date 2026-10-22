@@ -2,6 +2,7 @@ package it.unibo.tests.mimic.loaders
 
 import it.unibo.graph.asterixdb.AsterixDBTS
 import it.unibo.tests.smartbench.loaders.TSRecord
+import it.unibo.tests.systems.pgAgeConnection
 import java.io.File
 import java.sql.*
 
@@ -12,7 +13,9 @@ class MimicIVPGAge(
     password: String = "password"
 ) : AbstractMimicIVLoader(limit, threads = 1)  {
     private val graphName = "mimic_${if (limit == Long.MAX_VALUE) "full" else limit}"
-    private val conn: Connection = DriverManager.getConnection(url, user, password)
+    // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path, no parallel workers),
+    // applied once: not at every statement, inside the timed ingestion
+    private val conn: Connection = pgAgeConnection(url, user, password)
     private val baseDir = File("datasets/dump/pgage/mimic/$limit").apply { mkdirs() }
     private val tsWriter = File("$baseDir/ts.csv").printWriter()
 
@@ -74,14 +77,15 @@ class MimicIVPGAge(
                     if_not_exists => TRUE
                 )
                 """.trimIndent())
+
+            // Back to AGE for the Cypher statements of the ingestion
+            safeExec("SET search_path = ag_catalog, public;")
         }
     }
 
     override fun addPerson(subjectId: Int, c: Int): Long {
         println("addPerson: $subjectId")
         conn.createStatement().use { st ->
-            st.execute("LOAD 'age';")
-            st.execute("SET search_path = ag_catalog, public;")
             val rs = st.executeQuery(
                 """
                 SELECT *
@@ -99,8 +103,6 @@ class MimicIVPGAge(
         if (!tsMap.contains(person)) {
             println("addTimeseries: $person")
             conn.createStatement().use { st ->
-                st.execute("LOAD 'age';")
-                st.execute("SET search_path = ag_catalog, public;")
                 val rs = st.executeQuery(
                     """
                 SELECT *

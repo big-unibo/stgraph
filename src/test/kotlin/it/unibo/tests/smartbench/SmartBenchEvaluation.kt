@@ -18,7 +18,9 @@ import it.unibo.tests.evaluation.downloadDataset
 import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
 import it.unibo.tests.evaluation.seconds
-import it.unibo.tests.graphix.GraphixClient
+import it.unibo.tests.systems.GraphixClient
+import it.unibo.tests.systems.neo4jDriver
+import it.unibo.tests.systems.pgAgeConnection
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QGraphix
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QNeo4J
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QPGAge
@@ -28,8 +30,6 @@ import it.unibo.tests.smartbench.loaders.SmartBenchNeo4J
 import it.unibo.tests.smartbench.loaders.SmartBenchPGAge
 import it.unibo.tests.smartbench.loaders.SmartBenchSTGraph
 import it.unibo.tests.smartbench.queries.*
-import org.neo4j.driver.AuthTokens
-import org.neo4j.driver.GraphDatabase
 import java.io.File
 import java.sql.DriverManager
 
@@ -107,10 +107,10 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
 
     private fun neo4j() {
         download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j")
-        val ready = { GraphDatabase.driver(NEO4J_URI, AuthTokens.none()).use { it.verifyConnectivity() } }
+        val ready = { neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() } }
         deployed(evaluation.deploy, "evaluation/architectures/neo4j/docker-compose.yaml", ready = ready) {
             repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI) } }
-            GraphDatabase.driver(NEO4J_URI, AuthTokens.none()).use { driver ->
+            neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
                     queries("neo4j", numMachines = 1) { queryId, selectivity, rangeIndex, _ -> QNeo4J(queryId, size, session, selectivity, rangeIndex) }
                 }
@@ -124,7 +124,7 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
         val connects: () -> Unit = { DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } } }
         deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, ready = connects) {
             repeat(evaluation.ingestionIterations) { ingest("pgage", it) { SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD) } }
-            QPGAge.pgAgeSession(DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD)).use { connection ->
+            pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
                 queries("pgage", numMachines = 1) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }
             }
         }

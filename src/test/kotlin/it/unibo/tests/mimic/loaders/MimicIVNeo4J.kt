@@ -1,9 +1,8 @@
 package it.unibo.tests.mimic.loaders
 
 import it.unibo.tests.smartbench.loaders.TSRecord
-import org.neo4j.driver.AuthTokens
+import it.unibo.tests.systems.neo4jDriver
 import org.neo4j.driver.Driver
-import org.neo4j.driver.GraphDatabase
 import org.neo4j.driver.Session
 import java.io.File
 
@@ -25,7 +24,7 @@ class MimicIVNeo4J(
     val csv: Boolean,
 ) : AbstractMimicIVLoader(limit, threads = 1) {
 
-    private val driver: Driver = GraphDatabase.driver(uri, AuthTokens.basic(user, password))
+    private val driver: Driver = neo4jDriver(uri, user, password)
     private val session: Session = driver.session()
     val tsMap = mutableMapOf<Long, Long>()
 
