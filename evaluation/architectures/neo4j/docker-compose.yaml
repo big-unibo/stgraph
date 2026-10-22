@@ -1,0 +1,17 @@
+# Neo4j for the SmartBench evaluation. The database only: ingestion and queries run from the Kotlin mains of
+# src/test/kotlin/it/unibo/tests/smartbench (TestSmartBenchIngestion.kt, TestSmartBenchQuery.kt).
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: neo4j
+    hostname: neo4j
+    # Single-core comparison with the other systems (see PARALLELISM.md)
+    cpus: 1
+    environment:
+      - NEO4J_AUTH=none
+    volumes:
+      # The files in /conf override the configuration of the image
+      - ./conf:/conf
+    ports:
+      - 7474:7474
+      - 7687:7687

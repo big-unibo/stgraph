@@ -1,10 +1,10 @@
 #!/bin/bash
+# Runs the SmartBench evaluation of the systems that are evaluated inside their own container (AeonG, HyGraph).
+# Neo4j, PGAge and Graphix only deploy the database: start it with
+#   docker compose -f architectures/<system>/docker-compose.yaml up -d
+# and run the Kotlin mains of src/test/kotlin/it/unibo/tests/smartbench (see README.md).
 
-set -e 
-EVALUATION_SYSTEMS=$(grep -v '^#' .env | grep '^EVALUATION_SYSTEMS=' | cut -d '=' -f2-)
-IFS=',' read -r -a SYSTEMS <<< "$EVALUATION_SYSTEMS"
-
-echo "Running STGraph evaluation experiments..."
+set -e
 
 if [ ! -f .env ]; then
     cp .env.example .env
@@ -12,18 +12,30 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+EVALUATION_SYSTEMS=$(grep -v '^#' .env | grep '^EVALUATION_SYSTEMS=' | cut -d '=' -f2-)
+IFS=',' read -r -a SYSTEMS <<< "$EVALUATION_SYSTEMS"
+
+echo "Running STGraph evaluation experiments..."
+
 run_evaluation() {
     local system=$1
-    local compose_file="architectures/docker-compose_${system}.yaml"
-    
+    local compose_file="architectures/${system}/docker-compose.yaml"
+
     echo "Starting $system container..."
     docker compose -f "$compose_file" up
     docker compose -f "$compose_file" down
-    echo "Evaluation of $system completed, results available in the results/${system} directory."
+    echo "Evaluation of $system completed, results available in the data/${system} directory."
 }
 
 for system in "${SYSTEMS[@]}"; do
-    run_evaluation "$system"
+    case "$system" in
+        aeong|hygraph)
+            run_evaluation "$system"
+            ;;
+        *)
+            echo "Skipping $system: deploy it with 'docker compose -f architectures/${system}/docker-compose.yaml up -d' and run the Kotlin mains (see README.md)."
+            ;;
+    esac
 done
 
 echo "All evaluations completed."

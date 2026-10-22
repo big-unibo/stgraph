@@ -1,0 +1,35 @@
+services:
+  graphix:
+    build:
+      context: .
+      args:
+        JAVA_VERSION: ${JAVA_VERSION:-21}
+        GRAPHIX_VERSION: ${GRAPHIX_VERSION:-0.4.1}
+    image: graphix:${GRAPHIX_VERSION:-0.4.1}
+    hostname: graphix
+    container_name: graphix
+    # Single-core comparison with the other systems (see PARALLELISM.md)
+    cpus: 1
+    env_file:
+      - .env
+    command:
+      - /bin/bash
+      - -c
+      - |
+        cp /graphixsetup/cc.conf opt/local/conf/cc.conf
+        opt/local/bin/start-sample-cluster.sh
+        tail -f /dev/null
+    volumes:
+      - "./conf:/graphixsetup/"
+    # Host ports differ from the AsterixDB of STGraph (19001/19002/19006), so both can run on the same machine
+    ports:
+      - ${GRAPHIX_CC_PORT:-29001}:19001
+      # Query API used by the loaders and the tests
+      - 29002:19002
+      # The web UI of the Graphix package calls the query API on localhost:19002 (hard-coded), so the API is also
+      # published there. When the AsterixDB of STGraph runs at the same time, set GRAPHIX_UI_API_PORT to a free
+      # port: the web UI will not work, the loaders (29002) will.
+      - ${GRAPHIX_UI_API_PORT:-19002}:19002
+      - ${GRAPHIX_UI_PORT:-29006}:19006
+      # Socket data feeds for event ingestion (outside the 10001-11000 range used by the AsterixDB of STGraph)
+      - 11001-11010:11001-11010
