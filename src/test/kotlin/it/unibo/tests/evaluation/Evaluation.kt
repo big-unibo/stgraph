@@ -51,6 +51,9 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
     progress("evaluation done")
+    // Explicit exit: the JVM would otherwise wait for the threads left alive (e.g., the thread pools of the queries of
+    // STGraph, see Query.kt) and ./gradlew would never end
+    exitProcess(0)
 }
 
 private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<String, List<String>>) {
