@@ -13,7 +13,8 @@ import org.locationtech.jts.io.WKTWriter
  *
  * - One dataset per SmartBench collection (`Groups`, `Users`, `Sensors`, ...), holding the JSON objects as they are,
  *   inserted in batches (master data, timed as graph-store time).
- * - One dataset (`Observations`) for the time-series events, ingested through the same socket data feed used by STGraph.
+ * - One dataset (`Observations`) for the time-series events, ingested through the same socket data feed used by STGraph,
+ *   with the primary key of the events of STGraph: (tsId, timestamp), tsId being a number per time series.
  * - One graph (`SmartBench`): one vertex label per collection and per event type, one edge label per reference field.
  *   As in [SmartBenchDataLoader], a top-level field `{"id": ...}` (or a list of them) is a reference and becomes
  *   an edge `has<Field>` towards the referenced entity; a sensor with a time series has an edge `has<EventType>`
@@ -52,6 +53,8 @@ class SmartBenchGraphix(
     private val eventEdges = mutableSetOf<Pair<String, String>>()
     private val feeds = (0 until threads).map { graphix.feed(eventsDataset, firstFeedPort + it) }
     private val sent = LongArray(threads)
+    // Number of each time series, the tsId of its events (as the id of the time-series node in STGraph)
+    private val tsIdOf = mutableMapOf<SmartBenchTimeSeries, Long>()
 
     init {
         // Schema (not timed, as the graph/TS clean-up of the STGraph loader)
@@ -61,8 +64,8 @@ class SmartBenchGraphix(
             CREATE DATAVERSE $dataverse;
             USE $dataverse;
             CREATE TYPE EntityType AS OPEN { id: string };
-            CREATE TYPE $EVENT AS OPEN { id: string, $LOCATION: geometry? };
-            CREATE DATASET `$eventsDataset` ($EVENT) PRIMARY KEY id;
+            CREATE TYPE $EVENT AS OPEN { tsId: bigint, `timestamp`: bigint, id: string, $LOCATION: geometry? };
+            CREATE DATASET `$eventsDataset` ($EVENT) PRIMARY KEY tsId, `timestamp`;
             """ + collections.joinToString("\n") { "CREATE DATASET `${datasetOf(label(it))}` (EntityType) PRIMARY KEY id;" }
         )
     }
@@ -81,6 +84,7 @@ class SmartBenchGraphix(
     }
 
     override fun addTimeSeries(ts: SmartBenchTimeSeries) {
+        tsIdOf[ts] = tsIdOf.size + 1L
         eventEdges += ts.sensorLabel to ts.eventLabel
     }
 
@@ -99,6 +103,7 @@ class SmartBenchGraphix(
         events.forEach { event ->
             val record = linkedMapOf<String, Any>(
                 "id" to event.id,
+                "tsId" to tsIdOf.getValue(ts),
                 "sensorId" to ts.sensorId,
                 "sensorLabel" to ts.sensorLabel,
                 TYPE to event.label,

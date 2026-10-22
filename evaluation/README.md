@@ -42,7 +42,7 @@ allows.
 | System | Graph | Time series | Indexes |
 |--------|-------|-------------|---------|
 | STGraph | in-memory graph store: one node per entity and per time series | AsterixDB dataset of the events | primary key `(tsid, _id)` of the events; R-tree on the event location, built after the ingestion |
-| Graphix | one dataset per collection, graph `SmartBench` defined as views over them | dataset `Observations`, loaded through a socket data feed | primary key `id` of every dataset; R-tree on `Observations.location`, built after the ingestion |
+| Graphix | one dataset per collection, graph `SmartBench` defined as views over them | dataset `Observations`, loaded through a socket data feed | primary key `id` of every entity dataset; primary key `(tsId, timestamp)` of `Observations`, as the events of STGraph; R-tree on `Observations.location`, built after the ingestion |
 | Neo4j | the statements of the Cypher dump (`graph.cypher`) | one `Temperature` node per event, linked to its sensor | none |
 | PGAge | AGE graph `smartbench_graph`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `public.measurements` | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph |
 | AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation |

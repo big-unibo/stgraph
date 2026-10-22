@@ -10,7 +10,8 @@ import it.unibo.tests.smartbench.loaders.TSRecord
  * Loads MIMIC-IV into Graphix (AsterixDB + graph views), with the graph of the other loaders:
  * (:Person)-[:hasParameters]->(:TimeSeries)-[:hasMeasurement]->(:Measurement).
  * - `Persons` and `TimeSeries` hold the master data, inserted in batches (graph-store time);
- * - `Measurements` holds the events, ingested through the same socket data feed used by STGraph (time-series time).
+ * - `Measurements` holds the events, ingested through the same socket data feed used by STGraph (time-series time), with
+ *   the primary key of the events of STGraph on MIMIC-IV (multiTs): (tsId, label, timestamp).
  */
 class MimicIVGraphix(
     size: String,
@@ -44,10 +45,10 @@ class MimicIVGraphix(
             CREATE DATAVERSE $dataverse;
             USE $dataverse;
             CREATE TYPE EntityType AS OPEN { id: bigint };
-            CREATE TYPE $EVENT AS OPEN { id: bigint };
+            CREATE TYPE $EVENT AS OPEN { tsId: bigint, label: string, `timestamp`: bigint };
             CREATE DATASET `Persons` (EntityType) PRIMARY KEY id;
             CREATE DATASET `TimeSeries` (EntityType) PRIMARY KEY id;
-            CREATE DATASET `$measurements` ($EVENT) PRIMARY KEY id;
+            CREATE DATASET `$measurements` ($EVENT) PRIMARY KEY tsId, label, `timestamp`;
             """
         )
     }
