@@ -27,7 +27,7 @@ fi
 
 URL="${BASE_URL}/${DATASET}/${FILENAME}"
 
-wget --no-check-certificate --tries=3 -O "$FILENAME" "$URL"
+curl -fL --retry 3 -o "$FILENAME" "$URL"
 
 if [[ ! -f "$FILENAME" ]]; then
     echo "Error: failed to download ${URL}"

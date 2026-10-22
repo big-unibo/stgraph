@@ -26,7 +26,10 @@ data class EvaluationConfig(
     /** Downloads the missing datasets */
     val download: Boolean,
     /** Starts each system before its runs and stops it after, one system at a time */
-    val deploy: Boolean
+    val deploy: Boolean,
+    /** shared_buffers and effective_cache_size of PGAge (null: the values of the paper, in its postgresql.conf) */
+    val pgSharedBuffers: String? = null,
+    val pgEffectiveCacheSize: String? = null
 ) {
     companion object {
         val knownSystems = listOf("stgraph", "stgraph-std", "neo4j", "pgage", "graphix", "aeong", "hygraph")
@@ -38,6 +41,7 @@ data class EvaluationConfig(
                 ?: error("No evaluation section in $path: copy it from test_config.example.yml")
             val ingestion = section["ingestion"] as? Map<String, Any?> ?: emptyMap()
             val queries = section["queries"] as? Map<String, Any?> ?: emptyMap()
+            val pgage = section["pgage"] as? Map<String, Any?> ?: emptyMap()
             fun strings(map: Map<String, Any?>, key: String, default: List<String>) = (map[key] as? List<Any?>)?.map { it.toString() } ?: default
 
             val config = EvaluationConfig(
@@ -51,7 +55,9 @@ data class EvaluationConfig(
                 selectivities = strings(queries, "selectivities", listOf("increased")),
                 queryIds = strings(queries, "ids", emptyList()),
                 download = (section["download"] as? Boolean) ?: true,
-                deploy = (section["deploy"] as? Boolean) ?: true
+                deploy = (section["deploy"] as? Boolean) ?: true,
+                pgSharedBuffers = pgage["sharedBuffers"]?.toString(),
+                pgEffectiveCacheSize = pgage["effectiveCacheSize"]?.toString()
             )
             val unknown = config.systems - knownSystems.toSet()
             require(unknown.isEmpty()) { "Unknown systems in $path: $unknown (known: $knownSystems)" }

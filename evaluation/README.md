@@ -51,7 +51,7 @@ and to deploy the systems. The sizes are the ones of `datasets.<dataset>.sizes`,
 (or the main of `Evaluation.kt` from the IDE, with the repository root as working directory). For each dataset, size
 and system, one system at a time:
 1. it downloads the missing data with `downloadDataset.sh` (`smartbench <size>`: JSON dataset of STGraph, PGAge and
-   Graphix; `smartbench/neo4j <size>`: Cypher dumps of Neo4j), which needs bash and wget;
+   Graphix; `smartbench/neo4j <size>`: Cypher dumps of Neo4j), in Kotlin (no bash needed, e.g., on Windows);
 2. it starts the system (`docker compose up -d`) and waits until it answers: the AsterixDB of the root
    `docker-compose.yaml` for STGraph, `architectures/<system>/docker-compose.yaml` for the others;
 3. it loads the data (`ingestion.iterations` times) and runs every query `queries.iterations` times on every time
@@ -70,8 +70,9 @@ others go on. With `deploy: false` the systems must be already running:
 | Graphix | query API on `localhost:29002`, data feeds on 11001-11010               |
 
 Each system runs on one core (`cpus: 1` and the settings of `PARALLELISM.md`). The ports of Graphix can be changed in
-`architectures/graphix/.env` (from its `.env.example`); `architectures/pgage/conf/postgresql.conf` is tuned for the
-evaluation server (e.g., `shared_buffers`). The CI does not run the evaluation: it runs the tests of STGraph
+`architectures/graphix/.env` (from its `.env.example`). `architectures/pgage/conf/postgresql.conf` is tuned for the
+evaluation server: on a smaller machine, lower `evaluation.pgage.sharedBuffers` (allocated at start-up, it must fit in
+the memory of Docker) and `effectiveCacheSize` in `test_config.yml`. The CI does not run the evaluation: it runs the tests of STGraph
 (`TestSmartBenchIngestion`, `TestSmartBenchQuery`, ...) through `run.sh`.
 
 #### WARNING

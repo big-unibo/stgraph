@@ -1,5 +1,5 @@
-# Neo4j for the SmartBench evaluation. The database only: ingestion and queries run from the Kotlin mains of
-# src/test/kotlin/it/unibo/tests/smartbench (TestSmartBenchIngestion.kt, TestSmartBenchQuery.kt).
+# Neo4j for the SmartBench evaluation. The database only: ingestion and queries run from the evaluation
+# (./gradlew evaluate, see evaluation/README.md), which also starts and stops it.
 services:
   neo4j:
     image: neo4j:5.26

@@ -54,6 +54,8 @@ dependencies {
     implementation("org.neo4j.driver:neo4j-java-driver-slim:4.4.21")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+    // Extraction of the downloaded datasets in the evaluation
+    testImplementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation(platform("org.junit:junit-bom:6.0.3"))
     testImplementation("org.junit.jupiter:junit-jupiter-api")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

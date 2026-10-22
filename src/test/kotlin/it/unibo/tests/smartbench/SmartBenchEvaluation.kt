@@ -12,6 +12,7 @@ import it.unibo.stats.loadDataset
 import it.unibo.stats.runQuery
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
+import it.unibo.tests.evaluation.downloadDataset
 import it.unibo.tests.evaluation.runCommand
 import it.unibo.tests.graphix.GraphixClient
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QGraphix
@@ -118,7 +119,12 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
         download("datasets/original/smartbench/$size", "smartbench")
         // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
         val connects: () -> Unit = { DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } } }
-        deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, ready = connects) {
+        // Memory of PostgreSQL: the compose file uses the values of the paper when they are not set
+        val memory = listOfNotNull(
+            evaluation.pgSharedBuffers?.let { "PG_SHARED_BUFFERS" to it },
+            evaluation.pgEffectiveCacheSize?.let { "PG_EFFECTIVE_CACHE_SIZE" to it }
+        ).toMap()
+        deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, env = memory, ready = connects) {
             repeat(evaluation.ingestionIterations) {
                 loadDataset(SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD), "pgage", threads = 1, numMachines = 1, dataset, size)
             }
@@ -197,11 +203,11 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
             }
         }
 
-    /** Downloads [path] with downloadDataset.sh (as [name]) when it is missing and the configuration allows it */
+    /** Downloads [path] (the dataset [name] of downloadDataset.sh) when it is missing and the configuration allows it */
     private fun download(path: String, name: String) {
         if (File(path).exists()) return
         check(evaluation.download) { "Missing $path: run ./downloadDataset.sh $name $size, or set download: true" }
-        runCommand(listOf("bash", "downloadDataset.sh", name, size))
+        downloadDataset(name, size)
     }
 
     private fun asterixDBReady(host: String, port: Int) {

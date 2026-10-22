@@ -57,7 +57,12 @@ evaluation:
     selectivities: [ "increased" ]
     # Query ids (empty: all)
     ids: [ ]
-  # Downloads the missing datasets with downloadDataset.sh (needs bash and wget)
+  # Downloads the missing datasets (from the same URLs as downloadDataset.sh)
   download: true
   # Starts each system (docker compose up -d) before its runs and stops it after; false: the systems are already running
   deploy: true
+  # Memory of PostgreSQL (PGAge); without these keys, the values of the paper (conf/postgresql.conf, tuned for the
+  # evaluation server). shared_buffers is allocated at start-up: keep it below the memory of Docker
+  pgage:
+    sharedBuffers: "64344MB"
+    effectiveCacheSize: "193034MB"

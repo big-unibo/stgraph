@@ -52,8 +52,9 @@ fun runCommand(command: List<String>, env: Map<String, String> = emptyMap()) {
 }
 
 /**
- * Runs [block] on the system of [composeFile] (or its [service]): when [enabled], the system is started before and
- * stopped after, waiting until [ready] succeeds [readyChecks] times in a row (e.g., PostgreSQL restarts once while
+ * Runs [block] on the system of [composeFile] (or its [service]): when [enabled], the system is started before (with
+ * the variables [env] for the compose file) and stopped after, waiting until [ready] succeeds [readyChecks] times in a
+ * row (e.g., PostgreSQL restarts once while
  * initializing). Stopped, not removed: the data in the containers survive (e.g., to query them again with deploy: false)
  */
 fun <T> deployed(
@@ -62,12 +63,13 @@ fun <T> deployed(
     service: String? = null,
     readyChecks: Int = 1,
     readyTimeoutMs: Long = 15 * 60 * 1000,
+    env: Map<String, String> = emptyMap(),
     ready: () -> Unit,
     block: () -> T
 ): T {
     if (!enabled) return block()
     val services = listOfNotNull(service)
-    runCommand(listOf("docker", "compose", "-f", composeFile, "up", "-d") + services)
+    runCommand(listOf("docker", "compose", "-f", composeFile, "up", "-d") + services, env)
     try {
         val deadline = System.currentTimeMillis() + readyTimeoutMs
         var successes = 0
