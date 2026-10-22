@@ -54,7 +54,8 @@ abstract class DatasetEvaluation(
                         ingest(model, iteration, threads, numMachines = setup.controllerIPs.toSet().size) { loader(threads, setup) }
                     }
                 }
-                queries?.invoke(setup, if (local) -1 else setup.controllerIPs.toSet().size)
+                // numMachines: the number of node controllers, as for the ingestion (1 on a local setup)
+                queries?.invoke(setup, setup.controllerIPs.toSet().size)
             }
         }
     }

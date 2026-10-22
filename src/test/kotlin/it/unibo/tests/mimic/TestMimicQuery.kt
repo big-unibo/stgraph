@@ -294,7 +294,7 @@ fun main() {
                 TestMimicQuery.Q3PGAge("mimic_$size", connection),
             ).forEach { query ->
                 println(query.javaClass.toString())
-                runQuery(query, "pgage", threads = 1, numMachines = -1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
+                runQuery(query, "pgage", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
             }
         }
 

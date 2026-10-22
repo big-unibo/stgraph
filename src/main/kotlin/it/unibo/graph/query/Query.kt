@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import javax.management.Query
 import kotlin.math.max
 import kotlin.math.min
@@ -116,16 +117,18 @@ private fun join(
         }
     }
 
-    val executor = Executors.newFixedThreadPool(threads).asCoroutineDispatcher()
-     runBlocking {
-        val jobs = pattern1.map { row ->
-            launch(executor) {
-                val acc = mutableListOf<Path>()
-                rec(mutableListOf(), 0, max(from, row.from), min(to, row.to), row, acc)
-                result += acc
+    // Closed at the end: its threads are not daemons, they would stay alive after the query
+    Executors.newFixedThreadPool(threads).asCoroutineDispatcher().use { executor ->
+        runBlocking {
+            val jobs = pattern1.map { row ->
+                launch(executor) {
+                    val acc = mutableListOf<Path>()
+                    rec(mutableListOf(), 0, max(from, row.from), min(to, row.to), row, acc)
+                    result += acc
+                }
             }
+            jobs.joinAll()
         }
-        jobs.joinAll()
     }
     return result.toList()
 }
@@ -493,13 +496,17 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
     val wait = Semaphore(0) // Mutex(locked = true)
     val completed = AtomicInteger(0)
     var launched = 0
+    // The first failure while reading a time series: the query fails with it once the search ends (failing inside the
+    // coroutine would cancel the tasks not started yet, which would never release the semaphore)
+    val failure = AtomicReference<Exception?>(null)
 
     val acc = mutableListOf<Path>()
     val mapAlias = buildAliasMap(match)
     val mapWhere = buildWhereMap(where, mapAlias)
     val queue = initializeQueue(g, from, to)
 
-    runBlocking {
+    // The executor is closed at the end: its threads are not daemons, they would stay alive after the query
+    executor.use { runBlocking {
         while (true) {
             if (queue.isEmpty()) {
                 if (completed.get() < launched) {
@@ -541,7 +548,7 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                                         .map { ExploredPath(it, curElem.index + 1, curPath, newFrom, newTo) }
                                     queue.addAll(res)
                                 } catch (e: Exception) {
-                                    e.printStackTrace()
+                                    failure.compareAndSet(null, e)
                                 } finally {
                                     completed.incrementAndGet()
                                     wait.release()
@@ -556,7 +563,8 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                 }
             }
         }
-    }
+    } }
 
+    failure.get()?.let { throw it }
     return acc
 }

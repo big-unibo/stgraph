@@ -174,9 +174,8 @@ class TestConfig {
                             graph.tsm = tsm
                             threads.forEach { thread ->
                                 val query = queryBuilder(graph, size, mode)
-                                val numMachines =
-                                    if (setup.host == "localhost") -1
-                                    else setup.controllerIPs.toSet().size
+                                // The number of node controllers, as for the ingestion (1 on a local setup)
+                                val numMachines = setup.controllerIPs.toSet().size
 
                                 resetPort()
                                 if (query != null) {
