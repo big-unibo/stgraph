@@ -96,9 +96,9 @@ Neo4j
   same windows as small/medium/large (large -> medium, big -> large), plus xsmall and extralarge.
 - Neo4j: the old image was FROM neo4j (latest at build time); the compose now pins neo4j:5.26 (conf with server.*
   keys, so 5.x). Check the version used for the paper.
-- PGAge: the Dockerfile clones apache/age master (not pinned); conf/postgresql.conf is tuned for the evaluation server
-  (shared_buffers = 64 GB, effective_cache_size = 193 GB, now set by evaluation.pgage of test_config.yml) and preloads
-  only timescaledb (AGE is loaded per session).
-- Memory budgets differ: PostgreSQL has 64 GB of shared buffers, Neo4j a page cache of 512 MB (conf/neo4j.conf).
+- PGAge: the Dockerfile clones apache/age master (not pinned); conf/postgresql.conf preloads only timescaledb (AGE is
+  loaded per session). The original evaluation set shared_buffers = 64 GB and effective_cache_size = 193 GB: they are
+  now the defaults of PostgreSQL.
+- Memory: Neo4j has a page cache of 512 MB (conf/neo4j.conf), the other systems their defaults.
 - HyGraph compose: chmod +x scripts/run_evaluation.sh.sh (typo); scripts/run_evaluation.sh runs
   python3 evaluate_hygraph.py from /hygraph, while the file is in src/smartbench/.

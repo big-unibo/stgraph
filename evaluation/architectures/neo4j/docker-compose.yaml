@@ -5,7 +5,7 @@ services:
     image: neo4j:5.26
     container_name: neo4j
     hostname: neo4j
-    # Single-core comparison with the other systems (see PARALLELISM.md)
+    # Single-core comparison with the other systems (see evaluation/README.md)
     cpus: 1
     environment:
       - NEO4J_AUTH=none

@@ -66,18 +66,24 @@ tasks.jar {
     exclude("datasets/**")
 }
 
-// The evaluation of STGraph and of its competitors, configured by the evaluation section of test_config.yml
-// (evaluation/README.md). Not a test: the CI does not run it.
-tasks.register<JavaExec>("evaluate") {
-    description = "Runs the evaluation configured in src/main/resources/test_config.yml"
-    group = "evaluation"
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass = "it.unibo.tests.evaluation.EvaluationKt"
-    javaLauncher = javaToolchains.launcherFor {
-        languageVersion = JavaLanguageVersion.of(jVersion)
+// The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
+// test_config.yml (evaluation/README.md). Not tests: the CI does not run them.
+mapOf(
+    "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to emptyList()),
+    "evaluateSpecificRuns" to ("Runs the specificRuns of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns"))
+).forEach { (name, task) ->
+    tasks.register<JavaExec>(name) {
+        description = task.first
+        group = "evaluation"
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass = "it.unibo.tests.evaluation.EvaluationKt"
+        args(task.second)
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(jVersion)
+        }
+        workingDir = projectDir
+        maxHeapSize = "64g"
     }
-    workingDir = projectDir
-    maxHeapSize = "64g"
 }
 
 defaultTasks("clean", "build", "check")

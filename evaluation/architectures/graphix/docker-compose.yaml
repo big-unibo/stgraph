@@ -8,7 +8,7 @@ services:
     image: graphix:${GRAPHIX_VERSION:-0.4.1}
     hostname: graphix
     container_name: graphix
-    # Single-core comparison with the other systems (see PARALLELISM.md)
+    # Single-core comparison with the other systems (see evaluation/README.md)
     cpus: 1
     command:
       - /bin/bash

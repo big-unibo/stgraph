@@ -122,12 +122,7 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
         download("datasets/original/smartbench/$size", "smartbench")
         // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
         val connects: () -> Unit = { DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } } }
-        // Memory of PostgreSQL: the compose file uses the values of the paper when they are not set
-        val memory = listOfNotNull(
-            evaluation.pgSharedBuffers?.let { "PG_SHARED_BUFFERS" to it },
-            evaluation.pgEffectiveCacheSize?.let { "PG_EFFECTIVE_CACHE_SIZE" to it }
-        ).toMap()
-        deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, env = memory, ready = connects) {
+        deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, ready = connects) {
             repeat(evaluation.ingestionIterations) { ingest("pgage", it) { SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD) } }
             QPGAge.pgAgeSession(DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD)).use { connection ->
                 queries("pgage", numMachines = 1) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }

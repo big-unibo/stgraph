@@ -8,30 +8,37 @@ import kotlin.system.exitProcess
 /**
  * The evaluation configured by the evaluation section of test_config.yml: for each dataset, size and system (one at a
  * time), it downloads the missing data, deploys the system, loads the data, runs the queries and stops the system.
- * The results go to results/ (see evaluation/README.md). Run with ./gradlew evaluate or from the IDE, from the
- * repository root. A system that fails is reported at the end, the others go on.
+ * Without arguments (./gradlew evaluate), every combination of the parameters of the section; with the argument
+ * "specificRuns" (./gradlew evaluateSpecificRuns), the runs of the specificRuns section, one after the other. The
+ * results go to results/
+ * (see evaluation/README.md). Run from the repository root. A system that fails is reported at the end, the others go on.
  */
-fun main() {
+fun main(args: Array<String>) {
     val config = TestConfig.loadConfig()
-    val evaluation = EvaluationConfig.load()
-    val sizes = evaluation.datasets.associateWith { dataset ->
-        config.datasets[dataset]?.sizes?.map { TestConfig.normalizeSize(it) } ?: error("No sizes for the dataset $dataset in test_config.yml")
-    }
-    logParameters(evaluation, sizes)
+    val byRuns = "specificRuns" in args
+    val runs = if (byRuns) EvaluationConfig.loadSpecificRuns() else listOf(EvaluationConfig.load())
     val failures = mutableListOf<String>()
-    for ((dataset, datasetSizes) in sizes) {
-        for (size in datasetSizes) {
-            for (system in evaluation.systems) {
-                progress("=== $system | $dataset $size ===")
-                try {
-                    when (dataset) {
-                        "smartbench" -> SmartBenchEvaluation(config, evaluation, size).run(system)
-                        else -> error("Dataset not supported by the evaluation: $dataset")
+    runs.forEachIndexed { index, evaluation ->
+        val run = if (byRuns) "specific run ${index + 1}/${runs.size}" else "evaluation"
+        val sizes = evaluation.datasets.associateWith { dataset ->
+            evaluation.sizes ?: config.datasets[dataset]?.sizes?.map { TestConfig.normalizeSize(it) }
+                ?: error("No sizes for the dataset $dataset in test_config.yml")
+        }
+        logParameters(run, evaluation, sizes)
+        for ((dataset, datasetSizes) in sizes) {
+            for (size in datasetSizes) {
+                for (system in evaluation.systems) {
+                    progress("=== $run: $system | $dataset $size ===")
+                    try {
+                        when (dataset) {
+                            "smartbench" -> SmartBenchEvaluation(config, evaluation, size).run(system)
+                            else -> error("Dataset not supported by the evaluation: $dataset")
+                        }
+                    } catch (e: Exception) {
+                        progress("$system | $dataset $size: FAILED ($e)")
+                        e.printStackTrace()
+                        failures += "$run, $system | $dataset $size: ${e.message}"
                     }
-                } catch (e: Exception) {
-                    progress("$system | $dataset $size: FAILED ($e)")
-                    e.printStackTrace()
-                    failures += "$system | $dataset $size: ${e.message}"
                 }
             }
         }
@@ -44,8 +51,8 @@ fun main() {
     progress("evaluation done")
 }
 
-private fun logParameters(evaluation: EvaluationConfig, sizes: Map<String, List<String>>) {
-    progress("evaluation parameters (evaluation section of test_config.yml):")
+private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<String, List<String>>) {
+    progress("$run, parameters (test_config.yml):")
     progress("  systems: ${evaluation.systems.joinToString()}")
     progress("  datasets: " + sizes.entries.joinToString("; ") { (dataset, s) -> "$dataset (sizes: ${s.joinToString()})" })
     progress("  ingestion: ${evaluation.ingestionIterations} iteration(s)")
@@ -54,10 +61,7 @@ private fun logParameters(evaluation: EvaluationConfig, sizes: Map<String, List<
             "ids: ${evaluation.queryIds.ifEmpty { listOf("all") }.joinToString()}"
     )
     progress("  STGraph: setups ${evaluation.setups.joinToString()}, threads ${evaluation.threads.joinToString()}, modes ${evaluation.modes.joinToString()}")
-    progress(
-        "  download: ${evaluation.download}, deploy: ${evaluation.deploy}, PGAge memory: " +
-            "shared_buffers ${evaluation.pgSharedBuffers ?: "of the paper"}, effective_cache_size ${evaluation.pgEffectiveCacheSize ?: "of the paper"}"
-    )
+    progress("  download: ${evaluation.download}, deploy: ${evaluation.deploy}")
 }
 
 /** Runs [command] from the repository root, with the output on the console; fails if it does not succeed */

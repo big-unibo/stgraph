@@ -1,6 +1,6 @@
 datasets:
-  synth:
-    sizes: [ "full" ]
+#  synth:
+#    sizes: [ "full" ]
 
   smartbench:
     sizes: [ "xsmall"]
@@ -61,8 +61,33 @@ evaluation:
   download: true
   # Starts each system (docker compose up -d) before its runs and stops it after; false: the systems are already running
   deploy: true
-  # Memory of PostgreSQL (PGAge); without these keys, the values of the paper (conf/postgresql.conf, tuned for the
-  # evaluation server). shared_buffers is allocated at start-up: keep it below the memory of Docker
-  pgage:
-    sharedBuffers: "64344MB"
-    effectiveCacheSize: "193034MB"
+
+# Targeted runs (./gradlew evaluateSpecificRuns), one after the other, independent of the evaluation section: each run
+# has the keys of the evaluation section (the missing ones take their defaults), plus sizes (default: the ones of
+# datasets.<dataset>.sizes)
+specificRuns:
+  - systems: [ "stgraph" ]
+    datasets: [ "smartbench" ]
+    sizes: [ "small" ]
+    setups: [ "c0" ]
+    threads: [ 1, 2, 4 ]
+    modes: [ "OPTIMIZED" ]
+    ingestion:
+      iterations: 1
+    queries:
+      iterations: 10
+      selectivities: [ "increased" ]
+      ids: [ ]
+    download: true
+    deploy: true
+  - systems: [ "neo4j", "pgage", "graphix" ]
+    datasets: [ "smartbench" ]
+    sizes: [ "small" ]
+    ingestion:
+      iterations: 1
+    queries:
+      iterations: 5
+      selectivities: [ "increased" ]
+      ids: [ "EnvironmentAggregate", "MaintenanceOwners" ]
+    download: true
+    deploy: true

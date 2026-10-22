@@ -3,7 +3,7 @@ services:
     image: mp4sini/asterixdb:latest
     hostname: asterixdb
     container_name: asterixdb
-    # Single-core comparison with the other systems (see evaluation/architectures/README.md)
+    # Single-core comparison with the other systems (see evaluation/README.md)
     cpus: 1
     command:
       - /bin/bash

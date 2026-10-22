@@ -129,11 +129,7 @@ Useful benchmark filters:
 
 `run.sh` runs the artifact reproduction sequence used by GitHub Actions.
 
-The evaluation of STGraph and of its competitors (not a test, the CI does not run it) is configured by the `evaluation` section of `test_config.yml`; see `evaluation/README.md`:
-
-```bash
-./gradlew evaluate
-```
+The evaluation of STGraph and of its competitors (not a test, the CI does not run it), with the setup of every system, is described in `evaluation/README.md`: `./gradlew evaluate` runs every combination of the `evaluation` section of `test_config.yml`, `./gradlew evaluateSpecificRuns` the runs of its `specificRuns` section.
 
 ## Configuration
 
@@ -189,7 +185,7 @@ Full [MIMIC-IV](https://physionet.org/content/mimiciv/) must be obtained from th
 The dataset helper downloads inputs into `datasets/original/<dataset>` and extracts `.tar.gz` files:
 
 ```bash
-./downloadDataset.sh smartbench small.tar.gz
+./downloadDataset.sh smartbench xsmall.tar.gz
 ./downloadDataset.sh mimic x1692200.dump
 ```
 

@@ -1,13 +1,12 @@
 # PostgreSQL + TimescaleDB + PostGIS + Apache AGE for the SmartBench evaluation. The database only: ingestion and
 # queries run from the evaluation (./gradlew evaluate, see evaluation/README.md), which also starts and stops it.
-# conf/postgresql.conf is tuned for the evaluation server (e.g., shared_buffers).
 services:
   pgage:
     build: .
     image: mp4sini/pgage:latest
     container_name: pgage
     hostname: pgage
-    # Single-core comparison with the other systems (see PARALLELISM.md)
+    # Single-core comparison with the other systems (see evaluation/README.md)
     cpus: 1
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -16,12 +15,6 @@ services:
       PGDATA: /home/postgres/pgdata/data
     volumes:
       - ./conf:/pgconf
-    # The memory settings override the configuration file: by default its values, the ones of the paper, tuned for the
-    # evaluation server; the evaluation sets them from evaluation.pgage of test_config.yml
-    command: [
-      "-c", "config_file=/pgconf/postgresql.conf",
-      "-c", "shared_buffers=${PG_SHARED_BUFFERS:-64344MB}",
-      "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-193034MB}"
-    ]
+    command: [ "-c", "config_file=/pgconf/postgresql.conf" ]
     ports:
       - ${POSTGRES_PORT_EXT:-5432}:5432
