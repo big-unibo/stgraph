@@ -24,7 +24,7 @@ run_evaluation() {
     echo "Starting $system container..."
     docker compose -f "$compose_file" up
     docker compose -f "$compose_file" down
-    echo "Evaluation of $system completed, results available in the data/${system} directory."
+    echo "Evaluation of $system completed, results available in the results/${system} directory."
 }
 
 for system in "${SYSTEMS[@]}"; do

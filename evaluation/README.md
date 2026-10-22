@@ -15,9 +15,8 @@ systems, the results and the post-processing.
 - `architectures/<system>/`: compose file, Dockerfile and configuration of each competitor
   - `neo4j`, `pgage`, `graphix`: the database only, loaded and queried by the Kotlin mains;
   - `aeong`, `hygraph`: self-contained containers that load the data and run the queries (`run_tests.sh`);
-- `data/`: experimental data mentioned in the article;
-- `figures/`: the article figures;
-- `postprocessing/STGraph.ipynb`: notebook to reproduce the article figures from data;
+- `figures/current/`: the figures of the current results; `figures/paper/`: the article figures;
+- `postprocessing/STGraph.ipynb`: notebook to reproduce the figures from the results;
 - `stats.ipynb`: exploration of the MIMIC-IV subjects and time series (`mimic-iv_subjectids_tsids.csv`);
 - `requirements.txt`: the Python dependencies of the notebooks.
 
@@ -29,11 +28,19 @@ The code lives in the repository root:
   `INCONSISTENCIES.txt` lists their differences from STGraph and the differences of the loaders from the original
   Python code.
 
+### Results
+
+Every run appends its rows to `results/` of the repository root, read by the notebook:
+- `results/dt_graph/{ingestion_time,query_time}/`: the Kotlin runs (STGraph, its CI and the competitors), one row
+  per run, with the system in the `model` column;
+- `results/aeong/`, `results/hygraph/`: the runs of the self-contained containers;
+- `results/paper/`: the archive with the experimental data of the article (formats of the old evaluation), not
+  updated by the runs.
+
 ### Experiments reproducibility
 
 All the Kotlin runs read `src/main/resources/test_config.yml` (sizes of `smartbench`, setups, threads) and the time
-windows of `src/main/resources/time_constraints.yaml`. Results are appended to `results/dt_graph/ingestion_time/` and
-`results/dt_graph/query_time/` of the repository root, one row per run, with the system in the `model` column.
+windows of `src/main/resources/time_constraints.yaml`.
 
 #### Data
 
@@ -72,7 +79,7 @@ Configured by `.env` (created from `.env.example` at the first run). From this f
 ```sh
 ./run_tests.sh
 ```
-Results are appended to `data/<system>/`.
+Results are appended to `results/<system>/` of the repository root.
 
 #### WARNING
 Tests on the "large" dataset take a considerate amount of resources, in terms of both storage and time.

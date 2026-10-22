@@ -7,7 +7,7 @@ services:
     env_file:
       - ../../.env
     volumes:
-      - "../../data:/hygraph/results"
+      - "../../../results/hygraph:/hygraph/results/hygraph"
       - "./time_constraints_tstamp.yaml:/cons/time_constraints.yaml"
     command:
       - /bin/bash

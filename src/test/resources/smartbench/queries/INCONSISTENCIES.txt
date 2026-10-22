@@ -36,7 +36,7 @@ EnvironmentOutlier
 - STGraph: measurements of the sensors covering the environment, whose location intersects the environment
   (ST_INTERSECTS); average above 50.5, applied to the result outside the timed query.
 - Neo4j: no spatial condition; threshold 65 instead of 50.5, inside the query.
-  The old Neo4j results (evaluation/data/neo4j/query_evaluation/statistics.csv) have no EnvironmentOutlier row.
+  The old Neo4j results (results/paper/neo4j/query_evaluation/statistics.csv) have no EnvironmentOutlier row.
 - PGAge: the measurements of any sensor intersecting the environment (no join on the sensor); the environments are
   the ones covered by a sensor with a time series; threshold 50.5 inside the query; BETWEEN.
 

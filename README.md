@@ -39,7 +39,7 @@ The repository contains:
 |-- datasets/
 |   `-- init-mimic-pg.sh                PostgreSQL init script that restores a local MIMIC-IV dump
 |-- evaluation/                         SmartBench evaluation of the competitors: deploys, results, notebooks
-|-- results/                            Committed benchmark result CSVs
+|-- results/                            Committed benchmark result CSVs (results/paper: data of the article)
 |-- src/main/deploy/asterixdb/          Cluster-oriented AsterixDB/data-source compose files
 |-- src/main/kotlin/it/unibo/graph/
 |   |-- interfaces/                     Graph, element, property, path, label, TS, and TSManager APIs
@@ -232,6 +232,6 @@ See `src/test/kotlin/it/unibo/tests/ci/TestKotlin.kt` for compact executable exa
 
 ## Results
 
-Committed experiment outputs live under `results/`, including ingestion and query statistics CSVs.
+Committed experiment outputs live under `results/`, including ingestion and query statistics CSVs. `results/paper/` archives the experimental data of the article; the notebook `evaluation/postprocessing/STGraph.ipynb` plots either the current results or that archive (see `evaluation/README.md`).
 
 Generated heavyweight datasets, graph dumps, local benchmark configs, and AsterixDB runtime data should remain outside version control.

@@ -7,7 +7,7 @@ services:
     env_file:
       - ../../.env
     volumes:
-      - ../../data/aeong:/home/AeonG/tests/results/aeong/
+      - ../../../results/aeong:/home/AeonG/tests/results/aeong/
       - ./time_constraints_commit.yaml:/vol/time_constraints.yaml
       - ./queries:/home/AeonG/tests/results/temporal_query
       - ./datasets:/home/AeonG/tests/datasets/T-mgBench/
