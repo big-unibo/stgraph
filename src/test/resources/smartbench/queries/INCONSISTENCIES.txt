@@ -1,0 +1,98 @@
+SmartBench evaluation: inconsistencies to examine
+=================================================
+
+neo4j/ and pgage/ hold the query templates mounted by STGraph-evaluation (architectures/volumes/queries), the ones
+the old containers ran, ported as they are: nothing below has been changed. graphix/ follows the semantics of STGraph
+(src/test/kotlin/it/unibo/tests/smartbench/queries). The reference is STGraph.
+
+
+1. Queries
+----------
+
+General
+- Neo4j and PGAge often return whole nodes (device, environment, owner); STGraph and Graphix return ids. Same
+  cardinality, more data to transfer (and the transfer is timed).
+- Neo4j and PGAge select entities by name ({name: "3042"}, {name: "Thermometer3"}), STGraph and Graphix by id
+  ("3042", "thermometer3"). On xsmall they are the same entities, but names are not unique in general.
+- Time windows: STGraph [from, to). PGAge uses BETWEEN (both ends included) in MaintenanceOwners and
+  EnvironmentOutlier.
+- The copies of the queries in digital_twins_architectures (neo4j/resources/queries, pgage/src/main/resources/queries)
+  differ from these: EnvironmentAggregate groups by environment and device there, by platform type, owner and
+  environment here (as STGraph).
+
+EnvironmentCoverage
+- STGraph: Infrastructure "3042" <-hasCoverage- Sensor -hasTemperature-> Temperature, distinct (environment, device).
+- Neo4j: also temp.temperature > 0, which STGraph does not have (a sensor whose events are all <= 0 is excluded).
+
+EnvironmentAggregate
+- Neo4j: AVG(temp.value), but the Neo4j loader stores the value as `temperature` (UNWIND_QUERY of the Python loader
+  and ts.cypher): avgValue is null for every group (the cardinality is not affected).
+
+MaintenanceOwners
+- STGraph: value >= 65. Neo4j: temp.temperature > 65. PGAge: m.val > 65 (and BETWEEN).
+- Neo4j: (device:Sensor)-[:hasOwner]-(owner) has no label on the owner and no direction.
+
+EnvironmentOutlier
+- STGraph: measurements of the sensors covering the environment, whose location intersects the environment
+  (ST_INTERSECTS); average above 50.5, applied to the result outside the timed query.
+- Neo4j: no spatial condition; threshold 65 instead of 50.5, inside the query.
+  The old Neo4j results (evaluation/data/neo4j/query_evaluation/statistics.csv) have no EnvironmentOutlier row.
+- PGAge: the measurements of any sensor intersecting the environment (no join on the sensor); the environments are
+  the ones covered by a sensor with a time series; threshold 50.5 inside the query; BETWEEN.
+
+AgentOutlier
+- STGraph: Infrastructure <-hasCoverage- Sensor, window [from, to).
+- Neo4j: hasInfrastructure instead of hasCoverage.
+- PGAge: hasInfrastructure instead of hasCoverage; the window starts at 0 ({TSTAMPFROM_PARAM} is not used).
+
+AgentHistory
+- STGraph: all the events of thermometer3 (no window, no filter on values).
+- Neo4j: temp.temperature > 0 and the window of AgentHistory in time_constraints.yaml.
+- PGAge: m.val > 0, no window.
+
+
+2. Loaders (Kotlin port vs Python code)
+---------------------------------------
+
+Timing
+- All the loaders share the same boundaries (SmartBenchLoader.kt): reading and parsing the files is not timed,
+  writing to the system is. The Python code timed the reading of the entity files (PGAge), the parsing of the events
+  (PGAge; Neo4j after the first batch of each file) and the start of cypher-shell (Neo4j).
+- PGAge: the Python code ran LOAD 'age', search_path and the two parallelism settings before every statement, on a
+  pooled connection (timed in the ingestion); the port sets them once per session.
+- PGAge: the spatial index (ALTER COLUMN ... SRID 4326 + GIST) was not timed; it is index time now.
+- Queries: one run per main execution, with the first window of "increased", as STGraph. The Python code ran every
+  window of the selected selectivity, QUERY_ITERATIONS times.
+- SmartBenchGraphix now serializes the events (JSON, 2D WKT) inside the timed region, as STGraph does in ts.add; the
+  graph definition (references, CREATE GRAPH) is graph-store time. Before, both were prepared before timing.
+- SmartBenchSTGraph vs SmartBenchDataLoader: see the KDoc of SmartBenchSTGraph.
+
+PGAge
+- An edge towards an entity not loaded yet is lost (both vertices must exist when the edge is created), and every
+  edge costs three queries (two full scans without label, one existence check).
+- String values are not escaped: an apostrophe in a value makes the whole entity fail (it is logged and skipped).
+- The edge from a sensor to the first event of its series is always hasTemperature, whatever the event type; only
+  the Temperature events go to the measurement table.
+- Batch insert: one INSERT of 20,000 rows (execute_values) in Python, JDBC batches rewritten into multi-row INSERTs
+  (reWriteBatchedInserts) here.
+- Not ported: multi-device entities and GeoJSON locations (SmartBench has neither).
+
+Neo4j
+- The graph is cleared before loading (the Python code ran on a new container every time).
+- On "small" the events come from ts.cypher. In smart_benchmark/benchmark/datasets/small/ts.cypher the relationships
+  are written -[hasTemperature]-> (a variable, without type), which CREATE rejects: check the dump on the server.
+- No index is created (e.g., on Sensor.id, used by every UNWIND batch and by the MATCH (v {id: ...}) of the dumps).
+- The dumps are read from datasets/original/smartbench/neo4j/<size> (./downloadDataset.sh smartbench/neo4j <size>);
+  their names may follow the old sizes (see below).
+
+
+3. Configuration and infrastructure
+-----------------------------------
+- Sizes: the old time_constraints_tstamp.yaml used small/large/big/big_long; time_constraints.yaml of STGraph has the
+  same windows as small/medium/large (large -> medium, big -> large), plus xsmall and extralarge.
+- Neo4j: the old image was FROM neo4j (latest at build time); the compose now pins neo4j:5.26 (conf with server.*
+  keys, so 5.x). Check the version used for the paper.
+- PGAge: the Dockerfile clones apache/age master (not pinned); conf/postgresql.conf is tuned for the evaluation server
+  (shared_buffers = 64 GB, effective_cache_size = 193 GB) and preloads only timescaledb (AGE is loaded per session).
+- HyGraph compose: chmod +x scripts/run_evaluation.sh.sh (typo); scripts/run_evaluation.sh runs
+  python3 evaluate_hygraph.py from /hygraph, while the file is in src/smartbench/.

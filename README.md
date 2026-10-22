@@ -38,6 +38,7 @@ The repository contains:
 |-- run.sh                              CI/artifact reproduction script
 |-- datasets/
 |   `-- init-mimic-pg.sh                PostgreSQL init script that restores a local MIMIC-IV dump
+|-- evaluation/                         SmartBench evaluation of the competitors: deploys, results, notebooks
 |-- results/                            Committed benchmark result CSVs
 |-- src/main/deploy/asterixdb/          Cluster-oriented AsterixDB/data-source compose files
 |-- src/main/kotlin/it/unibo/graph/
@@ -210,6 +211,8 @@ src/main/deploy/asterixdb/data-source-two-machine-compose.yaml
 ```
 
 Those deployment compose files assume external infrastructure such as an `asterix-network`, NFS-backed volumes, Redis, and host placement constraints.
+
+The SmartBench competitors (Neo4j, PGAge, Graphix, AeonG, HyGraph) are deployed from `evaluation/architectures/`; see `evaluation/README.md`.
 
 ## Query Model
 
