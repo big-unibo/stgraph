@@ -1,0 +1,5 @@
+SELECT * 
+FROM cypher('smartbench_graph', $$
+    MATCH (tempe:Temperature)-[:hasTemperature]-(device:Sensor)-[:hasCoverage]-(environment:Infrastructure {name: "3042"})
+	RETURN DISTINCT environment.id, device.id
+$$) as (environment text, device text);

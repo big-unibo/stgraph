@@ -1,0 +1,36 @@
+version: "3.9"
+services:
+  neo4j:
+    image: mp4sini/neo4j_smartbench:latest
+    container_name: neo4j
+    hostname: neo4j
+    user: root   # necessario solo se le cartelle montate hanno permessi restrittivi
+    env_file:
+      - ./../.env
+    environment:
+      - NEO4J_AUTH=none
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+    volumes:
+      - ./../data/neo4j:/neo4j/neo4j/tests/results/neo4j/
+      - ./volumes/time_constraints_tstamp.yaml:/vol/time_constraints.yaml
+      - ./volumes/conf/neo4j_conf/:/conf
+      - ./volumes/queries/neo4j:/neo4j/neo4j/resources/queries
+    command: >
+      /bin/bash -c "
+        # Copia file di configurazione in directory scrivibili
+        cp /vol/time_constraints.yaml /tmp/time_constraints.yaml &&
+        cp /tmp/time_constraints.yaml /neo4j/neo4j/resources/queries/ &&
+        cp /conf/neo4j.conf /var/lib/neo4j/conf/ &&
+        cp /conf/neo4j-admin.conf /var/lib/neo4j/conf/ &&
+
+        # Avvio Neo4j in background
+        neo4j start &&
+
+        # Attendere che Neo4j sia pronto (opzionale, 10 sec)
+        sleep 10 &&
+
+        tail -f /dev/null 
+
+        # Avvio SmartBench
+        ./neo4j/scripts/run_smartbench_evaluation.sh
+      "

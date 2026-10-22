@@ -1,0 +1,30 @@
+WITH graph_topology AS (
+    SELECT *
+    FROM cypher('smartbench_graph', $$
+        MATCH (it:InfrastructureType)<-[:hasType_]-(environment:Infrastructure)<-[:hasCoverage]-(device:Sensor),
+              (device)-[:hasOwner]->(owner:User)<-[:hasOwner]-(platform:Platform)-[:hasType_]->(platformType:PlatformType)
+        RETURN platformType.id AS platformTypeId,
+               owner.id        AS ownerId,
+               environment.id  AS environmentId,
+               device.id       AS device_id
+    $$) AS (
+        platformTypeId text,
+        ownerId text,
+        environmentId text,
+        device_id text
+    )
+)
+SELECT
+    gt.platformTypeId,
+    gt.ownerId,
+    gt.environmentId,
+    AVG(m.val) AS avgValue
+FROM graph_topology gt
+JOIN public.measurements m
+    ON m.sensor_id = gt.device_id
+WHERE m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
+  AND m.time < to_timestamp({TSTAMPTO_PARAM} / 1000.0)
+GROUP BY
+    gt.platformTypeId,
+    gt.ownerId,
+    gt.environmentId;

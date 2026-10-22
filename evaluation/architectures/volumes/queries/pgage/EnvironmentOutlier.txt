@@ -1,0 +1,34 @@
+WITH env_device AS (
+    SELECT environment_node
+    FROM cypher(
+        'smartbench_graph', $$
+            MATCH (t:Temperature)<-[:hasTemperature]-(d:Sensor)-[:hasCoverage]-(e:Infrastructure)
+            RETURN DISTINCT e AS environment_node
+        $$) AS (environment_node agtype)
+),
+env_geom AS (
+    SELECT
+        environment_node,
+        ST_GeomFromText(
+            agtype_to_json(environment_node)->'properties'->>'location',
+            4326
+        ) AS geom
+    FROM env_device
+),
+env_avg AS (
+    SELECT
+        e.environment_node,
+        AVG(m.val) AS avg_temperature
+    FROM env_geom e
+    JOIN (
+        SELECT location, val
+        FROM public.measurements
+        WHERE time BETWEEN to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
+                        AND to_timestamp({TSTAMPTO_PARAM} / 1000.0)
+    ) m
+    ON ST_Intersects(m.location, e.geom)
+    GROUP BY e.environment_node
+)
+SELECT environment_node
+FROM env_avg
+WHERE avg_temperature > 50.5;

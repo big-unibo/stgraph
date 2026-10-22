@@ -1,0 +1,1 @@
+MATCH (environment:Infrastructure)-[:hasInfrastructure]-(device:Sensor)-[:hasTemperature]-(temp:Temperature) WHERE temp.timestamp >= datetime({epochMillis: {TSTAMPFROM_PARAM}}) AND temp.timestamp < datetime({epochMillis: {TSTAMPTO_PARAM}}) WITH device, environment, MAX(temp.temperature) AS maxValue RETURN device, environment, maxValue;

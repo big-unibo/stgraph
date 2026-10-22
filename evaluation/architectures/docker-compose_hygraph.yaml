@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  hygraph:
+    image: mp4sini/hygraph:latest
+    hostname: hygraph
+    container_name: hygraph
+    env_file:
+      - ./../.env
+    volumes:
+      - "./../data:/hygraph/results"
+      - "./volumes/time_constraints_tstamp.yaml:/cons/time_constraints.yaml"
+    command:
+      - /bin/bash
+      - -c
+      - |
+        cp /cons/time_constraints.yaml /hygraph/resources
+        chmod +x scripts/run_evaluation.sh.sh
+        chmod +x scripts/download_dataset.sh
+        ./scripts/run_evaluation.sh

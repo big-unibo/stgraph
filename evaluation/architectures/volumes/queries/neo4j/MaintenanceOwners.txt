@@ -1,0 +1,1 @@
+MATCH (device:Sensor)-[:hasOwner]-(owner), (environment:Infrastructure)<-[:hasCoverage]-(device)-[:hasTemperature]->(temp:Temperature) WHERE temp.temperature > 65 AND temp.timestamp >= datetime({epochMillis: {TSTAMPFROM_PARAM}}) AND temp.timestamp < datetime({epochMillis: {TSTAMPTO_PARAM}}) RETURN DISTINCT device, environment, owner;

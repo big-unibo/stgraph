@@ -1,0 +1,14 @@
+MATCH
+    (it:InfrastructureType)<-[:hasType_]-(environment:Infrastructure)<-[:hasCoverage]-(device:Sensor)-[:hasTemperature]->(temp:Temperature),
+    (device)-[:hasOwner]->(owner:User)<-[:hasOwner]-(platform:Platform)-[:hasType_]->(platformType:PlatformType)
+WHERE temp.timestamp >= datetime({epochMillis: {TSTAMPFROM_PARAM}}) AND temp.timestamp < datetime({epochMillis: {TSTAMPTO_PARAM}})
+WITH
+    platformType.id AS platformTypeId,
+    owner.id        AS ownerId,
+    environment.id  AS environmentId,
+    AVG(temp.value) AS avgValue
+RETURN
+    platformTypeId,
+    ownerId,
+    environmentId,
+    avgValue;

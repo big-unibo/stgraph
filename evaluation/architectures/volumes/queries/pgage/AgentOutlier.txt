@@ -1,0 +1,21 @@
+WITH env_device AS (
+    -- Associa environment e device dal grafo, mantenendo i nodi come agtype
+    SELECT *
+    FROM cypher(
+        'smartbench_graph', $$
+            MATCH (environment:Infrastructure)-[:hasInfrastructure]-(device:Sensor)
+            RETURN DISTINCT environment AS environment_node,
+                            device AS device_node,
+                            device.id AS device_id
+        $$) AS (environment_node agtype, device_node agtype, device_id text)
+)
+SELECT
+    env_device.device_node,
+    env_device.environment_node,
+    MAX(m.val) AS max_temperature
+FROM env_device
+JOIN public.measurements m
+    ON m.sensor_id = env_device.device_id
+WHERE m.time BETWEEN to_timestamp(0 / 1000.0)
+                  AND to_timestamp({TSTAMPTO_PARAM} / 1000.0)
+GROUP BY env_device.device_node, env_device.environment_node;

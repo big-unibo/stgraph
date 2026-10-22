@@ -1,0 +1,1 @@
+MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor)-[:hasTemperature]-(temp:Temperature) TT FROM 0 TO {TSTAMPTO_PARAM} WITH environment, AVG(temp.temperature) AS avgTemp WHERE avgTemp > 65 RETURN DISTINCT environment;

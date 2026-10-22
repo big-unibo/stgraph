@@ -1,0 +1,22 @@
+WITH device_env_owner AS (
+    SELECT *
+    FROM cypher(
+        'smartbench_graph', $$
+            MATCH (device:Sensor)-[:hasOwner]-(owner),
+                  (tempe:Temperature)-[:hasTemperature]-(device:Sensor)-[:hasCoverage]-(environment:Infrastructure)
+            RETURN DISTINCT device.id AS device_id,
+                            environment.id AS environment_id,
+                            owner.id AS owner_id
+        $$) AS (device_id text, environment_id text, owner_id text)
+)
+SELECT
+    deo.device_id,
+    deo.environment_id,
+    deo.owner_id
+FROM device_env_owner deo
+JOIN public.measurements m
+    ON m.sensor_id = deo.device_id
+WHERE m.val > 65
+  AND m.time BETWEEN to_timestamp({TSTAMPFROM_PARAM} / 1000.0)          -- inizio
+                  AND to_timestamp({TSTAMPTO_PARAM} / 1000.0)  -- fine
+GROUP BY deo.device_id, deo.environment_id, deo.owner_id;
