@@ -64,4 +64,18 @@ tasks.jar {
     exclude("datasets/**")
 }
 
+// The evaluation of STGraph and of its competitors, configured by the evaluation section of test_config.yml
+// (evaluation/README.md). Not a test: the CI does not run it.
+tasks.register<JavaExec>("evaluate") {
+    description = "Runs the evaluation configured in src/main/resources/test_config.yml"
+    group = "evaluation"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "it.unibo.tests.evaluation.EvaluationKt"
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(jVersion)
+    }
+    workingDir = projectDir
+    maxHeapSize = "64g"
+}
+
 defaultTasks("clean", "build", "check")

@@ -61,8 +61,12 @@ Timing
 - PGAge: the Python code ran LOAD 'age', search_path and the two parallelism settings before every statement, on a
   pooled connection (timed in the ingestion); the port sets them once per session.
 - PGAge: the spatial index (ALTER COLUMN ... SRID 4326 + GIST) was not timed; it is index time now.
-- Queries: one run per main execution, with the first window of "increased", as STGraph. The Python code ran every
-  window of the selected selectivity, QUERY_ITERATIONS times.
+- Queries: as the Python code, the evaluation runs every window of the configured selectivities, queries.iterations
+  times, for every system (STGraph included). The tests of STGraph (and the CI) still run the first window of
+  "increased" once.
+- runQuery (Querying.kt) records the time of the whole Querying.runQuery call, not the time the query measures.
+  The SmartBench competitors receive connections already open, so only the query is timed; the MIMIC competitors
+  (TestMimicQuery: QNeo4J, QPgAge) open the driver/connection inside runQuery, so their times include it.
 - SmartBenchGraphix now serializes the events (JSON, 2D WKT) inside the timed region, as STGraph does in ts.add; the
   graph definition (references, CREATE GRAPH) is graph-store time. Before, both were prepared before timing.
 - SmartBenchSTGraph vs SmartBenchDataLoader: see the KDoc of SmartBenchSTGraph.

@@ -13,14 +13,16 @@ systems, the results and the post-processing.
 ## Getting Started
 ### Organization
 - `architectures/<system>/`: compose file, Dockerfile and configuration of each competitor
-  - `neo4j`, `pgage`, `graphix`: the database only, loaded and queried by the Kotlin mains;
-  - `aeong`, `hygraph`: self-contained containers that load the data and run the queries (`run_tests.sh`);
+  - `neo4j`, `pgage`, `graphix`: the database only, loaded and queried by the evaluation;
+  - `aeong`, `hygraph`: self-contained containers that load the data and run the queries, configured by the evaluation;
 - `figures/current/`: the figures of the current results; `figures/paper/`: the article figures;
 - `postprocessing/STGraph.ipynb`: notebook to reproduce the figures from the results;
 - `stats.ipynb`: exploration of the MIMIC-IV subjects and time series (`mimic-iv_subjectids_tsids.csv`);
 - `requirements.txt`: the Python dependencies of the notebooks.
 
 The code lives in the repository root:
+- `src/test/kotlin/it/unibo/tests/evaluation/`: the evaluation (`Evaluation.kt`, run by `./gradlew evaluate`), and
+  `src/test/kotlin/it/unibo/tests/smartbench/SmartBenchEvaluation.kt` for SmartBench;
 - `src/test/kotlin/it/unibo/tests/smartbench/loaders/`: one loader per system on a shared skeleton
   (`SmartBenchLoader.kt`, as `MimicLoader.kt` for MIMIC): `SmartBenchSTGraph`, `SmartBenchNeo4J`, `SmartBenchPGAge`,
   `SmartBenchGraphix`. `SmartBenchDataLoader` stays the reference loader of STGraph (and of the CI);
@@ -39,47 +41,38 @@ Every run appends its rows to `results/` of the repository root, read by the not
 
 ### Experiments reproducibility
 
-All the Kotlin runs read `src/main/resources/test_config.yml` (sizes of `smartbench`, setups, threads) and the time
-windows of `src/main/resources/time_constraints.yaml`.
-
-#### Data
-
-From the repository root:
+The evaluation is configured by the `evaluation` section of `src/main/resources/test_config.yml` (copy it from
+`test_config.example.yml`): systems, datasets, iterations, selectivities, queries, and whether to download the data
+and to deploy the systems. The sizes are the ones of `datasets.<dataset>.sizes`, the time windows the ones of
+`src/main/resources/time_constraints.yaml`. From the repository root:
 ```sh
-./downloadDataset.sh smartbench <size>         # JSON dataset: STGraph, PGAge, Graphix
-./downloadDataset.sh smartbench/neo4j <size>   # Cypher dumps: Neo4j
+./gradlew evaluate
 ```
+(or the main of `Evaluation.kt` from the IDE, with the repository root as working directory). For each dataset, size
+and system, one system at a time:
+1. it downloads the missing data with `downloadDataset.sh` (`smartbench <size>`: JSON dataset of STGraph, PGAge and
+   Graphix; `smartbench/neo4j <size>`: Cypher dumps of Neo4j), which needs bash and wget;
+2. it starts the system (`docker compose up -d`) and waits until it answers: the AsterixDB of the root
+   `docker-compose.yaml` for STGraph, `architectures/<system>/docker-compose.yaml` for the others;
+3. it loads the data (`ingestion.iterations` times) and runs every query `queries.iterations` times on every time
+   window of each selectivity;
+4. it stops the system (`docker compose stop`: the containers and their data are kept).
 
-#### STGraph
+AeonG and HyGraph load and query inside their container, with the configuration passed as environment variables
+(sizes of the old evaluation: small, medium -> large, large -> big). A system that fails is reported at the end, the
+others go on. With `deploy: false` the systems must be already running:
 
-The tests of `TestSmartBenchIngestion` and `TestSmartBenchQuery`, run by the CI (`run.sh`), on the AsterixDB of the
-root `docker-compose.yaml`.
+| System  | Endpoint                                                               |
+|---------|------------------------------------------------------------------------|
+| STGraph | the setups of `test_config.yml` (AsterixDB on `localhost:19002`)        |
+| Neo4j   | `bolt://localhost:7687`, no authentication                              |
+| PGAge   | `localhost:5432`, database `smartbench_eval`, graph `smartbench_graph`  |
+| Graphix | query API on `localhost:29002`, data feeds on 11001-11010               |
 
-#### Neo4j, PGAge, Graphix
-
-1. Deploy the database (for Graphix, first `cp .env.example .env` in its folder):
-   ```sh
-   docker compose -f evaluation/architectures/<system>/docker-compose.yaml up -d
-   ```
-   | System  | Endpoint                                                     |
-   |---------|--------------------------------------------------------------|
-   | Neo4j   | `bolt://localhost:7687`, no authentication                    |
-   | PGAge   | `localhost:5432`, database `smartbench_eval`, graph `smartbench_graph` |
-   | Graphix | query API on `localhost:29002`, data feeds on 11001-11010     |
-2. Run, from the IDE, the main of `TestSmartBenchCompetitorsIngestion.kt` and then the one of
-   `TestSmartBenchCompetitorsQuery.kt` (comment out the systems not under test). The ingestion main also loads
-   STGraph through `SmartBenchSTGraph` (model `stgraph-std`), to compare the shared measurement boundaries with the
-   reference loader (model `stgraph`).
-
-Each system runs on one core (`cpus: 1` and the settings of `PARALLELISM.md`).
-
-#### AeonG, HyGraph
-
-Configured by `.env` (created from `.env.example` at the first run). From this folder:
-```sh
-./run_tests.sh
-```
-Results are appended to `results/<system>/` of the repository root.
+Each system runs on one core (`cpus: 1` and the settings of `PARALLELISM.md`). The ports of Graphix can be changed in
+`architectures/graphix/.env` (from its `.env.example`); `architectures/pgage/conf/postgresql.conf` is tuned for the
+evaluation server (e.g., `shared_buffers`). The CI does not run the evaluation: it runs the tests of STGraph
+(`TestSmartBenchIngestion`, `TestSmartBenchQuery`, ...) through `run.sh`.
 
 #### WARNING
 Tests on the "large" dataset take a considerate amount of resources, in terms of both storage and time.
@@ -88,9 +81,14 @@ We reccomend to run such tests on different machines to parallelize the workload
 
 #### Reproducing scale-out tests
 
-Deploy an AsterixDB cluster following the [official documentation](https://asterixdb.apache.org/docs/0.9.9/ncservice.html)
-and add a setup with its cluster controller and node controllers to `test_config.yml` (`setups`, then `ingestion` and
-`runs`).
+Scale-out concerns STGraph only, on an AsterixDB cluster that the evaluation does not deploy:
+1. Deploy an AsterixDB cluster following the [official documentation](https://asterixdb.apache.org/docs/0.9.9/ncservice.html).
+2. In `test_config.yml`, add a setup with the address of the cluster controller (`host`, and `port` of its query
+   API) and the addresses of the node controllers (`controllerIPs`), which receive the data feeds: see `c1` in
+   `test_config.example.yml`.
+3. In the `evaluation` section, list it in `setups` (with the `threads` to test) and set `systems: [ "stgraph" ]`.
+4. Run `./gradlew evaluate`: a local setup is started and stopped by the evaluation, a cluster is only used.
+   `numMachines` in the results is the number of node controllers.
 
 #### Reproducing articles figures
 

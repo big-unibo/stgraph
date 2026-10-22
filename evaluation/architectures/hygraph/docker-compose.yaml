@@ -4,8 +4,15 @@ services:
     image: mp4sini/hygraph:latest
     hostname: hygraph
     container_name: hygraph
-    env_file:
-      - ../../.env
+    # Set by the evaluation (src/test/kotlin/it/unibo/tests/evaluation, SmartBenchEvaluation)
+    environment:
+      - DATASET
+      - DATASET_SIZE
+      - INGESTION_ITERATIONS
+      - QUERY_ITERATIONS
+      - THREAD
+      - QUERY_SELECTIVITY
+      - QUERIES
     volumes:
       - "../../../results/hygraph:/hygraph/results/hygraph"
       - "./time_constraints_tstamp.yaml:/cons/time_constraints.yaml"

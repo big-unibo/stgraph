@@ -129,6 +129,12 @@ Useful benchmark filters:
 
 `run.sh` runs the artifact reproduction sequence used by GitHub Actions.
 
+The evaluation of STGraph and of its competitors (not a test, the CI does not run it) is configured by the `evaluation` section of `test_config.yml`; see `evaluation/README.md`:
+
+```bash
+./gradlew evaluate
+```
+
 ## Configuration
 
 Benchmark matrix execution is implemented in `src/main/kotlin/it/unibo/stats/TestConfig.kt`.

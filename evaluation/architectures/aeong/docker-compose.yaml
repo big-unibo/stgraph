@@ -4,8 +4,15 @@ services:
     image: mp4sini/aeong:latest
     hostname: aeong
     container_name: aeong
-    env_file:
-      - ../../.env
+    # Set by the evaluation (src/test/kotlin/it/unibo/tests/evaluation, SmartBenchEvaluation)
+    environment:
+      - DATASET
+      - DATASET_SIZE
+      - INGESTION_ITERATIONS
+      - QUERY_ITERATIONS
+      - THREAD
+      - QUERY_SELECTIVITY
+      - QUERIES
     volumes:
       - ../../../results/aeong:/home/AeonG/tests/results/aeong/
       - ./time_constraints_commit.yaml:/vol/time_constraints.yaml

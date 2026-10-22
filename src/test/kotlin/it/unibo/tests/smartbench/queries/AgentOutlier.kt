@@ -11,9 +11,9 @@ import org.yaml.snakeyaml.Yaml
 import kotlin.jvm.java
 import kotlin.system.measureTimeMillis
 
-class AgentOutlier(val graph: Graph, val size: String) : Querying {
+class AgentOutlier(val graph: Graph, val size: String, selectivity: String = "increased", rangeIndex: Int = 0) : Querying {
     override val queryId = "AgentOutlier"
-    val temporalConstraints = TestConfig.loadTemporalRanges("increased", queryId, size)[0]!!
+    val temporalConstraints = TestConfig.loadTemporalRanges(selectivity, queryId, size)[rangeIndex]!!
     override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
         val tA = temporalConstraints.from
         val tB = temporalConstraints.to

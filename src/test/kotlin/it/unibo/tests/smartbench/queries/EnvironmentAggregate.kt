@@ -13,9 +13,9 @@ import kotlin.system.measureTimeMillis
  *  EnvironmentsAggregate(𝜖, 𝜏, 𝑡𝑎 , 𝑡𝑏 ): List, for each Environment during the period [𝑡𝑎, 𝑡𝑏 [, the average value of type 𝜏 during
  * the period [𝑡𝑎, 𝑡𝑏 [ for each agent.
  */
-class EnvironmentAggregate(val graph: Graph, val size: String) : Querying {
+class EnvironmentAggregate(val graph: Graph, val size: String, selectivity: String = "increased", rangeIndex: Int = 0) : Querying {
     override val queryId = "EnvironmentAggregate"
-    val temporalConstraints = TestConfig.loadTemporalRanges("increased", queryId, size)[0]!!
+    val temporalConstraints = TestConfig.loadTemporalRanges(selectivity, queryId, size)[rangeIndex]!!
     override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
         val tA = temporalConstraints.from
         val tB = temporalConstraints.to
