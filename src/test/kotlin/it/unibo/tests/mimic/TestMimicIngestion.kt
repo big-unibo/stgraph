@@ -24,9 +24,9 @@ class TestMimicIngestion {
 fun main() {
     TestConfig.loadConfig().datasets["mimic"]!!.sizes.forEach { size ->
         println(size)
-//        loadDataset(MimicIVAeonG(mimicLimit(size.toString())), "aeong", 1, 1,"mimic", size.toString())
-//        loadDataset(MimicIVPGAge(mimicLimit(size.toString())), "pgage", 1, 1,"mimic", size.toString())
-//        loadDataset(MimicIVNeo4J(mimicLimit(size.toString()), csv = true), "neo4j", 1, 1,"mimic", size.toString())
+        loadDataset(MimicIVAeonG(mimicLimit(size.toString())), "aeong", 1, 1,"mimic", size.toString())
+        loadDataset(MimicIVPGAge(mimicLimit(size.toString())), "pgage", 1, 1,"mimic", size.toString())
+        loadDataset(MimicIVNeo4J(mimicLimit(size.toString()), csv = true), "neo4j", 1, 1,"mimic", size.toString())
         loadDataset(MimicIVGraphix(size.toString()), "graphix", 1, 1, "mimic", size.toString())
     }
 }
