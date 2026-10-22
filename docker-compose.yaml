@@ -3,6 +3,8 @@ services:
     image: mp4sini/asterixdb:latest
     hostname: asterixdb
     container_name: asterixdb
+    # Single-core comparison with the other systems (see PARALLELISM.md)
+    cpus: 1
     command:
       - /bin/bash
       - -c
@@ -10,6 +12,8 @@ services:
         cp /asterixsetup/cc.conf opt/local/conf/cc.conf
         opt/local/bin/start-sample-cluster.sh
         tail -f /dev/null
+    volumes:
+      - "./asterixdbconf:/asterixsetup/"
     ports:
       - 19006:19006
       - 19002:19002

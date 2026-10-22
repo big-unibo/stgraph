@@ -85,7 +85,7 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
             require(Files.exists(path)) { "File not found: $file" }
             for (obj in loadJsonObjects(path.toUri(), mapper)) {
                 val typeVal = (obj[TYPE] as? String) ?: error("Missing \"${TYPE}\" in JSON object")
-                val entityId = obj[ID] as? String ?: error("Missing \"${ID}\" in JSON object")
+                val entityId = obj["id"] as? String ?: error("Missing \"id\" in JSON object")
                 val nodeLabel = typeVal.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
                 gsTime += getTime {
@@ -99,7 +99,7 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
                         for ((key, value) in obj) {
                             when (value) {
                                 is Map<*, *> -> {
-                                    val destId = value[ID] as? String
+                                    val destId = value["id"] as? String
                                     if (destId != null) {
                                         val edgeLabel = hasLabel(key)
                                         val targetId = graphIdList[destId]

@@ -3,10 +3,10 @@ datasets:
     sizes: [ "full" ]
 
   smartbench:
-    sizes: [ "small"]
+    sizes: [ "xsmall"]
 
   mimic:
-    sizes: [ 1692200 ]
+    sizes: [ "x1692200" ]
 
 setups:
   c0:
@@ -21,8 +21,8 @@ defaults:
 
 runs:
   - approaches: [ "stgraph" ]
-    datasets: [ "smartbench", "mimic" ]
-    modes: [ "NAIVE", "OPTIMIZED" ]
+    datasets: [ "mimic" ]
+    modes: [ "OPTIMIZED" ]
 
 ingestion:
   enabled: true

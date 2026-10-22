@@ -9,6 +9,17 @@ import java.util.logging.Logger
 import kotlin.math.roundToLong
 import kotlin.random.Random
 
+/**
+ * Maximum number of events loaded for a MIMIC size of test_config.yml: "full" (all the events), a number
+ * (e.g. "1692200"), or "x" followed by a number (e.g. "x1692200") for the reduced dump used by the CI (xsmall),
+ * loaded with the same limit. The size itself, prefix included, names the dump folder and the dataverse.
+ */
+fun mimicLimit(size: String): Long = when {
+    size == "full" -> Long.MAX_VALUE
+    size.startsWith("x") -> size.removePrefix("x").toLong()
+    else -> size.toLong()
+}
+
 interface MimicIVLoader: Loader {
     fun addPerson(subjectId: Int, c: Int): Long
     fun addTimeseries(abbreviation: String, unitname: String?, category: String, label: String, itemid: Int, person: Long): Long

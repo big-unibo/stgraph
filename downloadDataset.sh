@@ -33,8 +33,8 @@ if [[ ! -f "$FILENAME" ]]; then
     echo "Error: failed to download ${URL}"
     exit 1
 fi
-
 echo "Downloaded: $FILENAME"
+
 
 if [[ "$FILENAME" == *.tar.gz ]]; then
     echo "Extracting..."

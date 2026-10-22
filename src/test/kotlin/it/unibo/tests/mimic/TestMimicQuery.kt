@@ -12,18 +12,38 @@ import it.unibo.stats.QueryResultData
 import it.unibo.stats.Querying
 import it.unibo.stats.TestConfig
 import it.unibo.stats.runQuery
+import it.unibo.tests.graphix.GraphixQuery
 import it.unibo.tests.mimic.loaders.limitToPort
+import it.unibo.tests.mimic.loaders.mimicLimit
 import org.junit.jupiter.api.TestInstance
 import org.neo4j.driver.AuthTokens
 import org.neo4j.driver.GraphDatabase
 import java.io.File
 import java.sql.DriverManager
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 const val mimicFilter = 100L
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestMimicQuery {
+    /** Expected cardinalities per dataset size: x1692200 is the reduced dump used by the CI */
+    private val expectedCardinalities = mapOf(
+        "x1692200" to mapOf("Q1" to 7347, "Q2" to 7, "Q3" to 5)
+    )
+
+    /** For the sizes with known cardinalities, fails the test if [query] returns a different number of results */
+    private fun checked(size: String, query: Querying?): Querying? {
+        val expected = expectedCardinalities[size] ?: return query
+        if (query == null) return null
+        return object : Querying {
+            override val queryId = query.queryId
+            override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData =
+                query.runQuery(threads, queryMode).also {
+                    assertEquals(expected.getValue(queryId), it.card, "Cardinality of $queryId on $size ($queryMode, $threads threads)")
+                }
+        }
+    }
 
     abstract class Q : Querying {
         override val queryId = this::class.simpleName.toString()
@@ -107,6 +127,12 @@ class TestMimicQuery {
         abstract fun query(): String
     }
 
+    /** A query on the graph created by MimicIVGraphix */
+    abstract class QGraphix(size: String) : GraphixQuery("mimic_graphix_$size") {
+        override val queryId = this::class.simpleName.toString()
+        protected val path = "FROM GRAPH Mimic MATCH (p:`Person`)-[:`hasParameters`]->(t:`TimeSeries`)-[:`hasMeasurement`]->(m:`Measurement`)"
+    }
+
     class Q1(val graph: Graph, pId: Long = Long.MIN_VALUE, c: Long = Long.MIN_VALUE) : Q() {
         override val queryId: String = super.queryId + (if (pId != Long.MIN_VALUE) "_${pId}_$c" else "")
         override fun query(threads: Int, queryMode: QueryMode): List<Any> {
@@ -145,9 +171,13 @@ class TestMimicQuery {
         """.trimIndent()
     }
 
+    class Q1Graphix(size: String) : QGraphix(size) {
+        override fun statement(): String = "$path WHERE p.c > 25000 AND m.`value` > $mimicFilter SELECT p, t, m;"
+    }
+
     @Test
     fun `get measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        if (mode == QueryMode.NAIVE && size == "full") null else Q1(graph)
+        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q1(graph))
     }
 
     class Q2(val graph: Graph, pId: Long = Long.MIN_VALUE, c: Long = Long.MIN_VALUE) : Q() {
@@ -170,7 +200,7 @@ class TestMimicQuery {
     }
 
     class Q2Neo4J(uri: String) : QNeo4J(uri) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 RETURN m.label, avg(toFloat(m.value))"
+        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 RETURN labels(m), avg(toFloat(m.value))"
     }
 
     class Q2PGAge(graph: String) : QPgAge(graph) {
@@ -189,9 +219,13 @@ class TestMimicQuery {
         """.trimIndent()
     }
 
+    class Q2Graphix(size: String) : QGraphix(size) {
+        override fun statement(): String = "$path WHERE p.c > 25000 GROUP BY m.`label` AS lbl SELECT lbl, AVG(m.`value`) AS avgValue;"
+    }
+
     @Test
     fun `get average measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        if (mode == QueryMode.NAIVE && size == "full") null else Q2(graph)
+        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q2(graph))
     }
 
     class Q3(val graph: Graph) : Q() {
@@ -233,9 +267,13 @@ class TestMimicQuery {
         """.trimIndent()
     }
 
+    class Q3Graphix(size: String) : QGraphix(size) {
+        override fun statement(): String = "$path WHERE p.c > 25000 AND m.`value` > $mimicFilter GROUP BY m.`label` AS lbl SELECT lbl, AVG(m.`value`) AS avgValue;"
+    }
+
     @Test
     fun `filter and group by measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        if (mode == QueryMode.NAIVE && size == "full") null else Q3(graph)
+        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q3(graph))
     }
 
     // @Test
@@ -277,9 +315,9 @@ class TestMimicQuery {
 fun main() {
     TestConfig.loadConfig().datasets["mimic"]!!.sizes.forEach { size ->
         listOf(
-            TestMimicQuery.Q1Neo4J("bolt://localhost:${limitToPort(size.toString().toLong())}"),
-            TestMimicQuery.Q2Neo4J("bolt://localhost:${limitToPort(size.toString().toLong())}"),
-            TestMimicQuery.Q3Neo4J("bolt://localhost:${limitToPort(size.toString().toLong())}")
+            TestMimicQuery.Q1Neo4J("bolt://localhost:${limitToPort(mimicLimit(size.toString()))}"),
+            TestMimicQuery.Q2Neo4J("bolt://localhost:${limitToPort(mimicLimit(size.toString()))}"),
+            TestMimicQuery.Q3Neo4J("bolt://localhost:${limitToPort(mimicLimit(size.toString()))}")
         ).forEach { query ->
             println(query.javaClass.toString())
             runQuery(query, "neo4j", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
@@ -292,6 +330,15 @@ fun main() {
         ).forEach { query ->
             println(query.javaClass.toString())
             runQuery(query, "pgage", threads = 1, numMachines = -1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
+        }
+
+        listOf(
+            TestMimicQuery.Q1Graphix(size.toString()),
+            TestMimicQuery.Q2Graphix(size.toString()),
+            TestMimicQuery.Q3Graphix(size.toString()),
+        ).forEach { query ->
+            println(query.javaClass.toString())
+            runQuery(query, "graphix", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
         }
     }
 }

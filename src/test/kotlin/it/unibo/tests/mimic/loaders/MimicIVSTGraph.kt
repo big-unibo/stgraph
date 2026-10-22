@@ -13,8 +13,8 @@ class MimicIVSTGraph(
     threads: Int = 1,
     host: String = "localhost",
     controllerIPs: List<String> = listOf("localhost")
-) : AbstractMimicIVLoader(if (size == "full") Long.MAX_VALUE else size.toLong(), threads = threads) {
-    val s = if (size == "full" || size.toLong() == Long.MAX_VALUE) "full" else size
+) : AbstractMimicIVLoader(mimicLimit(size), threads = threads) {
+    val s = if (mimicLimit(size) == Long.MAX_VALUE) "full" else size
     val g = MemoryGraphACID(path = "datasets/dump/mimic/$s")
     val t = AsterixDBTSM.createDefault(g, "mimic_$s", host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else { threads * 10 }, multiTs = true)
     var i = 0

@@ -183,7 +183,7 @@ The dataset helper downloads inputs into `datasets/original/<dataset>` and extra
 
 ```bash
 ./downloadDataset.sh smartbench small.tar.gz
-./downloadDataset.sh mimic 1692200.dump
+./downloadDataset.sh mimic x1692200.dump
 ```
 
 Query benchmarks read graph dumps from:

@@ -7,7 +7,9 @@ const val TO_TIMESTAMP = "toTimestamp"
 const val KEY = "key"
 const val TYPE = "type"
 const val TSID = "tsid"
-const val ID = "id"
+// Internal identifier of graph elements and of time-series events (in the TS store, the event key).
+// It differs from "id", which is an ordinary property (e.g., the identifier of an entity in the source data).
+const val ID = "_id"
 const val LABEL = "label"
 const val FROM_N = "fromN"
 const val TO_N = "toN"
