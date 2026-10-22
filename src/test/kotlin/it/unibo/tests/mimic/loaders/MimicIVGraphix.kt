@@ -85,7 +85,7 @@ class MimicIVGraphix(
     }
 
     private fun insert(dataset: String, rows: List<Map<String, Any>>) =
-        // The rows are a request parameter, not part of the query text (see SmartBenchGraphixLoader)
+        // The rows are a request parameter, not part of the query text (see SmartBenchGraphix)
         rows.chunked(insertBatchSize).forEach { batch ->
             graphix.exec("INSERT INTO `$dataset` (FROM \$rows AS r SELECT VALUE r);", mapOf("\$rows" to mapper.writeValueAsString(batch)))
         }

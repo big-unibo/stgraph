@@ -1,0 +1,5 @@
+FROM GRAPH SmartBench
+MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(m:`Temperature`)
+WHERE m.`timestamp` >= {TSTAMPFROM_PARAM} AND m.`timestamp` < {TSTAMPTO_PARAM}
+GROUP BY s.id AS device, i.id AS environment
+SELECT device, environment, MAX(m.`value`) AS maxValue;

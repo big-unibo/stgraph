@@ -1,0 +1,6 @@
+FROM GRAPH SmartBench
+MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(m:`Temperature`)
+WHERE m.`timestamp` >= {TSTAMPFROM_PARAM} AND m.`timestamp` < {TSTAMPTO_PARAM}
+  AND st_intersects(st_geom_from_text(regexp_replace(i.location, "(-?[0-9.]+) (-?[0-9.]+) -?[0-9.]+", "$1 $2")), m.location)
+GROUP BY i.id AS environment
+SELECT environment, AVG(m.`value`) AS avgValue;
