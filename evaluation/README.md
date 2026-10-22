@@ -17,8 +17,9 @@ systems, the results and the post-processing.
   - `aeong`, `hygraph`: self-contained containers that load the data and run the queries (`run_tests.sh`);
 - `data/`: experimental data mentioned in the article;
 - `figures/`: the article figures;
-- `postprocessing/STGraph.ipynb`, `stats.ipynb`: notebooks to reproduce the article figures from data;
-- `requirements.txt`, `Dockerfile`, `.devcontainer/`: the Python environment of the notebooks.
+- `postprocessing/STGraph.ipynb`: notebook to reproduce the article figures from data;
+- `stats.ipynb`: exploration of the MIMIC-IV subjects and time series (`mimic-iv_subjectids_tsids.csv`);
+- `requirements.txt`: the Python dependencies of the notebooks.
 
 The code lives in the repository root:
 - `src/test/kotlin/it/unibo/tests/smartbench/loaders/`: one loader per system on a shared skeleton
@@ -86,8 +87,7 @@ and add a setup with its cluster controller and node controllers to `test_config
 
 #### Reproducing articles figures
 
-All figures within the article can be reproduced through the `postprocessing/STGraph.ipynb` notebook. The notebook requires Python > 3.12 and the dependencies specified in the `requirements.txt` file.
-A .devcontainer has been prepared to avoid installing the mandatory libraries in the host machine. Open this folder within an IDE of your choice (e.g., Visual Studio Code) and build and open the project.
+All figures within the article can be reproduced through the `postprocessing/STGraph.ipynb` notebook. The notebook requires Python > 3.12, a Jupyter kernel and the dependencies specified in the `requirements.txt` file; the figures use the Times New Roman font, which must be installed.
 
 ## References
 
