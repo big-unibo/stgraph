@@ -14,7 +14,7 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 | `evaluation/architectures/<system>/` | Deploy of each system: `docker-compose.yaml`, `Dockerfile`, configuration (`conf/`) |
 | `src/test/kotlin/it/unibo/tests/evaluation/` | The evaluation (`Evaluation.kt`): configuration, download, deploy, progress log |
 | `src/test/kotlin/it/unibo/tests/systems/` | Connections and timed queries of Neo4j, PGAge and Graphix, shared by SmartBench and MIMIC-IV |
-| `src/test/kotlin/it/unibo/tests/smartbench/SmartBenchEvaluation.kt` | Ingestion and queries of each system on SmartBench |
+| `src/test/kotlin/it/unibo/tests/smartbench/SmartBenchEvaluation.kt`, `src/test/kotlin/it/unibo/tests/synth/SynthEvaluation.kt` | Ingestion and queries of each system on SmartBench, and of STGraph on the synthetic dataset (on `DatasetEvaluation.kt`) |
 | `src/test/kotlin/it/unibo/tests/smartbench/loaders/` | One loader per system on a shared skeleton (`SmartBenchLoader.kt`) |
 | `src/test/resources/smartbench/queries/<system>/` | The queries of the competitors, as templates; `INCONSISTENCIES.txt`: their differences from STGraph and the differences of the loaders from the original Python code |
 | `results/` | The results: `dt_graph/` (Kotlin runs), `aeong/`, `hygraph/`, and `paper/` (the data of the article, not updated by the runs) |
@@ -98,7 +98,8 @@ For each dataset, size and system, one system at a time, a run:
    each selectivity;
 4. stops the system (`docker compose stop`: the containers and their data are kept).
 
-STGraph runs its reference loader (`SmartBenchDataLoader`) and queries; `stgraph-std` loads the data through the shared
+The datasets are SmartBench (every system) and the synthetic dataset (STGraph, with the loader and the queries of its
+tests; `queries.ids` selects their families, e.g., `SynthFilter`). STGraph runs its reference loader (`SmartBenchDataLoader`) and queries; `stgraph-std` loads the data through the shared
 loader skeleton (`SmartBenchSTGraph`), to compare the measurement boundaries. AeonG and HyGraph load and query inside
 their container, with the parameters passed as environment variables and the sizes of the original evaluation (small,
 medium -> large, large -> big). The progress (parameters, ingestion and queries of each system) is printed with the

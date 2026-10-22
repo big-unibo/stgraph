@@ -1,24 +1,13 @@
 package it.unibo.tests.smartbench
 
-import it.unibo.graph.asterixdb.AsterixDBTSM
-import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.query.QueryMode
-import it.unibo.graph.utils.resetPort
 import it.unibo.stats.Config
-import it.unibo.stats.Loader
-import it.unibo.stats.QueryResultData
-import it.unibo.stats.Querying
 import it.unibo.stats.SetupConfig
-import it.unibo.stats.TestConfig
-import it.unibo.stats.loadDataset
-import it.unibo.stats.runQuery
+import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
-import it.unibo.tests.evaluation.downloadDataset
 import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
-import it.unibo.tests.evaluation.seconds
-import it.unibo.tests.systems.GraphixClient
 import it.unibo.tests.systems.neo4jDriver
 import it.unibo.tests.systems.pgAgeConnection
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QGraphix
@@ -30,23 +19,31 @@ import it.unibo.tests.smartbench.loaders.SmartBenchNeo4J
 import it.unibo.tests.smartbench.loaders.SmartBenchPGAge
 import it.unibo.tests.smartbench.loaders.SmartBenchSTGraph
 import it.unibo.tests.smartbench.queries.*
-import java.io.File
 import java.sql.DriverManager
 
 /**
- * The SmartBench evaluation of one [size] (see it.unibo.tests.evaluation.main): for each system, ingestion and queries
- * as configured by [evaluation]. STGraph uses its reference loader (SmartBenchDataLoader) and queries
- * (TestSmartBenchQuery); "stgraph-std" only loads the data, through SmartBenchSTGraph. Results: results/ (model column).
+ * The SmartBench evaluation of one [size] (see it.unibo.tests.evaluation.main), for every system. STGraph uses its
+ * reference loader (SmartBenchDataLoader) and queries (TestSmartBenchQuery); "stgraph-std" only loads the data, through
+ * SmartBenchSTGraph.
  */
-class SmartBenchEvaluation(private val config: Config, private val evaluation: EvaluationConfig, private val size: String) {
-    private val dataset = "smartbench"
+class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
+    DatasetEvaluation(config, evaluation, "smartbench", size) {
     private val queryIds = evaluation.queryIds.ifEmpty { TestSmartBenchCompetitorsQuery.queryIds }
-    private val setups: List<SetupConfig> = evaluation.setups.map { config.setups[it] ?: error("Unknown setup: $it") }
 
-    fun run(system: String) {
+    override fun run(system: String) {
         when (system) {
-            "stgraph" -> stgraph(ingestion = true, queries = true)
-            "stgraph-std" -> stgraph(ingestion = true, queries = false, model = "stgraph-std")
+            "stgraph" -> {
+                download("datasets/original/smartbench/$size", "smartbench")
+                stgraph("stgraph", { threads, setup ->
+                    SmartBenchDataLoader(size, threads = threads, host = setup.host, controllerIPs = setup.controllerIPs)
+                }) { setup, numMachines -> stgraphQueries(setup, numMachines) }
+            }
+            "stgraph-std" -> {
+                download("datasets/original/smartbench/$size", "smartbench")
+                stgraph("stgraph-std", { threads, setup ->
+                    SmartBenchSTGraph(size, threads = threads, host = setup.host, controllerIPs = setup.controllerIPs)
+                })
+            }
             "neo4j" -> neo4j()
             "pgage" -> pgage()
             "graphix" -> graphix()
@@ -55,39 +52,10 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
         }
     }
 
-    /** STGraph on each setup: on a local setup, the AsterixDB of the root docker-compose.yaml */
-    private fun stgraph(ingestion: Boolean, queries: Boolean, model: String = "stgraph") {
-        download("datasets/original/smartbench/$size", "smartbench")
-        for (setup in setups) {
-            val local = setup.host == "localhost"
-            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", ready = { asterixDBReady(setup.host, setup.port) }) {
-                if (ingestion) {
-                    for (threads in evaluation.threads) {
-                        repeat(evaluation.ingestionIterations) { iteration ->
-                            resetPort()
-                            ingest(model, iteration, threads, numMachines = setup.controllerIPs.toSet().size) {
-                                if (model == "stgraph") {
-                                    SmartBenchDataLoader(size, threads = threads, host = setup.host, controllerIPs = setup.controllerIPs)
-                                } else {
-                                    SmartBenchSTGraph(size, threads = threads, host = setup.host, controllerIPs = setup.controllerIPs)
-                                }
-                            }
-                        }
-                    }
-                }
-                if (queries) stgraphQueries(setup, numMachines = if (local) -1 else setup.controllerIPs.toSet().size)
-            }
-        }
-    }
-
-    /** The queries of TestSmartBenchQuery, on the data loaded by SmartBenchDataLoader (as TestConfig.runTest) */
-    private fun stgraphQueries(setup: SetupConfig, numMachines: Int) {
-        val graph = MemoryGraphACID.readFromDisk("datasets/dump/$dataset/$size/")
-        graph.tsm = AsterixDBTSM.createDefault(
-            graph, host = setup.host, port = setup.port, controllerIps = setup.controllerIPs, dataverse = "${dataset}_$size", multiTs = false
-        )
-        try {
-            queries("stgraph", numMachines, evaluation.threads, evaluation.modes) { queryId, selectivity, rangeIndex, mode ->
+    /** The queries of TestSmartBenchQuery, on the data loaded by SmartBenchDataLoader */
+    private fun stgraphQueries(setup: SetupConfig, numMachines: Int) =
+        withStgraph(setup, "datasets/dump/$dataset/$size/", "${dataset}_$size") { graph ->
+            queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { queryId, selectivity, rangeIndex, mode ->
                 // As TestSmartBenchQuery: NAIVE is skipped on the large sizes, except for the queries without time window
                 val naiveOnLarge = size.contains("large") && mode == QueryMode.NAIVE
                 when (queryId) {
@@ -100,10 +68,7 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
                     else -> error("Unknown query: $queryId")
                 }
             }
-        } finally {
-            graph.close()
         }
-    }
 
     private fun neo4j() {
         download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j")
@@ -112,7 +77,7 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
             repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI) } }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
-                    queries("neo4j", numMachines = 1) { queryId, selectivity, rangeIndex, _ -> QNeo4J(queryId, size, session, selectivity, rangeIndex) }
+                    queries("neo4j", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QNeo4J(queryId, size, session, selectivity, rangeIndex) }
                 }
             }
         }
@@ -125,7 +90,7 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
         deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, ready = connects) {
             repeat(evaluation.ingestionIterations) { ingest("pgage", it) { SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD) } }
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
-                queries("pgage", numMachines = 1) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }
+                queries("pgage", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }
             }
         }
     }
@@ -134,7 +99,7 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
         download("datasets/original/smartbench/$size", "smartbench")
         deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
             repeat(evaluation.ingestionIterations) { ingest("graphix", it) { SmartBenchGraphix(size, port = GRAPHIX_PORT) } }
-            queries("graphix", numMachines = 1) { queryId, selectivity, rangeIndex, _ -> QGraphix(queryId, size, selectivity, rangeIndex) }
+            queries("graphix", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QGraphix(queryId, size, selectivity, rangeIndex) }
         }
     }
 
@@ -163,87 +128,6 @@ class SmartBenchEvaluation(private val config: Config, private val evaluation: E
             runCommand(listOf("docker", "compose", "-f", composeFile, "down"), env)
         }
         progress("$run: done, results in results/$system")
-    }
-
-    /** Loads the data with the loader that [create] returns (loadDataset), recording it as [model], between two progress lines */
-    private fun ingest(model: String, iteration: Int, threads: Int = 1, numMachines: Int = 1, create: () -> Loader) {
-        val run = "ingestion | $model | $dataset $size | iteration ${iteration + 1}/${evaluation.ingestionIterations}, $threads thread(s)"
-        progress("$run: started")
-        val start = System.currentTimeMillis()
-        val loader = create()
-        loadDataset(loader, model, threads = threads, numMachines = numMachines, dataset, size)
-        progress(
-            "$run: done in ${seconds(System.currentTimeMillis() - start)} (timed: graph ${seconds(loader.getGSTime())}, " +
-                "time series ${seconds(loader.getTSTime())}, index ${seconds(loader.getIndexTime())}); " +
-                "${loader.getGSCardinality()} graph elements, ${loader.getTSCardinality()} events"
-        )
-    }
-
-    /**
-     * Runs every query [queryIterations][EvaluationConfig.queryIterations] times, on every time window of each
-     * selectivity (as the Python evaluation), with each mode and number of threads; [build] returns null to skip a run
-     */
-    private fun queries(
-        model: String,
-        numMachines: Int,
-        threads: List<Int> = listOf(1),
-        modes: List<QueryMode> = listOf(QueryMode.OPTIMIZED),
-        build: (queryId: String, selectivity: String, rangeIndex: Int, mode: QueryMode) -> Querying?
-    ) {
-        for (iteration in 0 until evaluation.queryIterations) {
-            for (queryId in queryIds) {
-                for ((selectivity, rangeIndex) in windows(queryId)) {
-                    for (mode in modes) {
-                        for (thread in threads) {
-                            val query = build(queryId, selectivity, rangeIndex, mode) ?: continue
-                            val run = "query | $model | $dataset $size | $queryId ($selectivity, window $rangeIndex, " +
-                                "iteration ${iteration + 1}/${evaluation.queryIterations}, $mode, $thread thread(s))"
-                            progress("$run: started")
-                            // The time and the cardinality recorded by runQuery, to print them
-                            var elapsed = 0L
-                            var cardinality = 0
-                            val recorded = object : Querying {
-                                override val queryId = query.queryId
-                                override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
-                                    val begin = System.currentTimeMillis()
-                                    return query.runQuery(threads, queryMode).also {
-                                        elapsed = System.currentTimeMillis() - begin
-                                        cardinality = it.card
-                                    }
-                                }
-                            }
-                            resetPort()
-                            runQuery(recorded, model, thread, numMachines, dataset, size, mode, iteration, selectivity, rangeIndex)
-                            progress("$run: $elapsed ms, $cardinality results")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /** The time windows of [queryId] on [size]: (selectivity, range index) */
-    private fun windows(queryId: String): List<Pair<String, Int>> =
-        evaluation.selectivities.flatMap { selectivity ->
-            try {
-                TestConfig.loadTemporalRanges(selectivity, queryId, size).keys.sorted().map { selectivity to it }
-            } catch (e: IllegalArgumentException) {
-                progress("query | $queryId | $dataset $size: no time window for $selectivity, skipped")
-                emptyList()
-            }
-        }
-
-    /** Downloads [path] (the dataset [name] of downloadDataset.sh) when it is missing and the configuration allows it */
-    private fun download(path: String, name: String) {
-        if (File(path).exists()) return
-        check(evaluation.download) { "Missing $path: run ./downloadDataset.sh $name $size, or set download: true" }
-        progress("download | $name $size: started")
-        downloadDataset(name, size)
-        progress("download | $name $size: done")
-    }
-
-    private fun asterixDBReady(host: String, port: Int) {
-        GraphixClient(host, port, "Default").exec("SELECT VALUE 1;")
     }
 
     companion object {

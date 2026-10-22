@@ -2,6 +2,7 @@ package it.unibo.tests.evaluation
 
 import it.unibo.stats.TestConfig
 import it.unibo.tests.smartbench.SmartBenchEvaluation
+import it.unibo.tests.synth.SynthEvaluation
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -32,6 +33,7 @@ fun main(args: Array<String>) {
                     try {
                         when (dataset) {
                             "smartbench" -> SmartBenchEvaluation(config, evaluation, size).run(system)
+                            "synth" -> SynthEvaluation(config, evaluation, size).run(system)
                             else -> error("Dataset not supported by the evaluation: $dataset")
                         }
                     } catch (e: Exception) {
