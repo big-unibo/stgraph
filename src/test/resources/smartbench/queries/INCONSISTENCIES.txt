@@ -100,5 +100,7 @@ Neo4j
   loaded per session). The original evaluation set shared_buffers = 64 GB and effective_cache_size = 193 GB: they are
   now the defaults of PostgreSQL.
 - Memory: Neo4j has a page cache of 512 MB (conf/neo4j.conf), the other systems their defaults.
+- AeonG and HyGraph run their client inside their container, limited to one core: client and database share it,
+  while the client of STGraph, Neo4j, PGAge and Graphix (the evaluation) runs outside the container of the database.
 - HyGraph compose: chmod +x scripts/run_evaluation.sh.sh (typo); scripts/run_evaluation.sh runs
   python3 evaluate_hygraph.py from /hygraph, while the file is in src/smartbench/.

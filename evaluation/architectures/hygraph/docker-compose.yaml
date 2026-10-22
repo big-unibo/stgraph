@@ -4,6 +4,8 @@ services:
     image: mp4sini/hygraph:latest
     hostname: hygraph
     container_name: hygraph
+    # Single-core comparison with the other systems (see evaluation/README.md); the client runs in this container too
+    cpus: 1
     # Set by the evaluation (src/test/kotlin/it/unibo/tests/evaluation, SmartBenchEvaluation)
     environment:
       - DATASET

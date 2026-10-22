@@ -169,7 +169,7 @@ It:
 
 ## Reproducing The Results
 
-The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. STGraph, Neo4j, PGAge and Graphix run in containers limited to one core, configured with the least parallelism they allow; AeonG and HyGraph run as in their original evaluation. One system at a time, the evaluation downloads the data, starts the system, loads the data, runs the queries on the time windows of `time_constraints.yaml` and stops the system:
+The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. Every system runs in a container limited to one core (for AeonG and HyGraph, shared with their client) and is configured with the least parallelism it allows. One system at a time, the evaluation downloads the data, starts the system, loads the data, runs the queries on the time windows of `time_constraints.yaml` and stops the system:
 
 ```bash
 ./gradlew evaluate               # every combination of the evaluation section of test_config.yml

@@ -22,9 +22,10 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 
 ## Systems
 
-The databases of STGraph, Graphix, Neo4j and PGAge run in containers limited to one core (`cpus: 1`); their JVMs see
-one processor and use a single-threaded garbage collector. Each of them is configured to use as little parallelism as
-it allows; AeonG and HyGraph run as in their original evaluation.
+Every system runs in a container limited to one core (`cpus: 1`): the database of STGraph, Graphix, Neo4j and PGAge,
+whose client (the evaluation) runs outside; the whole evaluation of AeonG and HyGraph, client included. The JVMs see one
+processor and use a single-threaded garbage collector. Each system is configured to use as little parallelism as it
+allows.
 
 | System | Version | Deploy | Configuration |
 |--------|---------|--------|---------------|
@@ -55,7 +56,7 @@ The indexes built after the ingestion are timed as index time.
 | Graphix | the AsterixDB configuration of STGraph; one data feed and one query at a time |
 | Neo4j | Community edition: each query runs on one thread (no parallel runtime); `server.cypher.parallel.worker_limit=1`; one Bolt thread (`server.bolt.thread_pool_min_size=1`, `server.bolt.thread_pool_max_size=1`) and one HTTP worker thread (`server.threads.worker_count=1`); no page-cache prefetchers (`server.memory.pagecache.scan.prefetchers=0`); JVM with `-XX:ActiveProcessorCount=1`, `-XX:ParallelGCThreads=1`, `-XX:ConcGCThreads=1`; one session at a time |
 | PGAge | no parallel workers (`max_parallel_workers_per_gather=0`, `max_parallel_workers=0`, `max_parallel_maintenance_workers=0`); `max_worker_processes=2` (TimescaleDB launcher and one background worker), `timescaledb.max_background_workers=1`, `autovacuum_max_workers=1`; no prefetching (`effective_io_concurrency=0`, `maintenance_io_concurrency=0`); the same parallel-worker settings on the session of the loader and of the queries; one connection at a time |
-| AeonG, HyGraph | their original evaluation scripts |
+| AeonG, HyGraph | the container limited to one core, shared with their client; the other settings of their original evaluation scripts |
 
 Memory: the defaults of each system, except the page cache of Neo4j (512 MB) and the `work_mem` and
 `maintenance_work_mem` of PostgreSQL, from the original evaluation.
