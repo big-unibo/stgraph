@@ -3,10 +3,7 @@ package it.unibo.tests.evaluation
 import it.unibo.stats.TestConfig
 import it.unibo.tests.smartbench.SmartBenchEvaluation
 import java.io.File
-import java.util.logging.Logger
 import kotlin.system.exitProcess
-
-private val logger = Logger.getLogger("Evaluation")
 
 /**
  * The evaluation configured by the evaluation section of test_config.yml: for each dataset, size and system (one at a
@@ -17,35 +14,55 @@ private val logger = Logger.getLogger("Evaluation")
 fun main() {
     val config = TestConfig.loadConfig()
     val evaluation = EvaluationConfig.load()
+    val sizes = evaluation.datasets.associateWith { dataset ->
+        config.datasets[dataset]?.sizes?.map { TestConfig.normalizeSize(it) } ?: error("No sizes for the dataset $dataset in test_config.yml")
+    }
+    logParameters(evaluation, sizes)
     val failures = mutableListOf<String>()
-    for (dataset in evaluation.datasets) {
-        val sizes = config.datasets[dataset]?.sizes?.map { TestConfig.normalizeSize(it) }
-            ?: error("No sizes for the dataset $dataset in test_config.yml")
-        for (size in sizes) {
+    for ((dataset, datasetSizes) in sizes) {
+        for (size in datasetSizes) {
             for (system in evaluation.systems) {
-                logger.info("=== $dataset, $size: $system ===")
+                progress("=== $system | $dataset $size ===")
                 try {
                     when (dataset) {
                         "smartbench" -> SmartBenchEvaluation(config, evaluation, size).run(system)
                         else -> error("Dataset not supported by the evaluation: $dataset")
                     }
                 } catch (e: Exception) {
-                    logger.severe("$dataset, $size: $system failed: $e")
+                    progress("$system | $dataset $size: FAILED ($e)")
                     e.printStackTrace()
-                    failures += "$dataset, $size, $system: ${e.message}"
+                    failures += "$system | $dataset $size: ${e.message}"
                 }
             }
         }
     }
     if (failures.isNotEmpty()) {
-        logger.severe("Failed runs:\n" + failures.joinToString("\n"))
+        progress("evaluation done, ${failures.size} failed run(s):")
+        failures.forEach { progress("  $it") }
         exitProcess(1)
     }
+    progress("evaluation done")
+}
+
+private fun logParameters(evaluation: EvaluationConfig, sizes: Map<String, List<String>>) {
+    progress("evaluation parameters (evaluation section of test_config.yml):")
+    progress("  systems: ${evaluation.systems.joinToString()}")
+    progress("  datasets: " + sizes.entries.joinToString("; ") { (dataset, s) -> "$dataset (sizes: ${s.joinToString()})" })
+    progress("  ingestion: ${evaluation.ingestionIterations} iteration(s)")
+    progress(
+        "  queries: ${evaluation.queryIterations} iteration(s), selectivities: ${evaluation.selectivities.joinToString()}, " +
+            "ids: ${evaluation.queryIds.ifEmpty { listOf("all") }.joinToString()}"
+    )
+    progress("  STGraph: setups ${evaluation.setups.joinToString()}, threads ${evaluation.threads.joinToString()}, modes ${evaluation.modes.joinToString()}")
+    progress(
+        "  download: ${evaluation.download}, deploy: ${evaluation.deploy}, PGAge memory: " +
+            "shared_buffers ${evaluation.pgSharedBuffers ?: "of the paper"}, effective_cache_size ${evaluation.pgEffectiveCacheSize ?: "of the paper"}"
+    )
 }
 
 /** Runs [command] from the repository root, with the output on the console; fails if it does not succeed */
 fun runCommand(command: List<String>, env: Map<String, String> = emptyMap()) {
-    logger.info("$ ${command.joinToString(" ")}")
+    progress("  $ ${command.joinToString(" ")}")
     val process = ProcessBuilder(command).directory(File(".")).inheritIO().apply { environment().putAll(env) }.start()
     val code = process.waitFor()
     check(code == 0) { "Exit code $code: ${command.joinToString(" ")}" }
@@ -67,8 +84,13 @@ fun <T> deployed(
     ready: () -> Unit,
     block: () -> T
 ): T {
-    if (!enabled) return block()
+    val system = listOfNotNull(composeFile, service).joinToString(" ")
+    if (!enabled) {
+        progress("deploy | $system: not managed (deploy: false), expected to be running")
+        return block()
+    }
     val services = listOfNotNull(service)
+    progress("deploy | $system: starting")
     runCommand(listOf("docker", "compose", "-f", composeFile, "up", "-d") + services, env)
     try {
         val deadline = System.currentTimeMillis() + readyTimeoutMs
@@ -83,9 +105,10 @@ fun <T> deployed(
             }
             if (successes < readyChecks) Thread.sleep(2000)
         }
-        logger.info("$composeFile ready")
+        progress("deploy | $system: ready")
         return block()
     } finally {
+        progress("deploy | $system: stopping")
         runCommand(listOf("docker", "compose", "-f", composeFile, "stop") + services)
     }
 }
