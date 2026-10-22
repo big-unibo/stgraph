@@ -22,8 +22,9 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 
 ## Systems
 
-Every database runs in a container limited to one core (`cpus: 1`); its JVM, if any, sees one processor and uses a
-single-threaded garbage collector. Each system is configured to use as little parallelism as it allows.
+The databases of STGraph, Graphix, Neo4j and PGAge run in containers limited to one core (`cpus: 1`); their JVMs see
+one processor and use a single-threaded garbage collector. Each of them is configured to use as little parallelism as
+it allows; AeonG and HyGraph run as in their original evaluation.
 
 | System | Version | Deploy | Configuration |
 |--------|---------|--------|---------------|

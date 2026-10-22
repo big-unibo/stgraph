@@ -6,16 +6,10 @@ STGraph is multistore for spatio-temporal graphs including time-series. Its impl
 
 ## Artifact Reproduction
 
-This repository is set up to reproduce the paper's artifact through GitHub Actions using compact SmartBench and MIMIC-IV inputs. The workflow in `.github/workflows/build.yml` is the executable recipe: it makes the scripts executable and runs `./run.sh`, which prepares configuration, downloads inputs, starts Docker services, and runs Gradle.
+The paper's artifact is reproduced in two ways:
 
-The same steps can be run locally on Linux:
-
-```bash
-chmod +x ./gradlew *.sh
-./run.sh
-```
-
-The workflow is the reference path for the VLDB artifact evaluation badge.
+- [Reproducing The Artifact Locally](#reproducing-the-artifact-locally): `./run.sh`, the recipe of GitHub Actions (`.github/workflows/build.yml`), checks that STGraph works on compact SmartBench and MIMIC-IV inputs. It is the reference path for the VLDB artifact evaluation badge.
+- [Reproducing The Results](#reproducing-the-results): `./gradlew evaluate`, the evaluation of STGraph and of its competitors.
 
 The repository contains:
 
@@ -23,7 +17,7 @@ The repository contains:
 - in-memory, persistent in-memory, RocksDB, and AsterixDB-backed implementations;
 - a Kotlin query model with temporal filtering, joins, spatial predicates, aggregation, and time-series pushdown;
 - ingestion and query workloads for CI, SmartBench, MIMIC-IV, and synthetic datasets;
-- Docker and helper scripts for AsterixDB/PostgreSQL-backed experiments;
+- Docker deploys of AsterixDB and of the PostgreSQL of MIMIC-IV, and the evaluation against the competitors (`evaluation/`);
 - committed CSV outputs from selected experiment runs.
 
 ## Repository Structure
@@ -59,7 +53,8 @@ The repository contains:
 |   |-- time_constraints.yaml           Temporal ranges used by benchmark queries
 `-- src/test/kotlin/it/unibo/tests/
     |-- ci/                             Fast regression tests for graph, TS, temporal, and query behavior
-    |-- smartbench/                     SmartBench ingestion/query workloads and loader
+    |-- evaluation/                     Evaluation against the competitors (./gradlew evaluate)
+    |-- smartbench/                     SmartBench workloads and loaders (STGraph and competitors)
     |-- mimic/                          MIMIC-IV ingestion/query workloads and loaders
     `-- synth/                          Synthetic ingestion/query workloads, loaders, and query definitions
 ```
@@ -127,9 +122,7 @@ Useful benchmark filters:
 ./gradlew test --tests it.unibo.tests.synth.TestSynthQuery
 ```
 
-`run.sh` runs the artifact reproduction sequence used by GitHub Actions.
-
-The evaluation of STGraph and of its competitors (not a test, the CI does not run it), with the setup of every system, is described in `evaluation/README.md`: `./gradlew evaluate` runs every combination of the `evaluation` section of `test_config.yml`, `./gradlew evaluateSpecificRuns` the runs of its `specificRuns` section.
+`run.sh` runs the artifact reproduction sequence used by GitHub Actions (see [Reproducing The Artifact Locally](#reproducing-the-artifact-locally)).
 
 ## Configuration
 
@@ -153,22 +146,41 @@ The config defines:
 - `setups`: AsterixDB hosts, ports, and controller IPs;
 - `defaults`: fallback modes, setups, and thread counts;
 - `runs`: query benchmark matrices;
-- `ingestion`: ingestion benchmark matrix and enable flag.
+- `ingestion`: ingestion benchmark matrix and enable flag;
+- `evaluation`, `specificRuns`: the evaluation against the competitors (see [Reproducing The Results](#reproducing-the-results)).
 
 Temporal benchmark ranges are loaded from `src/main/resources/time_constraints.yaml`. Label metadata is loaded from `src/main/resources/labels.yaml`.
 
 ## Reproducing The Artifact Locally
 
-Run the same entry point used by `.github/workflows/build.yml`:
+`./run.sh` checks that STGraph works, as GitHub Actions does (`.github/workflows/build.yml`). On Linux (or Git Bash on Windows):
 
 ```bash
 chmod +x ./gradlew *.sh
 ./run.sh
 ```
 
+It:
+
+1. creates `src/main/resources/test_config.yml` from `test_config.example.yml` (SmartBench `xsmall`, MIMIC-IV `x1692200`, synthetic `full`) and the list of MIMIC-IV subjects from `mimic-iv_subjectids_tsids_short.csv`;
+2. downloads SmartBench `xsmall` and the MIMIC-IV `x1692200` dump;
+3. starts `docker-compose.yaml`: the AsterixDB of STGraph (configuration: `evaluation/architectures/stgraph/conf/cc.conf`) and the PostgreSQL of MIMIC-IV, which restores the downloaded dump on initialization (`datasets/init-mimic-pg.sh`);
+4. runs `./gradlew` (`clean`, `build`, `check`): the regression tests of `it.unibo.tests.ci`, and ingestion and queries of STGraph on the synthetic dataset, SmartBench `xsmall` and MIMIC-IV `x1692200`; on these two sizes, the SmartBench and MIMIC-IV queries check their cardinalities.
+
+## Reproducing The Results
+
+The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. STGraph, Neo4j, PGAge and Graphix run in containers limited to one core, configured with the least parallelism they allow; AeonG and HyGraph run as in their original evaluation. One system at a time, the evaluation downloads the data, starts the system, loads the data, runs the queries on the time windows of `time_constraints.yaml` and stops the system:
+
+```bash
+./gradlew evaluate               # every combination of the evaluation section of test_config.yml
+./gradlew evaluateSpecificRuns   # the runs of its specificRuns section
+```
+
+The results are appended to `results/` and plotted by `evaluation/postprocessing/STGraph.ipynb`. The setup of every system (versions, configuration files, data model and indexes, parallelism) and the reproduction steps are described in [`evaluation/README.md`](evaluation/README.md).
+
 ## Datasets
 
-Large datasets and graph dumps are not committed.
+Datasets and graph dumps are not committed; they have been uploaded into a specific cloud storage and will be accordingly downloaded during the evaluation phase following the size parameter specified in test setup.
 
 Workloads expect local paths such as:
 
@@ -189,32 +201,13 @@ The dataset helper downloads inputs into `datasets/original/<dataset>` and extra
 ./downloadDataset.sh mimic x1692200.dump
 ```
 
+The evaluation downloads the inputs it needs by itself (also the Cypher dumps of Neo4j, `smartbench/neo4j <size>`).
+
 Query benchmarks read graph dumps from:
 
 ```text
 datasets/dump/<dataset>/<size>/
 ```
-
-## Docker And Deployment Files
-
-For local AsterixDB:
-
-```bash
-docker compose up -d
-```
-
-The local compose file also starts PostgreSQL for MIMIC-IV experiments. The PostgreSQL service mounts `datasets/original/mimic` as `/dump` and `datasets/` as `/docker-entrypoint-initdb.d`, so `datasets/init-mimic-pg.sh` restores the downloaded dump on container initialization.
-
-For cluster/data-source experiments, see:
-
-```text
-src/main/deploy/asterixdb/data-source-single-machine-compose.yaml
-src/main/deploy/asterixdb/data-source-two-machine-compose.yaml
-```
-
-Those deployment compose files assume external infrastructure such as an `asterix-network`, NFS-backed volumes, Redis, and host placement constraints.
-
-The SmartBench competitors (Neo4j, PGAge, Graphix, AeonG, HyGraph) are deployed from `evaluation/architectures/`; see `evaluation/README.md`.
 
 ## Query Model
 
