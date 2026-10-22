@@ -83,50 +83,41 @@ class TestConfig {
                 threads = (defaultsRaw["threads"] as List<Int>)
             )
 
-            // --- runs ---
-            val runs = (raw["runs"] as List<Map<String, Any>>).map { r ->
+            // --- runs: the specific runs ---
+            val specificRuns = raw["specificRuns"] as? Map<String, Any> ?: error("No specificRuns section in $path: copy it from test_config.example.yml")
+            val runs = (specificRuns["runs"] as List<Map<String, Any>>).map { r ->
                 RunConfig(
                     approaches = r["approaches"] as List<String>,
                     datasets = r["datasets"] as List<String>,
+                    sizes = r["sizes"] as? List<Any>,
                     modes = r["modes"] as? List<String>,
                     threads = (r["threads"] as? List<Number>),
                     setups = r["setups"] as? List<String>
                 )
             }
 
-            val ingestionRaw = raw["ingestion"] as Map<String, Any>
-            val ingestion = ingestionRaw.let {
-                IngestionConfig(
-                    enabled = it["enabled"] as Boolean,
-                    datasets = it["datasets"] as List<String>,
-                    setups = it["setups"] as List<String>,
-                    threads = it["threads"] as List<Int>,
-                )
-            }
-
-            val config = Config(datasets, setups, defaults, runs, ingestion)
+            val config = Config(datasets, setups, defaults, runs)
             return config
         }
 
+        /** The specific runs of STGraph on [dataset]: the tests run only STGraph */
+        private fun stgraphRuns(config: Config, dataset: String): List<RunConfig> =
+            config.runs.filter { "stgraph" in it.approaches && dataset in it.datasets }
+
+        /** Loads [dataset] into STGraph for every size, setup and number of threads of the specific runs of STGraph on it */
         fun runIngestion(dataset: String, loader: (String, Int, String, List<String>) -> Loader) {
             val config: Config = loadConfig("src/main/resources/test_config.yml")
-            val ingestion = config.ingestion ?: return
-            if (!ingestion.enabled) return
-            val setups = ingestion.setups.map { name ->
-                name to config.setups[name]!!
-            }
-            ingestion.datasets.filter { it == dataset }.forEach { datasetName ->
-                val dataset = config.datasets[datasetName]!!
-                dataset.sizes.forEach { rawSize ->
-                    val size = normalizeSize(rawSize)
-                    setups.forEach { (setupName, setup) ->
-                        ingestion.threads.forEach { thread ->
-                            resetPort()
-                            logger.info("dataset: $datasetName size: $size threads: $thread setup: $setupName")
-                            loadDataset(loader(size, thread, setup.host, setup.controllerIPs), "stgraph", threads = thread, numMachines = setup.controllerIPs.toSet().size, datasetName, size)
-                        }
-                    }
-                }
+            val combinations = stgraphRuns(config, dataset).flatMap { run ->
+                val sizes = run.sizes ?: config.datasets[dataset]!!.sizes
+                val setupNames = run.setups ?: config.defaults.setups
+                val threads = run.threads?.map { it.toInt() } ?: config.defaults.threads
+                sizes.flatMap { rawSize -> setupNames.flatMap { setupName -> threads.map { Triple(normalizeSize(rawSize), setupName, it) } } }
+            }.distinct()
+            combinations.forEach { (size, setupName, thread) ->
+                val setup = config.setups[setupName] ?: error("Unknown setup: $setupName")
+                resetPort()
+                logger.info("dataset: $dataset size: $size threads: $thread setup: $setupName")
+                loadDataset(loader(size, thread, setup.host, setup.controllerIPs), "stgraph", threads = thread, numMachines = setup.controllerIPs.toSet().size, dataset, size)
             }
         }
 
@@ -135,7 +126,7 @@ class TestConfig {
             queryBuilder: (graph: Graph, size: String, mode: QueryMode) -> Querying?,
         ) {
             val config: Config = loadConfig("src/main/resources/test_config.yml")
-            config.runs.forEach { run ->
+            stgraphRuns(config, dataset).forEach { run ->
                 val modes = (run.modes ?: config.defaults.modes).map { QueryMode.valueOf(it) }
                 val threads = run.threads ?: config.defaults.threads
                 val setupNames = run.setups ?: config.defaults.setups
@@ -145,11 +136,11 @@ class TestConfig {
                 config.datasets.filter { (datasetName, _) -> datasetName == dataset }.forEach { (datasetName, datasetConfig) ->
                     matrixFromConfig(
                         dataset = datasetName,
-                        sizes = datasetConfig.sizes,
+                        sizes = run.sizes ?: datasetConfig.sizes,
                         setups = selectedSetups,
                         threads = threads,
                         modes = modes,
-                        approaches = run.approaches,
+                        approaches = listOf("stgraph"),
                         queryBuilder = queryBuilder
                     )
                 }
@@ -218,15 +209,7 @@ data class Config(
     val datasets: Map<String, DatasetConfig>,
     val setups: Map<String, SetupConfig>,
     val defaults: DefaultsConfig,
-    val runs: List<RunConfig>,
-    val ingestion: IngestionConfig
-)
-
-data class IngestionConfig(
-    val enabled: Boolean = false,
-    val datasets: List<String> = emptyList(),
-    val setups: List<String> = emptyList(),
-    val threads: List<Int> = emptyList(),
+    val runs: List<RunConfig>
 )
 
 data class DatasetConfig(
@@ -248,6 +231,7 @@ data class DefaultsConfig(
 data class RunConfig(
     val approaches: List<String>,
     val datasets: List<String>,
+    val sizes: List<Any>?,      // optional → fallback to datasets.<dataset>.sizes
     val modes: List<String>?,   // optional → fallback to defaults
     val threads: List<Number>?,
     val setups: List<String>?   // optional → fallback to defaults

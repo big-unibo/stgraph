@@ -72,15 +72,22 @@ Memory: the defaults of each system, except the page cache of Neo4j (512 MB) and
 
 ## Reproducing the results
 
-The runs are configured in `src/main/resources/test_config.yml` (copied from `test_config.example.yml`), by two
-independent sections with the same keys: systems, datasets, sizes, setups, threads and modes of STGraph, iterations,
-selectivities and ids of the queries, download and deploy. The sizes default to `datasets.<dataset>.sizes`, the time
-windows are the ones of `src/main/resources/time_constraints.yaml`. From the repository root:
+The runs are configured in `src/main/resources/test_config.yml` (copied from `test_config.example.yml`):
+
+| Section | Content |
+|---------|---------|
+| `datasets`, `setups` | the sizes of each dataset; the AsterixDB setups of STGraph |
+| `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy` |
+| `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
+| `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
+
+The sizes default to `datasets.<dataset>.sizes`, the time windows are the ones of
+`src/main/resources/time_constraints.yaml`. From the repository root:
 
 | Task | Section | What it runs |
 |------|---------|--------------|
 | `./gradlew evaluate` | `evaluation` | every combination of its parameters |
-| `./gradlew evaluateSpecificRuns` | `specificRuns` | its runs, one after the other, each one with its own parameters |
+| `./gradlew evaluateSpecificRuns` | `specificRuns` | its runs, one after the other |
 
 For each dataset, size and system, one system at a time, a run:
 1. downloads the missing data (`smartbench <size>`: JSON dataset of STGraph, PGAge and Graphix; `smartbench/neo4j <size>`:

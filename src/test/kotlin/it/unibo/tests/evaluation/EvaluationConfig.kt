@@ -6,10 +6,11 @@ import java.io.File
 
 /**
  * A configuration of the evaluation, from test_config.yml (see test_config.example.yml): which systems run on which
- * datasets, and how. The setups of STGraph come from the rest of the file (TestConfig).
+ * datasets, and how. Two levels, which take the parameters they do not set from the defaults section:
  * - [load]: the evaluation section, i.e., every combination of its parameters (./gradlew evaluate);
- * - [loadSpecificRuns]: the entries of the specificRuns section, each one with all its parameters, independent of the
- *   evaluation section (./gradlew evaluateSpecificRuns).
+ * - [loadSpecificRuns]: the runs of the specificRuns section, one after the other (./gradlew evaluateSpecificRuns),
+ *   the same runs that the tests of STGraph read (TestConfig).
+ * The setups of STGraph and the sizes of the datasets come from the rest of the file (TestConfig).
  */
 data class EvaluationConfig(
     val systems: List<String>,
@@ -39,41 +40,50 @@ data class EvaluationConfig(
         /** The evaluation section of [path] */
         @Suppress("UNCHECKED_CAST")
         fun load(path: String = "src/main/resources/test_config.yml"): EvaluationConfig {
-            val section = yaml(path)["evaluation"] as? Map<String, Any?>
+            val yaml = yaml(path)
+            val section = yaml["evaluation"] as? Map<String, Any?>
                 ?: error("No evaluation section in $path: copy it from test_config.example.yml")
-            return parse(section, path)
+            return parse(section, defaults(yaml), path)
         }
 
         /** The runs of the specificRuns section of [path] */
         @Suppress("UNCHECKED_CAST")
         fun loadSpecificRuns(path: String = "src/main/resources/test_config.yml"): List<EvaluationConfig> {
-            val runs = yaml(path)["specificRuns"] as? List<Map<String, Any?>>
-            require(!runs.isNullOrEmpty()) { "No specificRuns section in $path: copy it from test_config.example.yml" }
-            return runs.map { parse(it, path) }
+            val yaml = yaml(path)
+            val runs = (yaml["specificRuns"] as? Map<String, Any?>)?.get("runs") as? List<Map<String, Any?>>
+            require(!runs.isNullOrEmpty()) { "No specificRuns.runs in $path: copy them from test_config.example.yml" }
+            return runs.map { parse(it, defaults(yaml), path) }
         }
 
         private fun yaml(path: String): Map<String, Any?> = Yaml().load(File(path).inputStream())
 
-        /** The parameters of [map], with the defaults for the ones it does not set */
         @Suppress("UNCHECKED_CAST")
-        private fun parse(map: Map<String, Any?>, path: String): EvaluationConfig {
-            val ingestion = map["ingestion"] as? Map<String, Any?> ?: emptyMap()
-            val queries = map["queries"] as? Map<String, Any?> ?: emptyMap()
+        private fun defaults(yaml: Map<String, Any?>): Map<String, Any?> = yaml["defaults"] as? Map<String, Any?> ?: emptyMap()
+
+        /** The parameters of [map]; the ones it does not set come from [defaults], then from the built-in defaults */
+        @Suppress("UNCHECKED_CAST")
+        private fun parse(map: Map<String, Any?>, defaults: Map<String, Any?>, path: String): EvaluationConfig {
+            fun section(m: Map<String, Any?>, key: String) = m[key] as? Map<String, Any?> ?: emptyMap()
             fun strings(m: Map<String, Any?>, key: String): List<String>? = (m[key] as? List<Any?>)?.map { it.toString() }
+            fun strings(key: String) = strings(map, key) ?: strings(defaults, key)
+            fun int(sectionKey: String, key: String): Int? = (section(map, sectionKey)[key] ?: section(defaults, sectionKey)[key]) as? Int
+            fun boolean(key: String): Boolean? = (map[key] ?: defaults[key]) as? Boolean
 
             val config = EvaluationConfig(
-                systems = strings(map, "systems") ?: emptyList(),
+                // "systems" in the evaluation section, "approaches" in the runs (as in the runs of the tests)
+                systems = strings(map, "systems") ?: strings(map, "approaches") ?: emptyList(),
                 datasets = strings(map, "datasets") ?: emptyList(),
                 sizes = strings(map, "sizes"),
-                setups = strings(map, "setups") ?: listOf("c0"),
-                threads = strings(map, "threads")?.map { it.toInt() } ?: listOf(1),
-                modes = strings(map, "modes")?.map { QueryMode.valueOf(it) } ?: listOf(QueryMode.OPTIMIZED),
-                ingestionIterations = ingestion["iterations"] as? Int ?: 1,
-                queryIterations = queries["iterations"] as? Int ?: 1,
-                selectivities = strings(queries, "selectivities") ?: listOf("increased"),
-                queryIds = strings(queries, "ids") ?: emptyList(),
-                download = map["download"] as? Boolean ?: true,
-                deploy = map["deploy"] as? Boolean ?: true
+                setups = strings("setups") ?: listOf("c0"),
+                threads = strings("threads")?.map { it.toInt() } ?: listOf(1),
+                modes = strings("modes")?.map { QueryMode.valueOf(it) } ?: listOf(QueryMode.OPTIMIZED),
+                ingestionIterations = int("ingestion", "iterations") ?: 1,
+                queryIterations = int("queries", "iterations") ?: 1,
+                selectivities = strings(section(map, "queries"), "selectivities") ?: strings(section(defaults, "queries"), "selectivities")
+                    ?: listOf("increased"),
+                queryIds = strings(section(map, "queries"), "ids") ?: strings(section(defaults, "queries"), "ids") ?: emptyList(),
+                download = boolean("download") ?: true,
+                deploy = boolean("deploy") ?: true
             )
             val unknown = config.systems - knownSystems.toSet()
             require(unknown.isEmpty()) { "Unknown systems in $path: $unknown (known: $knownSystems)" }

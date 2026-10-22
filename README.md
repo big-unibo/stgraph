@@ -144,10 +144,9 @@ The config defines:
 
 - `datasets`: dataset names and sizes;
 - `setups`: AsterixDB hosts, ports, and controller IPs;
-- `defaults`: fallback modes, setups, and thread counts;
-- `runs`: query benchmark matrices;
-- `ingestion`: ingestion benchmark matrix and enable flag;
-- `evaluation`, `specificRuns`: the evaluation against the competitors (see [Reproducing The Results](#reproducing-the-results)).
+- `defaults`: fallback modes, setups, and thread counts (and the parameters of the evaluation);
+- `specificRuns.runs`: the runs to execute; the tests ingest and query STGraph on the datasets of the runs with `stgraph` among their `approaches`, `./gradlew evaluateSpecificRuns` executes all of them;
+- `evaluation`: every combination of its parameters, `./gradlew evaluate` (see [Reproducing The Results](#reproducing-the-results)).
 
 Temporal benchmark ranges are loaded from `src/main/resources/time_constraints.yaml`. Label metadata is loaded from `src/main/resources/labels.yaml`.
 
@@ -173,7 +172,7 @@ The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, 
 
 ```bash
 ./gradlew evaluate               # every combination of the evaluation section of test_config.yml
-./gradlew evaluateSpecificRuns   # the runs of its specificRuns section
+./gradlew evaluateSpecificRuns   # the runs of the specificRuns section
 ```
 
 The results are appended to `results/` and plotted by `evaluation/postprocessing/STGraph.ipynb`. The setup of every system (versions, configuration files, data model and indexes, parallelism) and the reproduction steps are described in [`evaluation/README.md`](evaluation/README.md).

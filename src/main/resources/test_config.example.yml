@@ -21,34 +21,14 @@ setups:
   #   port: 19002
   #   controllerIPs: [ "192.168.1.11", "192.168.1.12" ]
 
+# Parameters common to the specific runs and to the evaluation: each run, and the evaluation, can set its own
 defaults:
-  modes: [ "OPTIMIZED" ]
-  setups: [ "c0" ]
-  threads: [ 1 ]
-
-runs:
-  - approaches: [ "stgraph" ]
-    datasets: [ "mimic" ]
-    modes: [ "OPTIMIZED" ]
-
-ingestion:
-  enabled: true
-  datasets: [ "synth", "smartbench", "mimic" ]
-  setups: [ "c0" ]
-  threads: [ 1 ]
-
-# The evaluation of STGraph and of its competitors (./gradlew evaluate, see evaluation/README.md); not used by the tests
-evaluation:
-  # stgraph (reference loader and queries), stgraph-std (ingestion only, through the shared loader skeleton),
-  # neo4j, pgage, graphix, aeong, hygraph: one at a time, in this order
-  systems: [ "stgraph", "neo4j", "pgage", "graphix" ]
-  # The sizes are the ones of datasets.<dataset>.sizes
-  datasets: [ "smartbench" ]
-  # Setups, threads and query modes of STGraph; the competitors run single-threaded, in OPTIMIZED mode.
+  # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode.
   # A local setup (host: localhost) runs on the AsterixDB of docker-compose.yaml; a cluster must be already running
+  modes: [ "OPTIMIZED" ]
   setups: [ "c0" ]
   threads: [ 1 ]
-  modes: [ "OPTIMIZED" ]
+  # The rest is used only by the evaluation (./gradlew evaluate, ./gradlew evaluateSpecificRuns), not by the tests
   ingestion:
     iterations: 1
   queries:
@@ -62,32 +42,17 @@ evaluation:
   # Starts each system (docker compose up -d) before its runs and stops it after; false: the systems are already running
   deploy: true
 
-# Targeted runs (./gradlew evaluateSpecificRuns), one after the other, independent of the evaluation section: each run
-# has the keys of the evaluation section (the missing ones take their defaults), plus sizes (default: the ones of
-# datasets.<dataset>.sizes)
+# Only the listed runs: the tests of STGraph (CI) run the ones with stgraph among the approaches, ./gradlew
+# evaluateSpecificRuns runs all of them. Each run sets approaches (stgraph, stgraph-std, neo4j, pgage, graphix, aeong,
+# hygraph) and datasets, optionally sizes (default: datasets.<dataset>.sizes) and any key of the defaults
 specificRuns:
-  - systems: [ "stgraph" ]
-    datasets: [ "smartbench" ]
-    sizes: [ "small" ]
-    setups: [ "c0" ]
-    threads: [ 1, 2, 4 ]
-    modes: [ "OPTIMIZED" ]
-    ingestion:
-      iterations: 1
-    queries:
-      iterations: 10
-      selectivities: [ "increased" ]
-      ids: [ ]
-    download: true
-    deploy: true
-  - systems: [ "neo4j", "pgage", "graphix" ]
-    datasets: [ "smartbench" ]
-    sizes: [ "small" ]
-    ingestion:
-      iterations: 1
-    queries:
-      iterations: 5
-      selectivities: [ "increased" ]
-      ids: [ "EnvironmentAggregate", "MaintenanceOwners" ]
-    download: true
-    deploy: true
+  runs:
+    - approaches: [ "stgraph" ]
+      datasets: [ "smartbench", "mimic" ]
+      modes: [ "OPTIMIZED" ]
+
+# Every combination of its parameters (./gradlew evaluate, see evaluation/README.md); not used by the tests. It sets
+# systems (one at a time, in this order) and datasets, optionally sizes and any key of the defaults
+evaluation:
+  systems: [ "stgraph", "neo4j", "pgage", "graphix" ]
+  datasets: [ "smartbench" ]

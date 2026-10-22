@@ -70,7 +70,7 @@ tasks.jar {
 // test_config.yml (evaluation/README.md). Not tests: the CI does not run them.
 mapOf(
     "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to emptyList()),
-    "evaluateSpecificRuns" to ("Runs the specificRuns of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns"))
+    "evaluateSpecificRuns" to ("Runs the specificRuns.runs of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns"))
 ).forEach { (name, task) ->
     tasks.register<JavaExec>(name) {
         description = task.first
