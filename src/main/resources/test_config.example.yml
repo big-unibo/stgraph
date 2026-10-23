@@ -6,6 +6,12 @@ datasets:
 
   mimic:
     sizes: [ "x1692200" ]
+    # PostgreSQL the ingestion reads the MIMIC-IV data from (here, the mimic-postgres of docker-compose.yaml)
+    postgres_endpoint: "localhost"
+    port: 5434
+    database: "mimic-iv"
+    user: "postgres"
+    password: "password"
 
 # AsterixDB of STGraph: host and port of the cluster controller (CC, query API), addresses of the node controllers
 # (NC, which receive the data feeds)

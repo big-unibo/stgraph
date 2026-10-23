@@ -5,6 +5,7 @@ import it.unibo.graph.asterixdb.AsterixDBTSM
 import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.interfaces.PropType
 import it.unibo.graph.utils.*
+import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import kotlin.collections.set
 
@@ -12,8 +13,9 @@ class MimicIVSTGraph(
     size: String,
     threads: Int = 1,
     host: String = "localhost",
-    controllerIPs: List<String> = listOf("localhost")
-) : AbstractMimicIVLoader(mimicLimit(size), threads = threads) {
+    controllerIPs: List<String> = listOf("localhost"),
+    postgres: PostgresConfig = PostgresConfig()
+) : AbstractMimicIVLoader(mimicLimit(size), threads = threads, postgres = postgres) {
     val s = if (mimicLimit(size) == Long.MAX_VALUE) "full" else size
     val g = MemoryGraphACID(path = "datasets/dump/mimic/$s")
     val t = AsterixDBTSM.createDefault(g, "mimic_$s", host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else { threads * 10 }, multiTs = true)

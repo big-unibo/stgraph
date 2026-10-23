@@ -3,6 +3,7 @@ package it.unibo.tests.mimic.loaders
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import it.unibo.graph.utils.EVENT
 import it.unibo.graph.utils.getTime
+import it.unibo.stats.PostgresConfig
 import it.unibo.tests.systems.GraphixClient
 import it.unibo.tests.smartbench.loaders.TSRecord
 
@@ -22,8 +23,9 @@ class MimicIVGraphix(
     private val insertBatchSize: Int = 500,
     // End of the event ingestion: the count must not change for this long before the feed is stopped
     private val stableWindowMs: Long = 10_000,
-    private val completionTimeoutMs: Long = 60 * 60 * 1000
-) : AbstractMimicIVLoader(mimicLimit(size), threads = 1) {
+    private val completionTimeoutMs: Long = 60 * 60 * 1000,
+    postgres: PostgresConfig = PostgresConfig()
+) : AbstractMimicIVLoader(mimicLimit(size), threads = 1, postgres = postgres) {
     private val dataverse = "mimic_graphix_${if (mimicLimit(size) == Long.MAX_VALUE) "full" else size}"
     private val graphix = GraphixClient(host, port, dataverse)
     private val mapper = jacksonObjectMapper()

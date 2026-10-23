@@ -1,5 +1,6 @@
 package it.unibo.tests.mimic.loaders
 
+import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import org.neo4j.driver.AuthTokens
 import org.neo4j.driver.Driver
@@ -10,7 +11,8 @@ import java.io.File
 
 class MimicIVAeonG(
     limit: Long,
-) : AbstractMimicIVLoader(limit, threads = 1) {
+    postgres: PostgresConfig = PostgresConfig()
+) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
 
     private val baseDir = File("datasets/dump/aeong/mimic/$limit").apply {
         mkdirs()

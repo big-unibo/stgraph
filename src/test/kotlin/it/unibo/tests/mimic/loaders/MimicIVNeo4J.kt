@@ -1,5 +1,6 @@
 package it.unibo.tests.mimic.loaders
 
+import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import it.unibo.tests.systems.neo4jDriver
 import org.neo4j.driver.Driver
@@ -22,7 +23,8 @@ class MimicIVNeo4J(
     user: String = "neo4j",
     password: String = "password",
     val csv: Boolean,
-) : AbstractMimicIVLoader(limit, threads = 1) {
+    postgres: PostgresConfig = PostgresConfig(),
+) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
 
     private val driver: Driver = neo4jDriver(uri, user, password)
     private val session: Session = driver.session()

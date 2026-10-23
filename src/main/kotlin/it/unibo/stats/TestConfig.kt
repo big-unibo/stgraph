@@ -60,8 +60,17 @@ class TestConfig {
             // --- datasets ---
             val datasets = (raw["datasets"] as Map<String, Map<String, Any>>)
                 .mapValues { (_, v) ->
+                    val postgres = PostgresConfig()
                     DatasetConfig(
-                        sizes = v["sizes"] as List<Any>
+                        sizes = v["sizes"] as List<Any>,
+                        // Each missing key: the one of the PostgreSQL of docker-compose.yaml
+                        postgres = PostgresConfig(
+                            host = v["postgres_endpoint"]?.toString() ?: postgres.host,
+                            port = v["port"]?.toString()?.toInt() ?: postgres.port,
+                            database = v["database"]?.toString() ?: postgres.database,
+                            user = v["user"]?.toString() ?: postgres.user,
+                            password = v["password"]?.toString() ?: postgres.password
+                        )
                     )
                 }
 
@@ -212,7 +221,20 @@ data class Config(
 )
 
 data class DatasetConfig(
-    val sizes: List<Any>
+    val sizes: List<Any>,
+    val postgres: PostgresConfig = PostgresConfig()
+)
+
+/**
+ * The PostgreSQL the ingestion reads the dataset from (MIMIC-IV: keys postgres_endpoint, port, database, user and
+ * password of datasets.mimic); by default, the mimic-postgres of docker-compose.yaml
+ */
+data class PostgresConfig(
+    val host: String = "localhost",
+    val port: Int = 5434,
+    val database: String = "mimic-iv",
+    val user: String = "postgres",
+    val password: String = "password"
 )
 
 data class SetupConfig(

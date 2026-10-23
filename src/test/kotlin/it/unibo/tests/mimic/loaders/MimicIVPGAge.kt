@@ -1,6 +1,7 @@
 package it.unibo.tests.mimic.loaders
 
 import it.unibo.graph.asterixdb.AsterixDBTS
+import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import it.unibo.tests.systems.pgAgeConnection
 import java.io.File
@@ -10,8 +11,10 @@ class MimicIVPGAge(
     limit: Long,
     url: String = "jdbc:postgresql://localhost:5435/mimic-iv",
     user: String = "postgres",
-    password: String = "password"
-) : AbstractMimicIVLoader(limit, threads = 1)  {
+    password: String = "password",
+    // The PostgreSQL of MIMIC-IV the data is read from (url, user and password: the one of PGAge)
+    postgres: PostgresConfig = PostgresConfig()
+) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres)  {
     private val graphName = "mimic_${if (limit == Long.MAX_VALUE) "full" else limit}"
     // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path, no parallel workers),
     // applied once: not at every statement, inside the timed ingestion

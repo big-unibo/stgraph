@@ -2,6 +2,7 @@ package it.unibo.tests.mimic.loaders
 import it.unibo.graph.asterixdb.dateToTimestamp
 import it.unibo.graph.utils.getTime
 import it.unibo.stats.Loader
+import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import java.io.File
 import java.sql.DriverManager
@@ -26,11 +27,12 @@ interface MimicIVLoader: Loader {
     fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean)
 }
 
-abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, host: String = "localhost", port: Int = 5434, user: String = "postgres", pwd: String = "password"): MimicIVLoader {
+/** Reads the MIMIC-IV data from the PostgreSQL [postgres] (datasets.mimic of test_config.yml) */
+abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres: PostgresConfig = PostgresConfig()): MimicIVLoader {
     val logger = Logger.getLogger(this.javaClass.name)
-    val url = "jdbc:postgresql://$host:$port/mimic-iv"
-    val user = user
-    val password = pwd
+    val url = "jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}"
+    val user = postgres.user
+    val password = postgres.password
     var gsTime: Long = 0
     var tsTime: Long = 0
     var gsCard: Long = 0

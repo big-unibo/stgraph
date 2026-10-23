@@ -143,7 +143,7 @@ cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
 
 The config defines:
 
-- `datasets`: dataset names and sizes;
+- `datasets`: dataset names and sizes; for MIMIC-IV, also the PostgreSQL the ingestion reads the data from (`postgres_endpoint`, `port`, `database`, `user`, `password`; default: the one of `docker-compose.yaml`);
 - `setups`: AsterixDB hosts, ports, and controller IPs;
 - `defaults`: fallback modes, setups, and thread counts (and the parameters of the evaluation);
 - `specificRuns.runs`: the runs to execute; the tests ingest and query STGraph on the datasets of the runs with `stgraph` among their `approaches`, `./gradlew evaluateSpecificRuns` executes all of them;
