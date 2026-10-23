@@ -3,7 +3,7 @@ WITH device_env AS (
     SELECT *
     FROM cypher(
         'smartbench_graph', $$
-            MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor {name: "Thermometer3"})-[:hasTemperature]-(temp:Temperature)
+            MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor {id: "thermometer3"})-[:hasTemperature]-(temp:Temperature)
             RETURN DISTINCT device AS device_node,
                             environment AS environment_node,
                             device.id AS device_id
@@ -15,4 +15,6 @@ SELECT DISTINCT
 FROM device_env de
 JOIN public.measurements m
     ON m.sensor_id = de.device_id
-WHERE m.val > 0;
+WHERE m.val > 0
+  AND m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
+  AND m.time < to_timestamp({TSTAMPTO_PARAM} / 1000.0);

@@ -23,8 +23,8 @@ env_avg AS (
     JOIN (
         SELECT location, val
         FROM public.measurements
-        WHERE time BETWEEN to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
-                        AND to_timestamp({TSTAMPTO_PARAM} / 1000.0)
+        WHERE time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
+          AND time < to_timestamp({TSTAMPTO_PARAM} / 1000.0)
     ) m
     ON ST_Intersects(m.location, e.geom)
     GROUP BY e.environment_node

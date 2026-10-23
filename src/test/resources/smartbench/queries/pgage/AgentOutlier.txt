@@ -16,6 +16,6 @@ SELECT
 FROM env_device
 JOIN public.measurements m
     ON m.sensor_id = env_device.device_id
-WHERE m.time BETWEEN to_timestamp(0 / 1000.0)
-                  AND to_timestamp({TSTAMPTO_PARAM} / 1000.0)
+WHERE m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
+  AND m.time < to_timestamp({TSTAMPTO_PARAM} / 1000.0)
 GROUP BY env_device.device_node, env_device.environment_node;

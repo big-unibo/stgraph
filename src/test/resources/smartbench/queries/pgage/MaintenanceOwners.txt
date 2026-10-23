@@ -17,6 +17,6 @@ FROM device_env_owner deo
 JOIN public.measurements m
     ON m.sensor_id = deo.device_id
 WHERE m.val > 65
-  AND m.time BETWEEN to_timestamp({TSTAMPFROM_PARAM} / 1000.0)          -- inizio
-                  AND to_timestamp({TSTAMPTO_PARAM} / 1000.0)  -- fine
+  AND m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
+  AND m.time < to_timestamp({TSTAMPTO_PARAM} / 1000.0)
 GROUP BY deo.device_id, deo.environment_id, deo.owner_id;

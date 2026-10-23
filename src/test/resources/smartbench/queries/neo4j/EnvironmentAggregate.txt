@@ -6,7 +6,7 @@ WITH
     platformType.id AS platformTypeId,
     owner.id        AS ownerId,
     environment.id  AS environmentId,
-    AVG(temp.value) AS avgValue
+    AVG(temp.temperature) AS avgValue
 RETURN
     platformTypeId,
     ownerId,

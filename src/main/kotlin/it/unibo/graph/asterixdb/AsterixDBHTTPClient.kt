@@ -98,6 +98,21 @@ class AsterixDBHTTPClient(
         }
     }
 
+    /**
+     * Half-closes the data feed connection and waits until AsterixDB has read the whole stream (it closes its side
+     * once it reaches the end of the stream): the feed can then be stopped without losing records, while stopping it
+     * when it is still reading from the socket loses the unread ones. Not used by STGraph: for an engine that keeps
+     * the last frame of a feed until the feed stops (the AsterixDB of Graphix), where the feed must be stopped before
+     * the last record is readable.
+     */
+    fun awaitDataFeedRead() {
+        if (isFeedConnectionOpen) {
+            writer.flush()
+            socket.shutdownOutput()
+            socket.getInputStream().read()
+        }
+    }
+
     fun stopFeed() = queryAsterixDB("USE $dataverse; STOP FEED $feedName;", blockOnError = false) // The feed could not exist yet
 
     fun createDataset(multiTs: Boolean): Boolean {

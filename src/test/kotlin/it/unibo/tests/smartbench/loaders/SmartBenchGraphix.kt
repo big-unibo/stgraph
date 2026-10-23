@@ -13,6 +13,7 @@ import it.unibo.graph.utils.TO_N
 import it.unibo.graph.utils.TSID
 import it.unibo.graph.utils.TYPE
 import it.unibo.graph.utils.VALUE
+import it.unibo.graph.utils.getTime
 import it.unibo.tests.systems.GraphixClient
 import org.json.JSONObject
 import org.locationtech.jts.io.WKTReader
@@ -34,8 +35,9 @@ import org.locationtech.jts.io.WKTWriter
  *   towards each of its events (through `TimeSeries`).
  *
  * Timed as [SmartBenchSTGraph] and [SmartBenchDataLoader]: the events sent by each worker (not its flush), then its
- * wait until its last event is readable, without the last read (time-series time); the feeds closed as STGraph
- * closes them, then the R-tree on the event locations (index time).
+ * wait until its last event is readable, without the last read (time-series time); the closes of the feeds and the
+ * R-tree on the event locations (index time). One difference, forced by the AsterixDB version of Graphix: each worker
+ * closes its feed before waiting for its last event, once AsterixDB has read its whole stream (see [awaitLast]).
  */
 class SmartBenchGraphix(
     size: String,
@@ -70,6 +72,8 @@ class SmartBenchGraphix(
     private val feeds: List<AsterixDBHTTPClient> = (0 until threads).map { graphix.feed(eventsDataset, firstFeedPort + it) }
     // tsid of each time series: its number, as the id of the time-series node in STGraph
     private val tsIdOf = mutableMapOf<SmartBenchTimeSeries, Long>()
+    // Time to close the feed of each worker (index time, see awaitLast)
+    private val closeTimes = LongArray(threads)
 
     init {
         // Schema (not timed, as the graph/TS clean-up of the STGraph loader). The types of the events are the ones
@@ -137,14 +141,25 @@ class SmartBenchGraphix(
         feeds[worker].flush()
     }
 
-    /** Waits until the last event of the worker is readable, as [SmartBenchSTGraph] */
-    override fun awaitLast(worker: Int, ts: SmartBenchTimeSeries, last: SmartBenchEvent): Long =
-        waitReadable { isStored(tsIdOf.getValue(ts), last.timestamp) }
+    /**
+     * Waits until the last event of the worker is readable, as [SmartBenchSTGraph], with the one difference forced by
+     * the engine. The AsterixDB of Graphix (0.9.9-SNAPSHOT) stores the last, partial frame of a feed only when the
+     * feed stops (the 0.9.9 of STGraph stores it while the feed is open), so the last events are never readable while
+     * the feed is open. Hence, before the wait:
+     * 1. wait until AsterixDB has read the whole stream of the worker (time-series time, as the rest of the wait):
+     *    stopping the feed earlier loses the unread events;
+     * 2. close the feed as STGraph closes its feeds (AsterixDBTSM.close), timed as index time, as in STGraph.
+     */
+    override fun awaitLast(worker: Int, ts: SmartBenchTimeSeries, last: SmartBenchEvent): Long {
+        val read = getTime { feeds[worker].awaitDataFeedRead() }
+        closeTimes[worker] = getTime { feeds[worker].closeDataFeedConnection(closeRemote = true) }
+        return read + waitReadable { isStored(tsIdOf.getValue(ts), last.timestamp) }
+    }
 
-    // The feeds closed as STGraph closes them (AsterixDBTSM.close), then the spatial index on the event locations, as
-    // the one STGraph creates (AsterixDBHTTPClient.createSpatialIndex)
+    // The closes of the feeds (see awaitLast), as STGraph closes its feeds at the beginning of its index time, then the
+    // spatial index on the event locations, as the one STGraph creates (AsterixDBHTTPClient.createSpatialIndex)
     override fun createIndexes() {
-        feeds.forEach { it.closeDataFeedConnection(closeRemote = true) }
+        indexesTime += closeTimes.sum()
         graphix.exec("USE $dataverse; CREATE INDEX ${LOCATION}Idx ON `$eventsDataset`($LOCATION) TYPE RTREE;")
     }
 

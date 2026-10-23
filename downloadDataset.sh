@@ -27,7 +27,7 @@ fi
 
 URL="${BASE_URL}/${DATASET}/${FILENAME}"
 
-curl -fL --retry 3 -o "$FILENAME" "$URL"
+curl -k -fL --retry 3 -o "$FILENAME" "$URL"
 
 if [[ ! -f "$FILENAME" ]]; then
     echo "Error: failed to download ${URL}"
