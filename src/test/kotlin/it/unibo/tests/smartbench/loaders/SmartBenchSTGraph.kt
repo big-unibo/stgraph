@@ -3,7 +3,6 @@ package it.unibo.tests.smartbench.loaders
 import it.unibo.graph.asterixdb.AsterixDBTS
 import it.unibo.graph.asterixdb.AsterixDBTSM
 import it.unibo.graph.inmemory.MemoryGraphACID
-import it.unibo.graph.utils.getTime
 import it.unibo.graph.utils.propTypeFromValue
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -12,11 +11,9 @@ import java.util.*
 /**
  * STGraph on the [SmartBenchJsonLoader] skeleton: the same graph and time series as [SmartBenchDataLoader], which
  * stays the reference loader of STGraph (and of the CI). This one exists to measure the effect of the shared
- * measurement boundaries. Differences in what is timed:
- * - the check of the time-series file of a sensor is not timed (it is graph-store time in [SmartBenchDataLoader]);
- * - the flush of each series is time-series time (not timed in [SmartBenchDataLoader]);
- * - the wait until the last event of each worker is readable happens once all the workers are done, and includes
- *   the last (successful) read, while [SmartBenchDataLoader] waits inside each worker and excludes it.
+ * measurement boundaries. The only difference in what is timed: the check of the time-series file of a sensor is
+ * not timed (it is graph-store time in [SmartBenchDataLoader]). As there, the flush of each series is not timed, and
+ * each worker waits until its last event is readable, without the last (successful) read.
  */
 class SmartBenchSTGraph(
     size: String,
@@ -34,8 +31,6 @@ class SmartBenchSTGraph(
     private val leftoverEdgesList: MutableList<Triple<String, Long, String>> = mutableListOf()
     private val edgeLabelCache: MutableMap<String, String> = mutableMapOf()
     private val tsOf: MutableMap<SmartBenchTimeSeries, AsterixDBTS> = mutableMapOf()
-    // Last series and last timestamp loaded by each worker
-    private val lastOf = arrayOfNulls<Pair<AsterixDBTS, Long>>(threads)
 
     init {
         Files.createDirectories(Paths.get(graphPath))
@@ -80,21 +75,19 @@ class SmartBenchSTGraph(
         events.forEach { event ->
             series.add(label = event.label, timestamp = event.timestamp, location = event.location, value = event.value, isUpdate = false, flush = false)
         }
-        series.connection.flush()
-        if (events.isNotEmpty()) lastOf[worker] = series to events.last().timestamp
     }
 
-    /** Waits until the last event sent by each worker is readable */
-    override fun endEvents(): Long = getTime {
-        for ((series, timestamp) in lastOf.filterNotNull()) {
-            while (true) {
-                try {
-                    series.get(timestamp)
-                    break
-                } catch (_: Exception) {
-                    Thread.sleep(1)
-                }
-            }
+    override fun endSeries(worker: Int, ts: SmartBenchTimeSeries) {
+        tsOf.getValue(ts).connection.flush()
+    }
+
+    /** Waits until the last event of the worker is readable */
+    override fun awaitLast(worker: Int, ts: SmartBenchTimeSeries, last: SmartBenchEvent): Long = waitReadable {
+        try {
+            tsOf.getValue(ts).get(last.timestamp)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

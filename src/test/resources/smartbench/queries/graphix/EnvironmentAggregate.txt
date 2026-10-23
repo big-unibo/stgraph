@@ -1,6 +1,6 @@
 FROM GRAPH SmartBench
 MATCH (pt:`PlatformType`)<-[:`hasType_`]-(p:`Platform`)-[:`hasOwner`]->(u:`User`)<-[:`hasOwner`]-(s:`Sensor`),
       (it:`InfrastructureType`)<-[:`hasType_`]-(i:`Infrastructure`)<-[:`hasCoverage`]-(s)-[:`hasTemperature`]->(m:`Temperature`)
-WHERE m.`timestamp` >= {TSTAMPFROM_PARAM} AND m.`timestamp` < {TSTAMPTO_PARAM}
+WHERE m.`_id` >= {TSTAMPFROM_PARAM} AND m.`_id` < {TSTAMPTO_PARAM}
 GROUP BY pt.id AS platformType, u.id AS owner, i.id AS environment
 SELECT platformType, owner, environment, AVG(m.`value`) AS avgValue;

@@ -1205,3 +1205,14 @@ b1b1b083-5766-401b-bec8-1713a554df97,SynthFilterIdx_foo_25600,stgraph,synth,full
 7b103c61-4aa5-43be-8e8b-ab4d73461d38,SynthFilterIdx_foo_51200,stgraph,synth,full,1,193,-1,0,OPTIMIZED,0,increased,0
 e141709d-1aed-447d-ac5e-c63dc9dfb475,SynthFilterProp_foo_51200,stgraph,synth,full,1,180,-1,0,OPTIMIZED,0,increased,0
 ce0f0339-59f5-4883-8d76-420b81ff0a2c,SynthBy_foo_51200,stgraph,synth,full,1,194,-1,0,OPTIMIZED,0,increased,0
+3a3ad483-61bf-4781-8b91-a535c1eb9aab,EnvironmentAggregate,stgraph,smartbench,xsmall,1,2862,1,8,OPTIMIZED,0,increased,0
+4977390e-cf27-4151-b064-a20ce98df614,EnvironmentAggregate,stgraph,smartbench,xsmall,1,2208,1,8,OPTIMIZED,0,increased,0
+79378646-7d0f-4406-bc66-83a95271fc69,AgentOutlier,stgraph,smartbench,xsmall,1,1381,1,8,OPTIMIZED,0,increased,0
+73c05181-eb06-4db1-868c-6e0c14338378,MaintenanceOwners,stgraph,smartbench,xsmall,1,1474,1,8,OPTIMIZED,0,increased,0
+7075b528-c87c-4360-b961-e4742073e4e1,EnvironmentOutlier,stgraph,smartbench,xsmall,1,4601,1,4,OPTIMIZED,0,increased,0
+24da41a4-b019-420e-94af-0f92f0cb57e9,EnvironmentAggregate,stgraph,smartbench,xsmall,1,2897,1,8,OPTIMIZED,0,increased,0
+58722e81-c68e-49a1-afcb-adcc858e623d,AgentOutlier,stgraph,smartbench,xsmall,1,1533,1,8,OPTIMIZED,0,increased,0
+59ff65ff-deaf-401b-bf82-b807397b5bd6,MaintenanceOwners,stgraph,smartbench,xsmall,1,933,1,8,OPTIMIZED,0,increased,0
+88bbd3af-22a3-4cf9-995a-141ae11541b9,EnvironmentOutlier,stgraph,smartbench,xsmall,1,2478,1,4,OPTIMIZED,0,increased,0
+a9ace3f9-1361-402e-aa70-599cf979be06,EnvironmentCoverage,stgraph,smartbench,xsmall,1,4,1,1,OPTIMIZED,0,increased,0
+aaeeb7ed-2818-4a4f-8922-b95aea7abd73,AgentHistory,stgraph,smartbench,xsmall,1,68,1,1,OPTIMIZED,0,increased,0

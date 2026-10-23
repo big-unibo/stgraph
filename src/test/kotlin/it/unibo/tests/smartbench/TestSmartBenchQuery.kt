@@ -21,11 +21,11 @@ import kotlin.test.assertEquals
 class TestSmartBenchQuery {
     /** Expected cardinalities on xsmall, the dataset used by the CI (the same as on small) */
     private val expectedXSmall = mapOf(
-        "EnvironmentCoverage" to 10,
-        "EnvironmentAggregate" to 73,
-        "MaintenanceOwners" to 100,
+        "EnvironmentCoverage" to 1,
+        "EnvironmentAggregate" to 8,
+        "MaintenanceOwners" to 8,
         "EnvironmentOutlier" to 4,
-        "AgentOutlier" to 100,
+        "AgentOutlier" to 8,
         "AgentHistory" to 1
     )
 

@@ -1,6 +1,6 @@
 FROM GRAPH SmartBench
 MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(m:`Temperature`),
       (s)-[:`hasOwner`]->(u:`User`)
-WHERE m.`value` >= 65 AND m.`timestamp` >= {TSTAMPFROM_PARAM} AND m.`timestamp` < {TSTAMPTO_PARAM}
+WHERE m.`value` >= 65 AND m.`_id` >= {TSTAMPFROM_PARAM} AND m.`_id` < {TSTAMPTO_PARAM}
 GROUP BY s.id AS device, i.id AS environment, u.id AS owner
 SELECT device, environment, owner;

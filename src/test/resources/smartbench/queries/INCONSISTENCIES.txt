@@ -73,6 +73,13 @@ Timing
   sets them once, as SmartBenchPGAge (the results in results/paper include them).
 - SmartBenchGraphix now serializes the events (JSON, 2D WKT) inside the timed region, as STGraph does in ts.add; the
   graph definition (references, CREATE GRAPH) is graph-store time. Before, both were prepared before timing.
+- SmartBenchGraphix sends the events of STGraph: same type, primary key (tsid, _id) and records (tsid, _id, label,
+  location, value; before, also the event id, the sensor id, the sensor label and the type, with the event id as
+  primary key and then (tsId, timestamp)). The sensor of each series is in the TimeSeries dataset, as the
+  time-series nodes of STGraph. It is timed as SmartBenchSTGraph: the wait until the last event of each worker is
+  readable is time-series time, the feeds closed as STGraph closes them and the R-tree are index time (before: the
+  wait until the count of the stored events stopped growing and matched the sent ones was time-series time).
+  The Graphix ingestions in results/ before this change are not comparable with STGraph.
 - SmartBenchSTGraph vs SmartBenchDataLoader: see the KDoc of SmartBenchSTGraph.
 
 PGAge

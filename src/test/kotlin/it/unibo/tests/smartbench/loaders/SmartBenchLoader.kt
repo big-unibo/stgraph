@@ -72,8 +72,9 @@ abstract class AbstractSmartBenchLoader(val size: String, val threads: Int = 1) 
  * - Graph: the entities of [collections], in this order, through [addEntity]; right after a sensor (or virtual sensor)
  *   with a time-series file, [addTimeSeries]; at the end, [endEntities] (e.g., batches or edges left pending).
  * - Time series: split among [threads] workers; each worker reads the events of one series at a time and passes
- *   them to [addEvents]. The time-series time is the one of the slowest worker plus the one returned by [endEvents]
- *   (e.g., waiting until the events are stored).
+ *   them to [addEvents] (timed), then calls [endSeries] (not timed); after its last series, it adds the time
+ *   returned by [awaitLast] (e.g., waiting until its last event is stored). The time-series time is the one of the
+ *   slowest worker, as in [SmartBenchDataLoader].
  */
 abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSmartBenchLoader(size, threads) {
     protected val mapper: ObjectMapper = jacksonObjectMapper()
@@ -92,11 +93,27 @@ abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSm
     /** Adds the [events] of [ts], from the worker [worker] (0 until [threads]) */
     abstract fun addEvents(worker: Int, ts: SmartBenchTimeSeries, events: List<SmartBenchEvent>)
 
+    /** Called after [addEvents] for each series, not timed (e.g., the flush, as in [SmartBenchDataLoader]) */
+    open fun endSeries(worker: Int, ts: SmartBenchTimeSeries) {}
+
     /**
-     * Called once every worker has added its events: returns the time to add to the time-series time (e.g., waiting
-     * until the events are stored), measured by the loader since part of the wait may not be ingestion time
+     * Called by the worker [worker] after its last series [ts], whose last event is [last]: returns the time to add to
+     * the time-series time of the worker (e.g., [waitReadable] until [last] is stored), as [SmartBenchDataLoader]
      */
-    open fun endEvents(): Long = 0
+    open fun awaitLast(worker: Int, ts: SmartBenchTimeSeries, last: SmartBenchEvent): Long = 0
+
+    /**
+     * Waits until [read] succeeds (it reads the last event): returns the time waited, without the last (successful)
+     * read, as SmartBenchDataLoader.loadTS
+     */
+    protected fun waitReadable(read: () -> Boolean): Long {
+        val start = System.currentTimeMillis()
+        while (true) {
+            val startRead = System.currentTimeMillis()
+            if (read()) return startRead - start
+            Thread.sleep(1)
+        }
+    }
 
     override fun loadGraph() {
         for (collection in collections) {
@@ -129,15 +146,18 @@ abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSm
             val start = i * chunkSize
             val end = if (i == threads - 1) timeSeries.size else (i + 1) * chunkSize
             Thread {
-                for (ts in timeSeries.subList(start, end)) {
+                val series = timeSeries.subList(start, end)
+                series.forEachIndexed { index, ts ->
                     val events = readEvents(ts)
                     times[i] += getTime { addEvents(i, ts, events) }
+                    endSeries(i, ts)
                     counts[i] += events.size.toLong()
+                    if (index == series.size - 1 && events.isNotEmpty()) times[i] += awaitLast(i, ts, events.last())
                 }
             }.also { it.start() }
         }
         workers.forEach { it.join() }
-        tsTime += (times.maxOrNull() ?: 0) + endEvents()
+        tsTime += times.maxOrNull() ?: 0
         tsCard += counts.sum()
     }
 

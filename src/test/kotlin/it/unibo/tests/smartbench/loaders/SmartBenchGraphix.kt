@@ -1,24 +1,41 @@
 package it.unibo.tests.smartbench.loaders
 
+import it.unibo.graph.asterixdb.AsterixDBHTTPClient
+import it.unibo.graph.interfaces.labelFromString
+import it.unibo.graph.utils.EDGES
 import it.unibo.graph.utils.EVENT
+import it.unibo.graph.utils.FROM_N
+import it.unibo.graph.utils.ID
+import it.unibo.graph.utils.KEY
+import it.unibo.graph.utils.LABEL
 import it.unibo.graph.utils.LOCATION
+import it.unibo.graph.utils.TO_N
+import it.unibo.graph.utils.TSID
 import it.unibo.graph.utils.TYPE
 import it.unibo.graph.utils.VALUE
 import it.unibo.tests.systems.GraphixClient
+import org.json.JSONObject
 import org.locationtech.jts.io.WKTReader
 import org.locationtech.jts.io.WKTWriter
 
 /**
- * Loads SmartBench into Graphix (AsterixDB + graph views).
+ * Loads SmartBench into Graphix (AsterixDB + graph views), with the time series of [SmartBenchSTGraph]: same events,
+ * same AsterixDB schema, same measurement.
  *
  * - One dataset per SmartBench collection (`Groups`, `Users`, `Sensors`, ...), holding the JSON objects as they are,
  *   inserted in batches (master data, timed as graph-store time).
- * - One dataset (`Observations`) for the time-series events, ingested through the same socket data feed used by STGraph,
- *   with the primary key of the events of STGraph: (tsId, timestamp), tsId being a number per time series.
- * - One graph (`SmartBench`): one vertex label per collection and per event type, one edge label per reference field.
- *   As in [SmartBenchDataLoader], a top-level field `{"id": ...}` (or a list of them) is a reference and becomes
- *   an edge `has<Field>` towards the referenced entity; a sensor with a time series has an edge `has<EventType>`
- *   towards each of its events.
+ * - One dataset (`TimeSeries`) with one record per time series (its tsid, event label and sensor), as the
+ *   time-series nodes of the graph store of STGraph (graph-store time).
+ * - One dataset (`Observations`) for the events, with the type and the primary key (tsid, _id) of the events of
+ *   STGraph, ingested through the same socket data feed: every event is the record STGraph sends (nodeToJson).
+ * - One graph (`SmartBench`): one vertex label per collection and per event label, one edge label per reference
+ *   field. As in [SmartBenchSTGraph], a top-level field `{"id": ...}` (or a list of them) is a reference and becomes
+ *   an edge `has<Field>` towards the referenced entity; a sensor with a time series has an edge `has<EventLabel>`
+ *   towards each of its events (through `TimeSeries`).
+ *
+ * Timed as [SmartBenchSTGraph] and [SmartBenchDataLoader]: the events sent by each worker (not its flush), then its
+ * wait until its last event is readable, without the last read (time-series time); the feeds closed as STGraph
+ * closes them, then the R-tree on the event locations (index time).
  */
 class SmartBenchGraphix(
     size: String,
@@ -29,14 +46,12 @@ class SmartBenchGraphix(
     // Entities per INSERT statement. Entities (master data) are loaded in batches and timed separately from the
     // events, which are streamed one at a time through the data feed. One INSERT per entity would mostly measure
     // the fixed cost of compiling and running an AsterixDB job (~170 ms) for each statement.
-    private val insertBatchSize: Int = 500,
-    // End of the event ingestion: the count must not change for this long before the feeds are stopped
-    private val stableWindowMs: Long = 10_000,
-    private val completionTimeoutMs: Long = 60 * 60 * 1000
+    private val insertBatchSize: Int = 500
 ) : SmartBenchJsonLoader(size, threads) {
     private val dataverse = "smartbench_graphix_$size"
     private val graphix = GraphixClient(host, port, dataverse)
     private val eventsDataset = "Observations"
+    private val timeSeriesDataset = "TimeSeries"
     private val graphName = "SmartBench"
 
     /** A reference field: entities labelled [source] point, through [field], to entities labelled [target] */
@@ -47,25 +62,30 @@ class SmartBenchGraphix(
 
     private val labelOf = mutableMapOf<String, String>()
     private val batches = mutableMapOf<String, MutableList<Map<String, Any>>>()
+    private val timeSeries = mutableListOf<Map<String, Any>>()
     private val references = mutableSetOf<Reference>()
     private val pendingReferences = mutableSetOf<PendingReference>()
     // (sensor label, event label) of the time series
     private val eventEdges = mutableSetOf<Pair<String, String>>()
-    private val feeds = (0 until threads).map { graphix.feed(eventsDataset, firstFeedPort + it) }
-    private val sent = LongArray(threads)
-    // Number of each time series, the tsId of its events (as the id of the time-series node in STGraph)
+    private val feeds: List<AsterixDBHTTPClient> = (0 until threads).map { graphix.feed(eventsDataset, firstFeedPort + it) }
+    // tsid of each time series: its number, as the id of the time-series node in STGraph
     private val tsIdOf = mutableMapOf<SmartBenchTimeSeries, Long>()
 
     init {
-        // Schema (not timed, as the graph/TS clean-up of the STGraph loader)
+        // Schema (not timed, as the graph/TS clean-up of the STGraph loader). The types of the events are the ones
+        // of AsterixDBHTTPClient.createTSMEnvironment, with Edge between backticks (a keyword of Graphix)
         graphix.exec(
             """
             DROP DATAVERSE $dataverse IF EXISTS;
             CREATE DATAVERSE $dataverse;
             USE $dataverse;
+            CREATE TYPE Property AS OPEN { `$KEY`: string, `$TYPE`: int };
+            CREATE TYPE `Edge` AS CLOSED { $LABEL: int, $FROM_N: bigint, $TO_N: bigint };
+            CREATE TYPE $EVENT AS OPEN { $TSID: bigint, $ID: bigint, $LABEL: int, $LOCATION: geometry?, $EDGES: [`Edge`]? };
+            CREATE DATASET `$eventsDataset` ($EVENT) PRIMARY KEY $TSID, $ID;
+            CREATE TYPE TimeSeriesType AS OPEN { id: bigint };
+            CREATE DATASET `$timeSeriesDataset` (TimeSeriesType) PRIMARY KEY id;
             CREATE TYPE EntityType AS OPEN { id: string };
-            CREATE TYPE $EVENT AS OPEN { tsId: bigint, `timestamp`: bigint, id: string, $LOCATION: geometry? };
-            CREATE DATASET `$eventsDataset` ($EVENT) PRIMARY KEY tsId, `timestamp`;
             """ + collections.joinToString("\n") { "CREATE DATASET `${datasetOf(label(it))}` (EntityType) PRIMARY KEY id;" }
         )
     }
@@ -80,16 +100,19 @@ class SmartBenchGraphix(
         }
         val batch = batches.getOrPut(label) { mutableListOf() }
         batch += entity
-        if (batch.size >= insertBatchSize) insert(label)
+        if (batch.size >= insertBatchSize) insert(datasetOf(label), batch)
     }
 
     override fun addTimeSeries(ts: SmartBenchTimeSeries) {
-        tsIdOf[ts] = tsIdOf.size + 1L
+        val tsId = tsIdOf.size + 1L
+        tsIdOf[ts] = tsId
+        timeSeries += mapOf("id" to tsId, LABEL to labelFromString(ts.eventLabel).ordinal, "sensor" to ts.sensorId, "sensorLabel" to ts.sensorLabel)
         eventEdges += ts.sensorLabel to ts.eventLabel
     }
 
     override fun endEntities() {
-        batches.keys.forEach { insert(it) }
+        batches.forEach { (label, batch) -> insert(datasetOf(label), batch) }
+        insert(timeSeriesDataset, timeSeries)
         pendingReferences.forEach { ref -> labelOf[ref.targetId]?.let { references += Reference(ref.source, ref.field, ref.isList, it) } }
         val graphDefinition = createGraph()
         logger.info { graphDefinition }
@@ -98,40 +121,42 @@ class SmartBenchGraphix(
 
     override fun addEvents(worker: Int, ts: SmartBenchTimeSeries, events: List<SmartBenchEvent>) {
         val feed = feeds[worker]
+        val tsId = tsIdOf.getValue(ts)
         val reader = WKTReader()
         val writer = WKTWriter()
         events.forEach { event ->
-            val record = linkedMapOf<String, Any>(
-                "id" to event.id,
-                "tsId" to tsIdOf.getValue(ts),
-                "sensorId" to ts.sensorId,
-                "sensorLabel" to ts.sensorLabel,
-                TYPE to event.label,
-                "timestamp" to event.timestamp,
-                VALUE to event.value,
-                // 2D WKT, as STGraph sends it (JTS writes 2D by default): the feed parses it into a geometry,
-                // and drops the records whose WKT has a Z coordinate
-                LOCATION to writer.write(reader.read(event.location))
-            )
-            feed.writeToFeed(mapper.writeValueAsString(record), flush = false)
+            // The record of nodeToJson (an event without edges, whose only property is its location): 2D WKT, as
+            // STGraph writes it with JTS, which the feed parses into a geometry
+            val location = writer.write(reader.read(event.location))
+            val record = """{"$TSID": $tsId, "$ID": ${event.timestamp}, "$LABEL": ${labelFromString(event.label).ordinal}, "$LOCATION": "$location", "$VALUE": ${event.value}}"""
+            feed.writeToFeed(record, flush = false)
         }
-        feed.flush()
-        sent[worker] += events.size.toLong()
     }
 
-    /** Waits until every sent event is stored (see [GraphixClient.completeFeeds]) */
-    override fun endEvents(): Long {
-        val expected = sent.sum()
-        if (expected == 0L) return 0
-        return graphix.completeFeeds(feeds.filterIndexed { i, _ -> sent[i] > 0 }, eventsDataset, expected, stableWindowMs, completionTimeoutMs)
+    override fun endSeries(worker: Int, ts: SmartBenchTimeSeries) {
+        feeds[worker].flush()
     }
 
-    // Spatial index on the event locations, as the one STGraph creates on its time-series store
+    /** Waits until the last event of the worker is readable, as [SmartBenchSTGraph] */
+    override fun awaitLast(worker: Int, ts: SmartBenchTimeSeries, last: SmartBenchEvent): Long =
+        waitReadable { isStored(tsIdOf.getValue(ts), last.timestamp) }
+
+    // The feeds closed as STGraph closes them (AsterixDBTSM.close), then the spatial index on the event locations, as
+    // the one STGraph creates (AsterixDBHTTPClient.createSpatialIndex)
     override fun createIndexes() {
-        graphix.exec("CREATE INDEX ${LOCATION}Idx ON `$eventsDataset`($LOCATION) TYPE RTREE;")
+        feeds.forEach { it.closeDataFeedConnection(closeRemote = true) }
+        graphix.exec("USE $dataverse; CREATE INDEX ${LOCATION}Idx ON `$eventsDataset`($LOCATION) TYPE RTREE;")
     }
 
     override fun close() {}
+
+    /** Whether the event ([tsId], [timestamp]) is readable, with the read of AsterixDBTS.get */
+    private fun isStored(tsId: Long, timestamp: Long): Boolean = try {
+        JSONObject(graphix.exec("USE $dataverse; SELECT * FROM `$eventsDataset` WHERE $TSID = $tsId AND $ID = $timestamp;"))
+            .getJSONArray("results").length() > 0
+    } catch (_: Exception) {
+        false
+    }
 
     private fun addReference(source: String, field: String, isList: Boolean, targetId: String) {
         val target = labelOf[targetId]
@@ -139,22 +164,24 @@ class SmartBenchGraphix(
     }
 
     /**
-     * Inserts the pending entities labelled [label]. The batch is a request parameter, not part of the query text:
-     * with the objects written in the query, a Graphix optimizer rule (ExtractFromRecordConstructorRule) overflows
-     * the stack on nested records
+     * Inserts the pending records of [batch] into [dataset]. The batch is a request parameter, not part of the query
+     * text: with the objects written in the query, a Graphix optimizer rule (ExtractFromRecordConstructorRule)
+     * overflows the stack on nested records
      */
-    private fun insert(label: String) {
-        val batch = batches.getValue(label)
+    private fun insert(dataset: String, batch: MutableList<Map<String, Any>>) {
         if (batch.isEmpty()) return
-        graphix.exec("INSERT INTO `${datasetOf(label)}` (FROM \$rows AS r SELECT VALUE r);", mapOf("\$rows" to mapper.writeValueAsString(batch)))
+        graphix.exec("INSERT INTO `$dataset` (FROM \$rows AS r SELECT VALUE r);", mapOf("\$rows" to mapper.writeValueAsString(batch)))
         batch.clear()
     }
 
-    /** The CREATE GRAPH statement: vertices from the datasets, edges from the reference fields and the events */
+    /**
+     * The CREATE GRAPH statement: vertices from the datasets, edges from the reference fields and, through
+     * `TimeSeries`, from the sensors to their events
+     */
     private fun createGraph(): String {
         val vertices = batches.keys.map { "VERTEX (:`$it`) PRIMARY KEY (id) AS `${datasetOf(it)}`" } +
-            eventEdges.map { it.second }.toSet().map { type ->
-                "VERTEX (:`$type`) PRIMARY KEY (id) AS (FROM `$eventsDataset` O WHERE O.`type` = \"$type\" SELECT VALUE O)"
+            eventEdges.map { it.second }.toSet().map { label ->
+                "VERTEX (:`$label`) PRIMARY KEY ($TSID, $ID) AS (FROM `$eventsDataset` O WHERE O.$LABEL = ${labelFromString(label).ordinal} SELECT VALUE O)"
             }
         val edges = references.map { ref ->
             val from = if (ref.isList) "FROM `${datasetOf(ref.source)}` S, S.`${ref.field}` R" else "FROM `${datasetOf(ref.source)}` S LET R = S.`${ref.field}`"
@@ -166,9 +193,10 @@ class SmartBenchGraphix(
             )
             "EDGE (:`${ref.source}`)-[:`${hasLabel(ref.field)}`]->(:`${ref.target}`) SOURCE KEY (src) DESTINATION KEY (dst) " +
                 "AS ($from WHERE ${conditions.joinToString(" AND ")} SELECT S.id AS src, R.id AS dst)"
-        } + eventEdges.map { (sensorLabel, type) ->
-            "EDGE (:`$sensorLabel`)-[:`${hasLabel(type)}`]->(:`$type`) SOURCE KEY (src) DESTINATION KEY (dst) " +
-                "AS (FROM `$eventsDataset` O WHERE O.`type` = \"$type\" AND O.sensorLabel = \"$sensorLabel\" SELECT O.sensorId AS src, O.id AS dst)"
+        } + eventEdges.map { (sensorLabel, label) ->
+            "EDGE (:`$sensorLabel`)-[:`${hasLabel(label)}`]->(:`$label`) SOURCE KEY (src) DESTINATION KEY ($TSID, $ID) " +
+                "AS (FROM `$timeSeriesDataset` T JOIN `$eventsDataset` O ON O.$TSID = T.id " +
+                "WHERE T.$LABEL = ${labelFromString(label).ordinal} AND T.sensorLabel = \"$sensorLabel\" SELECT T.sensor AS src, O.$TSID AS $TSID, O.$ID AS $ID)"
         }
         return "USE $dataverse; CREATE GRAPH $graphName AS\n  ${(vertices + edges).joinToString(",\n  ")};"
     }
