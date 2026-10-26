@@ -15,6 +15,4 @@ SELECT DISTINCT
 FROM device_env de
 JOIN public.measurements m
     ON m.sensor_id = de.device_id
-WHERE m.val > 0
-  AND m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
-  AND m.time < to_timestamp({TSTAMPTO_PARAM} / 1000.0);
+WHERE m.val > 0;

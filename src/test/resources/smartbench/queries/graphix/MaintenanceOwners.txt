@@ -1,6 +1,10 @@
-FROM GRAPH SmartBench
-MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(m:`Temperature`),
-      (s)-[:`hasOwner`]->(u:`User`)
+FROM (
+  FROM GRAPH SmartBench
+  MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(ts:`Temperature`),
+        (s)-[:`hasOwner`]->(u:`User`)
+  SELECT s.id AS device, i.id AS environment, u.id AS owner, ts.id AS tsid
+) AS g
+JOIN `Observations` m ON m.tsid = g.tsid
 WHERE m.`value` >= 65 AND m.`_id` >= {TSTAMPFROM_PARAM} AND m.`_id` < {TSTAMPTO_PARAM}
-GROUP BY s.id AS device, i.id AS environment, u.id AS owner
+GROUP BY g.device AS device, g.environment AS environment, g.owner AS owner
 SELECT device, environment, owner;

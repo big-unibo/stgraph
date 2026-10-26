@@ -37,15 +37,20 @@ allows.
 | AeonG | image `mp4sini/aeong` (AeonG built from source) | `evaluation/architectures/aeong/` | its container (`t_smarbench_test.sh`) |
 | HyGraph | `hygraph-core` 0.3.9.2, Python 3.12 | `evaluation/architectures/hygraph/` | its container (`scripts/run_evaluation.sh`) |
 
+Graphix cannot run on the AsterixDB 0.9.9 release of STGraph: it needs Hyracks and Algebricks changes that never reached
+a release (see [graphix-asterixdb/mirror](https://github.com/graphix-asterixdb/mirror)), and its extension does not
+load on 0.9.9. Both AsterixDB versions store the data in the same default format (`ROW`, `snappy` compression), without
+replication.
+
 ### Data model and indexes
 
-| System | Graph | Time series | Indexes |
-|--------|-------|-------------|---------|
-| STGraph | in-memory graph store: one node per entity and per time series | AsterixDB dataset of the events | primary key `(tsid, _id)` of the events; R-tree on the event location, built after the ingestion |
-| Graphix | one dataset per collection, and `TimeSeries` with one record per series (as the time-series nodes of STGraph); graph `SmartBench` defined as views over them | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph; R-tree on `Observations.location`, built after the ingestion |
-| Neo4j | the statements of the Cypher dump (`graph.cypher`) | one `Temperature` node per event, linked to its sensor | none |
-| PGAge | AGE graph `smartbench_graph`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `public.measurements` | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph |
-| AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation |
+| System | Graph | Time series | Indexes                                                                                                                                                                             |
+|--------|-------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| STGraph | in-memory graph store: one node per entity and per time series | AsterixDB dataset of the events | primary key `(tsid, _id)` of the events; R-tree on the event location, built after the ingestion                                                                                    |
+| Graphix | one dataset per collection, and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them: one vertex per entity and per series (as the time-series nodes of STGraph), not per event | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the queries join the series of the graph with `Observations` on `tsid`, with the time window on `_id`, without hints: the optimizer of Graphix chooses a hash join on a scan of `Observations` (see `INCONSISTENCIES.txt`) | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph; R-tree on `Observations.location`, built after the ingestion |
+| Neo4j | the statements of the Cypher dump (`graph.cypher`) | one `Temperature` node per event, linked to its sensor | range index on `Temperature.timestamp`, built after the ingestion; the label and relationship-type lookup indexes that Neo4j creates by itself |
+| PGAge | AGE graph `smartbench_graph`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `public.measurements` | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph                                         |
+| AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation                                                                                                                                                           |
 
 The indexes built after the ingestion are timed as index time.
 
@@ -62,11 +67,26 @@ The indexes built after the ingestion are timed as index time.
 Memory: the defaults of each system, except the page cache of Neo4j (512 MB) and the `work_mem` and
 `maintenance_work_mem` of PostgreSQL, from the original evaluation.
 
+### Measurement
+
+| Phase | What is timed |
+|-------|---------------|
+| Ingestion: graph | writing the entities (and, for STGraph and Graphix, the time-series nodes/records) to the system; reading and parsing the input files is not timed |
+| Ingestion: time series | sending the events, one series at a time per worker, as STGraph (`SmartBenchDataLoader`): the flush of each series is not timed; after its last series, each worker waits until its last event is readable, without the last read; the time of the slowest worker |
+| Ingestion: index | closing the data feeds (STGraph, Graphix) and building the indexes of the table above, until they are usable (Neo4j populates its index in the background: it is awaited) |
+| Query | the whole call, from the request to the whole result in the client: for STGraph, the navigation of the graph and its queries on AsterixDB; for Neo4j, PGAge and Graphix, compilation, execution and transfer of the result, on a connection already open |
+
+Every Kotlin loader shares these boundaries (`SmartBenchLoader.kt`). One difference is forced by the engine of Graphix:
+its AsterixDB stores the last, partial frame of a data feed only when the feed stops (the AsterixDB of STGraph stores
+it with the feed open), so each Graphix worker closes its feed before waiting for its last event, once AsterixDB has
+read its whole stream; the close is still index time. The differences of the queries and of the loaders from STGraph
+and from the original Python code are listed in `src/test/resources/smartbench/queries/INCONSISTENCIES.txt`.
+
 ### Endpoints
 
 | System | Endpoint |
 |--------|----------|
-| STGraph | the setups of `test_config.yml` (AsterixDB query API on `localhost:19002`) |
+| STGraph | the setups of `test_config.yml` (AsterixDB query API on `localhost:19002`, data feeds on 10001-11000) |
 | Graphix | query API on `localhost:29002`, data feeds on 11001-11010 (host ports in `evaluation/architectures/graphix/.env`, from its `.env.example`) |
 | Neo4j | `bolt://localhost:7687`, no authentication |
 | PGAge | `localhost:5432`, database `smartbench_eval`, graph `smartbench_graph` |

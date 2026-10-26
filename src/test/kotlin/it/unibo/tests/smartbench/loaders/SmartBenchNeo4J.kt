@@ -30,8 +30,20 @@ class SmartBenchNeo4J(
     private val mapper = jacksonObjectMapper()
 
     init {
-        // Clean-up (not timed): the Python code ran on a new container every time
+        // Clean-up (not timed): the Python code ran on a new container every time. The index too, so that it is built
+        // after the load (see createIndexes), not maintained during it
+        session.run("DROP INDEX $TIMESTAMP_INDEX IF EXISTS").consume()
         session.run("MATCH (n) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS").consume()
+    }
+
+    /**
+     * The temporal index of the events, as the (tsid, _id) key of STGraph and Graphix and the time index of
+     * TimescaleDB: a range index on the timestamps of the Temperature nodes, built after the load and awaited until
+     * it is online (Neo4j populates it in the background). The planner decides whether to use it (no hints)
+     */
+    override fun createIndexes() {
+        session.run("CREATE RANGE INDEX $TIMESTAMP_INDEX FOR (t:Temperature) ON (t.timestamp)").consume()
+        session.run("CALL db.awaitIndex('$TIMESTAMP_INDEX', 3600)").consume()
     }
 
     override fun loadGraph() {
@@ -86,6 +98,8 @@ class SmartBenchNeo4J(
     }
 
     companion object {
+        private const val TIMESTAMP_INDEX = "temperature_timestamp"
+
         private val UNWIND_QUERY = """
             MATCH (s:Sensor {id: ${'$'}sensor_id})
             UNWIND ${'$'}rows AS row
@@ -105,12 +119,17 @@ class SmartBenchNeo4J(
 
         private val TS_REGEX = Regex("""timestamp\s*:\s*'([^']+)'""")
 
+        // A relationship written without the colon, as the SmartBench generator writes it in ts.cypher
+        // (CREATE (s)-[hasTemperature]->(...)): a variable without type, which CREATE rejects
+        private val UNTYPED_RELATIONSHIP_REGEX = Regex("""-\[([A-Za-z_][A-Za-z0-9_]*)\]->""")
+
         /**
          * The statements of a Cypher file, as cypher-shell splits them (on the semicolons outside quotes), with the
-         * timestamps as datetime
+         * timestamps as datetime and the relationships without type typed (-[hasTemperature]-> -> -[:hasTemperature]->)
          */
         fun cypherStatements(file: Path): List<String> {
             val text = TS_REGEX.replace(file.readText(), "timestamp: datetime('$1')")
+                .replace(UNTYPED_RELATIONSHIP_REGEX, "-[:$1]->")
             val statements = mutableListOf<String>()
             val current = StringBuilder()
             var quote: Char? = null

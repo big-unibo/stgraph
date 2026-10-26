@@ -1,5 +1,9 @@
-FROM GRAPH SmartBench
-MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(m:`Temperature`)
-WHERE s.id = "thermometer3"
-GROUP BY s.id AS device, i.id AS environment
+FROM (
+  FROM GRAPH SmartBench
+  MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(ts:`Temperature`)
+  WHERE s.id = "thermometer3"
+  SELECT s.id AS device, i.id AS environment, ts.id AS tsid
+) AS g
+JOIN `Observations` m ON m.tsid = g.tsid
+GROUP BY g.device AS device, g.environment AS environment
 SELECT device, environment;

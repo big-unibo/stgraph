@@ -1,84 +1,53 @@
 SmartBench evaluation: inconsistencies to examine
 =================================================
 
-neo4j/ and pgage/ hold the query templates mounted by STGraph-evaluation (architectures/volumes/queries), the ones
-the old containers ran, ported as they are, except for the items marked FIXED below. graphix/ follows the semantics
-of STGraph (src/test/kotlin/it/unibo/tests/smartbench/queries). The reference is STGraph.
-
 
 1. Queries
 ----------
 
 General
 
-- Neo4j and PGAge selected entities by name ({name: "3042"}, {name: "Thermometer3"}), STGraph and Graphix by id
-  ("3042", "thermometer3"). FIXED: Neo4j and PGAge select by id too (EnvironmentCoverage, AgentHistory).
-- Time windows: STGraph [from, to). PGAge used BETWEEN (both ends included) in MaintenanceOwners and
-  EnvironmentOutlier. FIXED: [from, to) everywhere. Also in AgentOutlier, whose window started at 0 (BETWEEN
-  to_timestamp(0) and the end): it is now the window of the query.
-- The copies of the queries in digital_twins_architectures (architectures/neo4j/neo4j/resources/queries,
-  architectures/postgres_age/pgage/src/main/resources/queries) differ from these: EnvironmentAggregate groups by
-  environment and device there, by platform type, owner and environment here (as STGraph). FIXED for the
-  evaluation: it runs only the templates of this folder; that repository is not used any more (its copies are
-  unchanged).
-
-EnvironmentAggregate
-- Neo4j: AVG(temp.value), but the Neo4j loader stores the value as `temperature` (UNWIND_QUERY of the Python loader
-  and ts.cypher): avgValue was null for every group (the cardinality is not affected). FIXED: AVG(temp.temperature).
 
 EnvironmentOutlier
-- Neo4j: no spatial condition; threshold 65 instead of 50.5, inside the query. NOT FIXED: the threshold is a
-  one-line change; the spatial condition needs geometries that Neo4j does not have (the environments are
-  LINESTRINGs; Neo4j has only points, without a plugin such as neo4j-spatial). TO DECIDE.
-- PGAge: the measurements of any sensor intersecting the environment (no join on the sensor); the environments are
-  the ones covered by a sensor with a time series; threshold 50.5 inside the query. NOT THE SAME AS STGRAPH:
-  STGraph averages, for each environment, the measurements of the sensors that cover it (hasCoverage), keeping the
-  ones whose location intersects the environment; PGAge averages the measurements of every sensor whose location
-  intersects the environment, whether it covers it or not. The two coincide only if every measurement inside an
-  environment comes from a sensor that covers it. To make them the same: join the measurements on the covering
-  sensors (m.sensor_id = device id), as the other PGAge queries do. The threshold inside the query gives the same
-  result as the filter of STGraph on the result. TO DECIDE.
 
-AgentHistory
-- STGraph (and Graphix): all the events of thermometer3 (no window, no filter on values).
-- Neo4j: temp.temperature > 0 and the window of AgentHistory in time_constraints.yaml.
-- PGAge: m.val > 0, no window. FIXED: the window of AgentHistory, as Neo4j. STGraph and Graphix still have no
-  window, and Neo4j and PGAge still keep only the values > 0. TO DECIDE.
+
+
+- Graphix: wrong result, NOT FIXED (engine bug). In AsterixDB 0.9.9 (both the one of STGraph and the one of
+  Graphix), st_geom_from_text (and st_geom_from_geojson) returns, for every row of a query, the geometry of the first
+  row (SELECT VALUE st_as_text(st_geom_from_text(s)) FROM ["LINESTRING(34 0, 63 20)", "LINESTRING(4 15, 9 19)"] AS s
+  returns the first line twice; constants work). STGraph is not affected: it sends one constant WKT per query. The
+  Graphix query converts the location of every environment in the same query, so every environment gets the line of
+  the first one: on small 1 environment instead of 4 (without the spatial condition, Graphix returns the same 4
+  environments as STGraph). Which environment is "the first one" depends on the plan: with the series vertices (see
+  below) it is another one, and on small the result has 0 environments above the threshold instead of 1. A fix would
+  store the environments as geometries at load time, through a data feed (the feeds parse WKT one record at a time;
+  an INSERT cannot convert a string into a geometry field).
+
+- Graphix, all queries: FIXED (model). The graph had one Temperature vertex per event (an edge per event, through a
+  join of TimeSeries and Observations): every query scanned all the events twice (the edge and the vertex) and
+  joined them on (tsid, _id), with hash joins. On large (259,200,000 events) EnvironmentCoverage did not end in two
+  days, on 1 core. Now, as in STGraph (and PGAge), a time series is one vertex (a record of TimeSeries), and the
+  queries join the series found in the graph with Observations on tsid, with the time window on _id. On small, same
+  results as before, row by row (EnvironmentOutlier without the spatial condition, see above).
+
+- Graphix, events of a series: NOT FIXED (limit of the system). The queries do not read the events of a series by
+  the primary key (tsid, _id), as STGraph does, but scan Observations once per query (hash join). The optimizer of
+  Graphix uses an index in a join only with a hint (/*+ indexnl */), which the queries do not use (the other
+  systems choose their plans by themselves), and its cost-based optimizer does not run: the plan is the same after
+  ANALYZE DATASET, also for a plain SQL++ join, and SET `compiler.cbo` "true" fails (IndexOutOfBoundsException).
+  The AsterixDB 0.9.9 of STGraph does it by itself: after ANALYZE DATASET, the same join (a series dataset and the
+  events of STGraph) becomes a search on the primary key, without hints. STGraph does not depend on it: it sends
+  each series its own query, with the tsid as a constant. With the hints, a range search per series on (tsid, _id):
+  on small, e.g. AgentOutlier 4.7 s instead of 6.9 s, AgentHistory 0.3 s instead of 2.7 s (throwaway container,
+  1 core); on large, a scan of 259,200,000 events per query.
+
 
 2. Loaders (Kotlin port vs Python code)
 ---------------------------------------
 
 Timing
-- All the loaders share the same boundaries (SmartBenchLoader.kt): reading and parsing the files is not timed,
-  writing to the system is. The Python code timed the reading of the entity files (PGAge), the parsing of the events
-  (PGAge; Neo4j after the first batch of each file) and the start of cypher-shell (Neo4j). FIXED.
-- The boundaries of the events are the ones of STGraph (SmartBenchDataLoader): the flush of each series is not
-  timed; each worker, after its last series, waits until its last event is readable, without the last read; the
-  time-series time is the one of the slowest worker. FIXED (SmartBenchSTGraph and SmartBenchGraphix; PGAge writes
-  synchronously, it has nothing to wait for). Still different: SmartBenchDataLoader times the check of the
-  time-series file of a sensor (Files.exists, graph-store time), the shared loaders do not (it is reading the input).
-- PGAge: the Python code ran LOAD 'age', search_path and the two parallelism settings before every statement, on a
-  pooled connection (timed in the ingestion). FIXED: the port sets them once per session.
-- PGAge: the spatial index (ALTER COLUMN ... SRID 4326 + GIST) was not timed. FIXED: it is index time.
-- Queries: as the Python code, the evaluation runs every window of the configured selectivities, queries.iterations
-  times, for every system (STGraph included). The tests of STGraph (and the CI) still run the first window of
-  "increased" once. BY DESIGN.
-- runQuery (Querying.kt) records the time of the whole Querying.runQuery call, not the time the query measures. The
-  runners of Neo4j, PGAge and Graphix (it.unibo.tests.systems), shared by SmartBench and MIMIC-IV, receive connections
-  already open, so only the query is timed (execution and transfer of the whole result). FIXED. The MIMIC-IV
-  competitors opened the driver/connection (and, for PGAge, ran LOAD 'age') inside the timed call before: their
-  times in results/paper include it.
-- MimicIVPGAge ran LOAD 'age' and SET search_path before each graph statement, inside the timed ingestion. FIXED: it
-  sets them once, as SmartBenchPGAge (the results in results/paper include them).
-- SmartBenchGraphix serialized the events and prepared the graph definition before timing. FIXED: the events are
-  serialized inside the timed region (JSON, 2D WKT), as STGraph does in ts.add; the graph definition (references,
-  CREATE GRAPH) is graph-store time.
-- SmartBenchGraphix sent more than the events of STGraph (also the event id, the sensor id, the sensor label and the
-  type, with the event id as primary key, then (tsId, timestamp)), and its time-series time included the wait until
-  the count of the stored events stopped growing and matched the sent ones. FIXED: it sends the events of STGraph,
-  with the same type, primary key (tsid, _id) and records (tsid, _id, label, location, value); the sensor of each
-  series is in the TimeSeries dataset, as the time-series nodes of STGraph; it is timed as STGraph (see above), with
-  the R-tree as index time. Not verified on the data yet.
+
+
   One difference left, forced by the engine: the AsterixDB of Graphix (0.9.9-SNAPSHOT) stores the last, partial
   frame of a feed only when the feed stops, while the 0.9.9 of STGraph stores it with the feed open (checked on
   small: 2,591,904 of 2,592,000 events readable before STOP FEED, all of them after; same client, 1,000 events:
@@ -92,20 +61,17 @@ Timing
   The Graphix ingestions in results/ before this change are not comparable with STGraph.
 
 PGAge
-- An edge towards an entity not loaded yet is lost (both vertices must exist when the edge is created), and every
-  edge costs three queries (two full scans without label, one existence check).
 - String values are not escaped: an apostrophe in a value makes the whole entity fail (it is logged and skipped).
-- The edge from a sensor to the first event of its series is always hasTemperature, whatever the event type; only
-  the Temperature events go to the measurement table.
 - Batch insert: one INSERT of 20,000 rows (execute_values) in Python, JDBC batches rewritten into multi-row INSERTs
   (reWriteBatchedInserts) here.
 - Not ported: multi-device entities and GeoJSON locations (SmartBench has neither).
 
 Neo4j
-- The graph is cleared before loading (the Python code ran on a new container every time).
-- On "small" the events come from ts.cypher. In smart_benchmark/benchmark/datasets/small/ts.cypher the relationships
-  are written -[hasTemperature]-> (a variable, without type), which CREATE rejects: check the dump on the server.
-- No index is created (e.g., on Sensor.id, used by every UNWIND batch and by the MATCH (v {id: ...}) of the dumps).
+
+- The events have a range index on Temperature.timestamp, the temporal index of the other systems, built after the
+  load (index time); the Python code did not create it. No index on the ids of the entities (e.g., Sensor.id, used
+  by every UNWIND batch and by the MATCH (v {id: ...}) of the dumps), as PGAge has none on its graph.
+
 - The dumps are read from datasets/original/smartbench/neo4j/<size> (./downloadDataset.sh smartbench/neo4j <size>);
   their names may follow the old sizes (see below).
 

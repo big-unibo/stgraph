@@ -32,7 +32,9 @@ import org.locationtech.jts.io.WKTWriter
  * - One graph (`SmartBench`): one vertex label per collection and per event label, one edge label per reference
  *   field. As in [SmartBenchSTGraph], a top-level field `{"id": ...}` (or a list of them) is a reference and becomes
  *   an edge `has<Field>` towards the referenced entity; a sensor with a time series has an edge `has<EventLabel>`
- *   towards each of its events (through `TimeSeries`).
+ *   towards it. As in the graph store of STGraph, a time series is one vertex (a record of `TimeSeries`, labelled
+ *   as its events), not one vertex per event: the queries reach its events through the primary key (tsid, _id) of
+ *   `Observations` (see the queries in smartbench/queries/graphix).
  *
  * Timed as [SmartBenchSTGraph] and [SmartBenchDataLoader]: the events sent by each worker (not its flush), then its
  * wait until its last event is readable, without the last read (time-series time); the closes of the feeds and the
@@ -190,13 +192,13 @@ class SmartBenchGraphix(
     }
 
     /**
-     * The CREATE GRAPH statement: vertices from the datasets, edges from the reference fields and, through
-     * `TimeSeries`, from the sensors to their events
+     * The CREATE GRAPH statement: vertices from the datasets and from the time series of `TimeSeries`, edges from the
+     * reference fields and from the sensors to their time series
      */
     private fun createGraph(): String {
         val vertices = batches.keys.map { "VERTEX (:`$it`) PRIMARY KEY (id) AS `${datasetOf(it)}`" } +
             eventEdges.map { it.second }.toSet().map { label ->
-                "VERTEX (:`$label`) PRIMARY KEY ($TSID, $ID) AS (FROM `$eventsDataset` O WHERE O.$LABEL = ${labelFromString(label).ordinal} SELECT VALUE O)"
+                "VERTEX (:`$label`) PRIMARY KEY (id) AS (FROM `$timeSeriesDataset` T WHERE T.$LABEL = ${labelFromString(label).ordinal} SELECT VALUE T)"
             }
         val edges = references.map { ref ->
             val from = if (ref.isList) "FROM `${datasetOf(ref.source)}` S, S.`${ref.field}` R" else "FROM `${datasetOf(ref.source)}` S LET R = S.`${ref.field}`"
@@ -209,9 +211,9 @@ class SmartBenchGraphix(
             "EDGE (:`${ref.source}`)-[:`${hasLabel(ref.field)}`]->(:`${ref.target}`) SOURCE KEY (src) DESTINATION KEY (dst) " +
                 "AS ($from WHERE ${conditions.joinToString(" AND ")} SELECT S.id AS src, R.id AS dst)"
         } + eventEdges.map { (sensorLabel, label) ->
-            "EDGE (:`$sensorLabel`)-[:`${hasLabel(label)}`]->(:`$label`) SOURCE KEY (src) DESTINATION KEY ($TSID, $ID) " +
-                "AS (FROM `$timeSeriesDataset` T JOIN `$eventsDataset` O ON O.$TSID = T.id " +
-                "WHERE T.$LABEL = ${labelFromString(label).ordinal} AND T.sensorLabel = \"$sensorLabel\" SELECT T.sensor AS src, O.$TSID AS $TSID, O.$ID AS $ID)"
+            "EDGE (:`$sensorLabel`)-[:`${hasLabel(label)}`]->(:`$label`) SOURCE KEY (src) DESTINATION KEY (dst) " +
+                "AS (FROM `$timeSeriesDataset` T " +
+                "WHERE T.$LABEL = ${labelFromString(label).ordinal} AND T.sensorLabel = \"$sensorLabel\" SELECT T.sensor AS src, T.id AS dst)"
         }
         return "USE $dataverse; CREATE GRAPH $graphName AS\n  ${(vertices + edges).joinToString(",\n  ")};"
     }
