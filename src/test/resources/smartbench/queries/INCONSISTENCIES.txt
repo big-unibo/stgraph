@@ -29,21 +29,23 @@ EnvironmentOutlier
   (TemperatureEvent, the records of Observations, whose tsid points to their series). The queries are graph patterns
   down to the events, as before; EnvironmentCoverage stops at the series, as in STGraph.
 
-- Graphix, indexes: FIXED with two settings of Graphix (graphix.evaluation.prefer-indexnl=true and
-  graphix.evaluation.minimize-joins=true in its cc.conf, both default false; they belong to the Graphix extension,
-  the AsterixDB of STGraph has neither).
-  Graphix evaluates a pattern as joins between the views of its vertices and edges, and by default every join is a
-  hash join on scans: every query scanned all the events twice (the edge and the vertex) and joined them on
-  (tsid, _id); on large (259,200,000 events) EnvironmentCoverage did not end in two days, on 1 core. The optimizer
-  uses an index in a join only with a hint (/*+ indexnl */), and its cost-based optimizer does not run (the plan is
-  the same after ANALYZE DATASET, also for a plain SQL++ join, and SET `compiler.cbo` "true" fails with an
-  IndexOutOfBoundsException), while the AsterixDB 0.9.9 of STGraph uses the primary key by itself after ANALYZE.
-  With prefer-indexnl, Graphix places the hint itself on the joins between vertices and edges: from a series to its
-  events through the primary key (tsid, _id) of Observations, no hint in the queries. Alone, it also looks every
-  event up again by (tsid, _id), as the vertex TemperatureEvent of the edge hasTS (the same record): one B-tree
-  search per event, slower than a scan (on small, AgentOutlier 20 s instead of 17 s). minimize-joins removes that
-  join between an edge and a vertex defined on the same records. Difference from STGraph left: the time window is
-  applied after reading the events of a series (STGraph searches (tsid, _id) in the window).
+- Graphix, events read twice: FIXED with a setting of Graphix (graphix.evaluation.minimize-joins=true in its
+  cc.conf, default false; it belongs to the Graphix extension, the AsterixDB of STGraph does not have it). Graphix
+  evaluates a pattern as joins between the views of its vertices and edges: by default every query scanned all the
+  events twice (the edge hasTS and the vertex TemperatureEvent, the same records) and joined them on (tsid, _id);
+  on large (259,200,000 events) EnvironmentCoverage did not end in two days, on 1 core. With minimize-joins, an
+  event is read once. On small, same results as before, row by row (EnvironmentOutlier without its spatial
+  condition, see above).
+
+- Graphix, primary key of the events: NOT FIXED (limit of the system). The queries read the events with a scan of
+  Observations (hash joins), not through the primary key (tsid, _id) as STGraph does (one search per series, in the
+  time window): e.g. AgentHistory, one sensor, scans all the events (on small 5 s, STGraph 0.03 s). The optimizer of
+  Graphix uses an index in a join only with a hint (/*+ indexnl */), which the queries do not have, and its
+  cost-based optimizer does not run (the plan is the same after ANALYZE DATASET, also for a plain SQL++ join, and
+  SET `compiler.cbo` "true" fails with an IndexOutOfBoundsException), while the AsterixDB 0.9.9 of STGraph uses the
+  primary key by itself after ANALYZE. Not enabled: graphix.evaluation.prefer-indexnl, which places the hint on
+  every join between vertices and edges, whatever its cost (alone, it also looks every event up again by
+  (tsid, _id): on small, AgentOutlier 20 s instead of 17 s with the defaults).
 
 
 2. Loaders (Kotlin port vs Python code)
