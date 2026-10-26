@@ -59,13 +59,22 @@ The indexes built after the ingestion are timed as index time.
 | System | What limits it |
 |--------|----------------|
 | STGraph | one node controller with one I/O device, i.e., one data partition; `compiler.parallelism=1`, `compiler.sort.parallel=false`; one I/O worker per partition (`io.workers.per.partition=1`); one flush and one merge at a time per partition (`storage.max.concurrent.flushes.per.partition=1`, `storage.max.concurrent.merges.per.partition=1`); the query engine on the threads of the configuration (1) |
-| Graphix | the AsterixDB configuration of STGraph; one data feed and one query at a time |
+| Graphix | the AsterixDB configuration of STGraph (same keys in its `cc.conf`, plus the Graphix extension, see below); one data feed and one query at a time |
 | Neo4j | Community edition: each query runs on one thread (no parallel runtime); `server.cypher.parallel.worker_limit=1`; one Bolt thread (`server.bolt.thread_pool_min_size=1`, `server.bolt.thread_pool_max_size=1`) and one HTTP worker thread (`server.threads.worker_count=1`); no page-cache prefetchers (`server.memory.pagecache.scan.prefetchers=0`); JVM with `-XX:ActiveProcessorCount=1`, `-XX:ParallelGCThreads=1`, `-XX:ConcGCThreads=1`; one session at a time |
 | PGAge | no parallel workers (`max_parallel_workers_per_gather=0`, `max_parallel_workers=0`, `max_parallel_maintenance_workers=0`); `max_worker_processes=2` (TimescaleDB launcher and one background worker), `timescaledb.max_background_workers=1`, `autovacuum_max_workers=1`; no prefetching (`effective_io_concurrency=0`, `maintenance_io_concurrency=0`); the same parallel-worker settings on the session of the loader and of the queries; one connection at a time |
 | AeonG, HyGraph | the container limited to one core, shared with their client; the other settings of their original evaluation scripts |
 
 Memory: the defaults of each system, except the page cache of Neo4j (512 MB) and the `work_mem` and
 `maintenance_work_mem` of PostgreSQL, from the original evaluation.
+
+Query planning: the defaults of each system, except Graphix. Its `cc.conf` has the AsterixDB configuration of STGraph
+plus the settings of the Graphix extension: the pattern semantics of its original configuration
+(`graphix.semantics.pattern=isomorphism`, `graphix.semantics.navigation=no-repeat-anything`) and
+`graphix.evaluation.prefer-indexnl=true` (default `false`). With it, Graphix places index nested-loop hints on the
+joins between vertices and edges, and so reads the events of a series through the primary key `(tsid, _id)` of
+`Observations`; by default every join is a hash join on scans, and its cost-based optimizer does not run (see
+`INCONSISTENCIES.txt`). The queries have no hints. `graphix.evaluation.minimize-joins` (it removes the joins between
+an edge and a vertex defined on the same records) is not enabled.
 
 ### Measurement
 
