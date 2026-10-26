@@ -24,7 +24,7 @@ import org.locationtech.jts.io.WKTWriter
  * same AsterixDB schema, same measurement.
  *
  * - One dataset per SmartBench collection (`Groups`, `Users`, `Sensors`, ...), holding the JSON objects as they are,
- *   inserted in batches (master data, timed as graph-store time).
+ *   with their WKT locations as geometries (2D), inserted in batches (master data, timed as graph-store time).
  * - One dataset (`TimeSeries`) with one record per time series (its tsid, event label and sensor), as the
  *   time-series nodes of the graph store of STGraph (graph-store time).
  * - One dataset (`Observations`) for the events, with the type and the primary key (tsid, _id) of the events of
@@ -185,13 +185,25 @@ class SmartBenchGraphix(
     /**
      * Inserts the pending records of [batch] into [dataset]. The batch is a request parameter, not part of the query
      * text: with the objects written in the query, a Graphix optimizer rule (ExtractFromRecordConstructorRule)
-     * overflows the stack on nested records
+     * overflows the stack on nested records. A WKT location becomes a geometry (2D, as the locations of the events),
+     * written in the query as a constant, one per record and picked by position: st_geom_from_text on a field returns,
+     * in AsterixDB 0.9.9, the geometry of the first record for every record (see INCONSISTENCIES.txt)
      */
     private fun insert(dataset: String, batch: MutableList<Map<String, Any>>) {
         if (batch.isEmpty()) return
-        graphix.exec("INSERT INTO `$dataset` (FROM \$rows AS r SELECT VALUE r);", mapOf("\$rows" to mapper.writeValueAsString(batch)))
+        val geometries = batch.map { record -> geometryOf(record[LOCATION])?.let { "st_geom_from_text(\"$it\")" } ?: "missing" }
+        val select = if (geometries.all { it == "missing" }) {
+            "SELECT VALUE r"
+        } else {
+            "LET g = [${geometries.joinToString(", ")}] SELECT VALUE CASE WHEN g[p - 1] IS MISSING THEN r ELSE object_put(r, \"$LOCATION\", g[p - 1]) END"
+        }
+        graphix.exec("INSERT INTO `$dataset` (FROM \$rows AS r AT p $select);", mapOf("\$rows" to mapper.writeValueAsString(batch)))
         batch.clear()
     }
+
+    /** The 2D WKT of [location], if it is a WKT geometry, as the loader writes the locations of the events */
+    private fun geometryOf(location: Any?): String? =
+        (location as? String)?.let { runCatching { WKTWriter().write(WKTReader().read(it)) }.getOrNull() }
 
     /**
      * The CREATE GRAPH statement: vertices from the datasets, from the time series of `TimeSeries` and from the events

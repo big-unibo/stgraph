@@ -12,16 +12,19 @@ EnvironmentOutlier
 
 
 
-- Graphix: wrong result, NOT FIXED (engine bug). In AsterixDB 0.9.9 (both the one of STGraph and the one of
-  Graphix), st_geom_from_text (and st_geom_from_geojson) returns, for every row of a query, the geometry of the first
-  row (SELECT VALUE st_as_text(st_geom_from_text(s)) FROM ["LINESTRING(34 0, 63 20)", "LINESTRING(4 15, 9 19)"] AS s
-  returns the first line twice; constants work). STGraph is not affected: it sends one constant WKT per query. The
-  Graphix query converts the location of every environment in the same query, so every environment gets the line of
-  the first one: on small 1 environment instead of 4 (without the spatial condition, Graphix returns the same 4
-  environments as STGraph). Which environment is "the first one" depends on the plan, so the result changes with the
-  model and the settings of Graphix (on small, 1 or 0 environments above the threshold). A fix would
-  store the environments as geometries at load time, through a data feed (the feeds parse WKT one record at a time;
-  an INSERT cannot convert a string into a geometry field).
+- Graphix: wrong result because of an engine bug, FIXED at load time. In AsterixDB 0.9.9 (both the one of STGraph and
+  the one of Graphix), st_geom_from_text returns, for every row of a query, the geometry of the first row
+  (SELECT VALUE st_as_text(st_geom_from_text(s)) FROM ["LINESTRING(34 0, 63 20)", "LINESTRING(4 15, 9 19)"] AS s
+  returns the first line twice); so do st_geom_from_geojson and st_geom_from_wkb, also on a field, in a LET or in a
+  subquery. Constants work, and so does st_make_point. STGraph is not affected: it sends one query per series, with
+  the location of the environment as a constant WKT (AsterixSyntaxParser). The Graphix query converted the location
+  of every environment in the same query, so every environment got the line of the first one: on small 1 or 0
+  environments above the threshold instead of 4, depending on the plan. Now the loader of Graphix stores the WKT
+  locations of the entities (the 340 infrastructures on small) as geometries (2D, as the events), each written as a
+  constant in the INSERT of its batch (not through a data feed), and the query intersects them directly: on small,
+  the 4 environments of STGraph, with the averages of one query per environment with its constant WKT. Difference
+  from STGraph left: Graphix stores the location of an entity as a geometry, STGraph as a string (converted in each
+  query).
 
 - Graphix, model: FIXED. The graph had one Temperature vertex per event and an edge from each sensor to each of its
   events (through a join of TimeSeries and Observations). Now it has the model of STGraph (hasTemperature, then
@@ -34,8 +37,7 @@ EnvironmentOutlier
   evaluates a pattern as joins between the views of its vertices and edges: by default every query scanned all the
   events twice (the edge hasTS and the vertex TemperatureEvent, the same records) and joined them on (tsid, _id);
   on large (259,200,000 events) EnvironmentCoverage did not end in two days, on 1 core. With minimize-joins, an
-  event is read once. On small, same results as before, row by row (EnvironmentOutlier without its spatial
-  condition, see above).
+  event is read once. On small, same results as before, row by row (EnvironmentOutlier: see above).
 
 - Graphix, primary key of the events: NOT FIXED (limit of the system). The queries read the events with a scan of
   Observations (hash joins), not through the primary key (tsid, _id) as STGraph does (one search per series, in the
