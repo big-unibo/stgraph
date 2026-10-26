@@ -29,18 +29,21 @@ EnvironmentOutlier
   (TemperatureEvent, the records of Observations, whose tsid points to their series). The queries are graph patterns
   down to the events, as before; EnvironmentCoverage stops at the series, as in STGraph.
 
-- Graphix, indexes: FIXED with a setting (graphix.evaluation.prefer-indexnl=true in its cc.conf, default false).
+- Graphix, indexes: FIXED with two settings of Graphix (graphix.evaluation.prefer-indexnl=true and
+  graphix.evaluation.minimize-joins=true in its cc.conf, both default false; they belong to the Graphix extension,
+  the AsterixDB of STGraph has neither).
   Graphix evaluates a pattern as joins between the views of its vertices and edges, and by default every join is a
   hash join on scans: every query scanned all the events twice (the edge and the vertex) and joined them on
   (tsid, _id); on large (259,200,000 events) EnvironmentCoverage did not end in two days, on 1 core. The optimizer
   uses an index in a join only with a hint (/*+ indexnl */), and its cost-based optimizer does not run (the plan is
   the same after ANALYZE DATASET, also for a plain SQL++ join, and SET `compiler.cbo` "true" fails with an
   IndexOutOfBoundsException), while the AsterixDB 0.9.9 of STGraph uses the primary key by itself after ANALYZE.
-  With the setting, Graphix places the hint itself on the joins between vertices and edges: from a series to its
-  events through the primary key (tsid, _id) of Observations, no hint in the queries. Differences from STGraph left:
-  the time window is applied after reading the events of a series (STGraph searches (tsid, _id) in the window), and
-  every event is looked up again by (tsid, _id), as a vertex. Not enabled: graphix.evaluation.minimize-joins (it
-  removes the join between an edge and a vertex defined on the same records).
+  With prefer-indexnl, Graphix places the hint itself on the joins between vertices and edges: from a series to its
+  events through the primary key (tsid, _id) of Observations, no hint in the queries. Alone, it also looks every
+  event up again by (tsid, _id), as the vertex TemperatureEvent of the edge hasTS (the same record): one B-tree
+  search per event, slower than a scan (on small, AgentOutlier 20 s instead of 17 s). minimize-joins removes that
+  join between an edge and a vertex defined on the same records. Difference from STGraph left: the time window is
+  applied after reading the events of a series (STGraph searches (tsid, _id) in the window).
 
 
 2. Loaders (Kotlin port vs Python code)

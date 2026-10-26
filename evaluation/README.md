@@ -47,7 +47,7 @@ replication.
 | System | Graph | Time series | Indexes                                                                                                                                                                             |
 |--------|-------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | STGraph | in-memory graph store: one node per entity and per time series | AsterixDB dataset of the events | primary key `(tsid, _id)` of the events; R-tree on the event location, built after the ingestion                                                                                    |
-| Graphix | one dataset per collection, and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them and over `Observations`, with the model of STGraph: sensor `-[hasTemperature]->` series (`Temperature`) `-[hasTS]->` events (`TemperatureEvent`) | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the vertices `TemperatureEvent` and the edges `hasTS` | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph, used by the joins between vertices and edges (`graphix.evaluation.prefer-indexnl=true` in its `cc.conf`, see `INCONSISTENCIES.txt`); R-tree on `Observations.location`, built after the ingestion |
+| Graphix | one dataset per collection, and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them and over `Observations`, with the model of STGraph: sensor `-[hasTemperature]->` series (`Temperature`) `-[hasTS]->` events (`TemperatureEvent`) | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the vertices `TemperatureEvent` and the edges `hasTS` | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph, used by the joins between vertices and edges (`graphix.evaluation.prefer-indexnl=true` and `graphix.evaluation.minimize-joins=true` in its `cc.conf`, see Query planning below); R-tree on `Observations.location`, built after the ingestion |
 | Neo4j | the statements of the Cypher dump (`graph.cypher`) | one `Temperature` node per event, linked to its sensor | range index on `Temperature.timestamp`, built after the ingestion; the label and relationship-type lookup indexes that Neo4j creates by itself |
 | PGAge | AGE graph `smartbench_graph`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `public.measurements` | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph                                         |
 | AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation                                                                                                                                                           |
@@ -70,11 +70,12 @@ Memory: the defaults of each system, except the page cache of Neo4j (512 MB) and
 Query planning: the defaults of each system, except Graphix. Its `cc.conf` has the AsterixDB configuration of STGraph
 plus the settings of the Graphix extension: the pattern semantics of its original configuration
 (`graphix.semantics.pattern=isomorphism`, `graphix.semantics.navigation=no-repeat-anything`) and
-`graphix.evaluation.prefer-indexnl=true` (default `false`). With it, Graphix places index nested-loop hints on the
-joins between vertices and edges, and so reads the events of a series through the primary key `(tsid, _id)` of
-`Observations`; by default every join is a hash join on scans, and its cost-based optimizer does not run (see
-`INCONSISTENCIES.txt`). The queries have no hints. `graphix.evaluation.minimize-joins` (it removes the joins between
-an edge and a vertex defined on the same records) is not enabled.
+two evaluation settings of Graphix, both default `false`, which the AsterixDB of STGraph does not have:
+`graphix.evaluation.prefer-indexnl=true` (Graphix places index nested-loop hints on the joins between vertices and
+edges, and so reads the events of a series through the primary key `(tsid, _id)` of `Observations`) and
+`graphix.evaluation.minimize-joins=true` (no join between an edge and a vertex defined on the same records: an event
+is read once, as the edge `hasTS` and as the vertex `TemperatureEvent`). By default every join is a hash join on
+scans, and the cost-based optimizer of Graphix does not run (see `INCONSISTENCIES.txt`). The queries have no hints.
 
 ### Measurement
 
