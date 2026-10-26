@@ -31,10 +31,10 @@ import org.locationtech.jts.io.WKTWriter
  *   STGraph, ingested through the same socket data feed: every event is the record STGraph sends (nodeToJson).
  * - One graph (`SmartBench`): one vertex label per collection and per event label, one edge label per reference
  *   field. As in [SmartBenchSTGraph], a top-level field `{"id": ...}` (or a list of them) is a reference and becomes
- *   an edge `has<Field>` towards the referenced entity; a sensor with a time series has an edge `has<EventLabel>`
- *   towards it. As in the graph store of STGraph, a time series is one vertex (a record of `TimeSeries`, labelled
- *   as its events), not one vertex per event: the queries reach its events through the primary key (tsid, _id) of
- *   `Observations` (see the queries in smartbench/queries/graphix).
+ *   an edge `has<Field>` towards the referenced entity. As in STGraph (hasTemperature, then HasTS), a sensor with a
+ *   time series has an edge `has<EventLabel>` towards the series, one vertex labelled as its events (a record of
+ *   `TimeSeries`), and the series an edge `hasTS` towards each of its events, vertices `<EventLabel>Event` (the
+ *   records of `Observations`, whose tsid is the reference to their series).
  *
  * Timed as [SmartBenchSTGraph] and [SmartBenchDataLoader]: the events sent by each worker (not its flush), then its
  * wait until its last event is readable, without the last read (time-series time); the closes of the feeds and the
@@ -57,6 +57,8 @@ class SmartBenchGraphix(
     private val eventsDataset = "Observations"
     private val timeSeriesDataset = "TimeSeries"
     private val graphName = "SmartBench"
+    // Edge from a time series to its events, as HasTS in STGraph
+    private val tsEdge = "hasTS"
 
     /** A reference field: entities labelled [source] point, through [field], to entities labelled [target] */
     private data class Reference(val source: String, val field: String, val isList: Boolean, val target: String)
@@ -192,13 +194,18 @@ class SmartBenchGraphix(
     }
 
     /**
-     * The CREATE GRAPH statement: vertices from the datasets and from the time series of `TimeSeries`, edges from the
-     * reference fields and from the sensors to their time series
+     * The CREATE GRAPH statement: vertices from the datasets, from the time series of `TimeSeries` and from the events
+     * of `Observations`; edges from the reference fields, from the sensors to their time series and from the time
+     * series to their events
      */
     private fun createGraph(): String {
+        val eventLabels = eventEdges.map { it.second }.toSet()
         val vertices = batches.keys.map { "VERTEX (:`$it`) PRIMARY KEY (id) AS `${datasetOf(it)}`" } +
-            eventEdges.map { it.second }.toSet().map { label ->
+            eventLabels.map { label ->
                 "VERTEX (:`$label`) PRIMARY KEY (id) AS (FROM `$timeSeriesDataset` T WHERE T.$LABEL = ${labelFromString(label).ordinal} SELECT VALUE T)"
+            } +
+            eventLabels.map { label ->
+                "VERTEX (:`${eventLabel(label)}`) PRIMARY KEY ($TSID, $ID) AS (FROM `$eventsDataset` O WHERE O.$LABEL = ${labelFromString(label).ordinal} SELECT VALUE O)"
             }
         val edges = references.map { ref ->
             val from = if (ref.isList) "FROM `${datasetOf(ref.source)}` S, S.`${ref.field}` R" else "FROM `${datasetOf(ref.source)}` S LET R = S.`${ref.field}`"
@@ -214,10 +221,14 @@ class SmartBenchGraphix(
             "EDGE (:`$sensorLabel`)-[:`${hasLabel(label)}`]->(:`$label`) SOURCE KEY (src) DESTINATION KEY (dst) " +
                 "AS (FROM `$timeSeriesDataset` T " +
                 "WHERE T.$LABEL = ${labelFromString(label).ordinal} AND T.sensorLabel = \"$sensorLabel\" SELECT T.sensor AS src, T.id AS dst)"
+        } + eventLabels.map { label ->
+            "EDGE (:`$label`)-[:`$tsEdge`]->(:`${eventLabel(label)}`) SOURCE KEY ($TSID) DESTINATION KEY ($TSID, $ID) " +
+                "AS (FROM `$eventsDataset` O WHERE O.$LABEL = ${labelFromString(label).ordinal} SELECT O.$TSID AS $TSID, O.$ID AS $ID)"
         }
         return "USE $dataverse; CREATE GRAPH $graphName AS\n  ${(vertices + edges).joinToString(",\n  ")};"
     }
 
     private fun hasLabel(field: String) = "has${label(field)}"
+    private fun eventLabel(label: String) = "${label}Event"
     private fun datasetOf(label: String) = "${label}s"
 }

@@ -18,28 +18,29 @@ EnvironmentOutlier
   returns the first line twice; constants work). STGraph is not affected: it sends one constant WKT per query. The
   Graphix query converts the location of every environment in the same query, so every environment gets the line of
   the first one: on small 1 environment instead of 4 (without the spatial condition, Graphix returns the same 4
-  environments as STGraph). Which environment is "the first one" depends on the plan: with the series vertices (see
-  below) it is another one, and on small the result has 0 environments above the threshold instead of 1. A fix would
+  environments as STGraph). Which environment is "the first one" depends on the plan, so the result changes with the
+  model and the settings of Graphix (on small, 1 or 0 environments above the threshold). A fix would
   store the environments as geometries at load time, through a data feed (the feeds parse WKT one record at a time;
   an INSERT cannot convert a string into a geometry field).
 
-- Graphix, all queries: FIXED (model). The graph had one Temperature vertex per event (an edge per event, through a
-  join of TimeSeries and Observations): every query scanned all the events twice (the edge and the vertex) and
-  joined them on (tsid, _id), with hash joins. On large (259,200,000 events) EnvironmentCoverage did not end in two
-  days, on 1 core. Now, as in STGraph (and PGAge), a time series is one vertex (a record of TimeSeries), and the
-  queries join the series found in the graph with Observations on tsid, with the time window on _id. On small, same
-  results as before, row by row (EnvironmentOutlier without the spatial condition, see above).
+- Graphix, model: FIXED. The graph had one Temperature vertex per event and an edge from each sensor to each of its
+  events (through a join of TimeSeries and Observations). Now it has the model of STGraph (hasTemperature, then
+  HasTS): sensor -[hasTemperature]-> time series (Temperature, a record of TimeSeries) -[hasTS]-> events
+  (TemperatureEvent, the records of Observations, whose tsid points to their series). The queries are graph patterns
+  down to the events, as before; EnvironmentCoverage stops at the series, as in STGraph.
 
-- Graphix, events of a series: NOT FIXED (limit of the system). The queries do not read the events of a series by
-  the primary key (tsid, _id), as STGraph does, but scan Observations once per query (hash join). The optimizer of
-  Graphix uses an index in a join only with a hint (/*+ indexnl */), which the queries do not use (the other
-  systems choose their plans by themselves), and its cost-based optimizer does not run: the plan is the same after
-  ANALYZE DATASET, also for a plain SQL++ join, and SET `compiler.cbo` "true" fails (IndexOutOfBoundsException).
-  The AsterixDB 0.9.9 of STGraph does it by itself: after ANALYZE DATASET, the same join (a series dataset and the
-  events of STGraph) becomes a search on the primary key, without hints. STGraph does not depend on it: it sends
-  each series its own query, with the tsid as a constant. With the hints, a range search per series on (tsid, _id):
-  on small, e.g. AgentOutlier 4.7 s instead of 6.9 s, AgentHistory 0.3 s instead of 2.7 s (throwaway container,
-  1 core); on large, a scan of 259,200,000 events per query.
+- Graphix, indexes: FIXED with a setting (graphix.evaluation.prefer-indexnl=true in its cc.conf, default false).
+  Graphix evaluates a pattern as joins between the views of its vertices and edges, and by default every join is a
+  hash join on scans: every query scanned all the events twice (the edge and the vertex) and joined them on
+  (tsid, _id); on large (259,200,000 events) EnvironmentCoverage did not end in two days, on 1 core. The optimizer
+  uses an index in a join only with a hint (/*+ indexnl */), and its cost-based optimizer does not run (the plan is
+  the same after ANALYZE DATASET, also for a plain SQL++ join, and SET `compiler.cbo` "true" fails with an
+  IndexOutOfBoundsException), while the AsterixDB 0.9.9 of STGraph uses the primary key by itself after ANALYZE.
+  With the setting, Graphix places the hint itself on the joins between vertices and edges: from a series to its
+  events through the primary key (tsid, _id) of Observations, no hint in the queries. Differences from STGraph left:
+  the time window is applied after reading the events of a series (STGraph searches (tsid, _id) in the window), and
+  every event is looked up again by (tsid, _id), as a vertex. Not enabled: graphix.evaluation.minimize-joins (it
+  removes the join between an edge and a vertex defined on the same records).
 
 
 2. Loaders (Kotlin port vs Python code)

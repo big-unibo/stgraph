@@ -1,10 +1,6 @@
-FROM (
-  FROM GRAPH SmartBench
-  MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(ts:`Temperature`)
-  SELECT i.id AS environment, i.location AS environmentLocation, ts.id AS tsid
-) AS g
-JOIN `Observations` m ON m.tsid = g.tsid
+FROM GRAPH SmartBench
+MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(ts:`Temperature`)-[:`hasTS`]->(m:`TemperatureEvent`)
 WHERE m.`_id` >= {TSTAMPFROM_PARAM} AND m.`_id` < {TSTAMPTO_PARAM}
-  AND st_intersects(st_geom_from_text(regexp_replace(g.environmentLocation, "(-?[0-9.]+) (-?[0-9.]+) -?[0-9.]+", "$1 $2")), m.location)
-GROUP BY g.environment AS environment
+  AND st_intersects(st_geom_from_text(regexp_replace(i.location, "(-?[0-9.]+) (-?[0-9.]+) -?[0-9.]+", "$1 $2")), m.location)
+GROUP BY i.id AS environment
 SELECT environment, AVG(m.`value`) AS avgValue;

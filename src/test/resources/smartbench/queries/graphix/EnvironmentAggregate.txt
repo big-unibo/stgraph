@@ -1,10 +1,6 @@
-FROM (
-  FROM GRAPH SmartBench
-  MATCH (pt:`PlatformType`)<-[:`hasType_`]-(p:`Platform`)-[:`hasOwner`]->(u:`User`)<-[:`hasOwner`]-(s:`Sensor`),
-        (it:`InfrastructureType`)<-[:`hasType_`]-(i:`Infrastructure`)<-[:`hasCoverage`]-(s)-[:`hasTemperature`]->(ts:`Temperature`)
-  SELECT pt.id AS platformType, u.id AS owner, i.id AS environment, ts.id AS tsid
-) AS g
-JOIN `Observations` m ON m.tsid = g.tsid
+FROM GRAPH SmartBench
+MATCH (pt:`PlatformType`)<-[:`hasType_`]-(p:`Platform`)-[:`hasOwner`]->(u:`User`)<-[:`hasOwner`]-(s:`Sensor`),
+      (it:`InfrastructureType`)<-[:`hasType_`]-(i:`Infrastructure`)<-[:`hasCoverage`]-(s)-[:`hasTemperature`]->(ts:`Temperature`)-[:`hasTS`]->(m:`TemperatureEvent`)
 WHERE m.`_id` >= {TSTAMPFROM_PARAM} AND m.`_id` < {TSTAMPTO_PARAM}
-GROUP BY g.platformType AS platformType, g.owner AS owner, g.environment AS environment
+GROUP BY pt.id AS platformType, u.id AS owner, i.id AS environment
 SELECT platformType, owner, environment, AVG(m.`value`) AS avgValue;
