@@ -129,6 +129,13 @@ For each dataset, size and system, one system at a time, a run:
    each selectivity;
 4. stops the system (`docker compose stop`: the containers and their data are kept).
 
+The data of the AsterixDB of STGraph and of Graphix are in a Docker volume (`asterixdb-data`, `graphix-data`), so
+they are kept also when the container is recreated (e.g., `docker compose down`, or a change of its compose file);
+`ASTERIXDB_DATA` and `GRAPHIX_DATA` set a host directory instead (e.g., a disk with room for the large sizes). Every
+ingestion drops and reloads its data: with `ingestion.iterations: 0`, a run only queries the data already loaded
+(STGraph also needs its graph, dumped by its loader in `datasets/dump/smartbench/<size>`). After a change of the
+partitions in a `cc.conf`, the volume must be emptied (`docker volume rm`).
+
 The datasets are SmartBench (every system) and the synthetic dataset (STGraph, with the loader and the queries of its
 tests; `queries.ids` selects their families, e.g., `SynthFilter`). STGraph runs its reference loader (`SmartBenchDataLoader`) and queries; `stgraph-std` loads the data through the shared
 loader skeleton (`SmartBenchSTGraph`), to compare the measurement boundaries. AeonG and HyGraph load and query inside

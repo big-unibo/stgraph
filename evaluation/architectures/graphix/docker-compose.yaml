@@ -19,6 +19,9 @@ services:
         tail -f /dev/null
     volumes:
       - "./conf:/graphixsetup/"
+      # Data of AsterixDB (storage and transaction log), kept when the container is recreated; GRAPHIX_DATA: a host
+      # directory instead of the Docker volume. Empty it when the partitions of cc.conf change
+      - "${GRAPHIX_DATA:-graphix-data}:/opt/graphix/opt/local/data"
     # Host ports differ from the AsterixDB of STGraph (19001/19002/19006), so both can run on the same machine
     ports:
       - ${GRAPHIX_CC_PORT:-29001}:19001
@@ -31,3 +34,6 @@ services:
       - ${GRAPHIX_UI_PORT:-29006}:19006
       # Socket data feeds for event ingestion (outside the 10001-11000 range used by the AsterixDB of STGraph)
       - 11001-11010:11001-11010
+
+volumes:
+  graphix-data:

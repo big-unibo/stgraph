@@ -14,6 +14,9 @@ services:
         tail -f /dev/null
     volumes:
       - "./evaluation/architectures/stgraph/conf:/asterixsetup/"
+      # Data of AsterixDB (storage and transaction log), kept when the container is recreated; ASTERIXDB_DATA: a host
+      # directory instead of the Docker volume. Empty it when the partitions of cc.conf change
+      - "${ASTERIXDB_DATA:-asterixdb-data}:/workspace/apache-asterixdb-0.9.9/opt/local/data"
     ports:
       - 19006:19006
       - 19002:19002
@@ -36,3 +39,6 @@ services:
     volumes:
       - ./datasets/original/mimic:/dump:ro
       - ./datasets:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  asterixdb-data:
