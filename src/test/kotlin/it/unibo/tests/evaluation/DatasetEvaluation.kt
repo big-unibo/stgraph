@@ -47,7 +47,7 @@ abstract class DatasetEvaluation(
     ) {
         for (setup in setups) {
             val local = setup.host == "localhost"
-            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", ready = { asterixDBReady(setup.host, setup.port) }) {
+            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = evaluation.volumes, ready = { asterixDBReady(setup.host, setup.port) }) {
                 for (threads in evaluation.threads) {
                     repeat(evaluation.ingestionIterations) { iteration ->
                         resetPort()

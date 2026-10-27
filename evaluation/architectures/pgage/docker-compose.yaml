@@ -15,6 +15,13 @@ services:
       PGDATA: /home/postgres/pgdata/data
     volumes:
       - ./conf:/pgconf
+      # Data of PostgreSQL (PGDATA is a folder inside), kept when the container is recreated; PGAGE_DATA: a host directory
+      # instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml), writable by
+      # the user 1000 of the container (postgres)
+      - "${PGAGE_DATA:-pgage-data}:/home/postgres/pgdata"
     command: [ "-c", "config_file=/pgconf/postgresql.conf" ]
     ports:
       - ${POSTGRES_PORT_EXT:-5432}:5432
+
+volumes:
+  pgage-data:

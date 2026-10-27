@@ -109,6 +109,7 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 | Section | Content |
 |---------|---------|
 | `datasets`, `setups` | the sizes of each dataset (for MIMIC-IV, also the PostgreSQL the data is read from: `postgres_endpoint`, `port`, `database`, `user`, `password`); the AsterixDB setups of STGraph |
+| `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`; default: a Docker volume of each system) |
 | `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy` |
 | `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
@@ -129,12 +130,14 @@ For each dataset, size and system, one system at a time, a run:
    each selectivity;
 4. stops the system (`docker compose stop`: the containers and their data are kept).
 
-The data of the AsterixDB of STGraph and of Graphix are in a Docker volume (`asterixdb-data`, `graphix-data`), so
-they are kept also when the container is recreated (e.g., `docker compose down`, or a change of its compose file);
-`ASTERIXDB_DATA` and `GRAPHIX_DATA` set a host directory instead (e.g., a disk with room for the large sizes). Every
-ingestion drops and reloads its data: with `ingestion.iterations: 0`, a run only queries the data already loaded
-(STGraph also needs its graph, dumped by its loader in `datasets/dump/smartbench/<size>`). After a change of the
-partitions in a `cc.conf`, the volume must be emptied (`docker volume rm`).
+The data of the AsterixDB of STGraph, Graphix, Neo4j and PGAge are in a Docker volume of each system, so they are
+kept also when the container is recreated (e.g., `docker compose down`, or a change of its compose file). The
+`volumes` section of `test_config.yml` sets a folder on the host for each system instead (e.g., a disk with room for
+the large sizes): the evaluation passes them to the compose files (`ASTERIXDB_DATA`, `GRAPHIX_DATA`, `NEO4J_DATA`,
+`PGAGE_DATA`; to start a system by hand on the same folder, set the same variable). Every ingestion drops and
+reloads its data: with `ingestion.iterations: 0`, a run only queries the data already loaded (STGraph also needs its
+graph, dumped by its loader in `datasets/dump/smartbench/<size>`). After a change of the partitions in a `cc.conf`, the
+data of that AsterixDB must be emptied.
 
 The datasets are SmartBench (every system) and the synthetic dataset (STGraph, with the loader and the queries of its
 tests; `queries.ids` selects their families, e.g., `SynthFilter`). STGraph runs its reference loader (`SmartBenchDataLoader`) and queries; `stgraph-std` loads the data through the shared

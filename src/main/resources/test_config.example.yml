@@ -26,6 +26,16 @@ setups:
   #   port: 19002
   #   controllerIPs: [ "192.168.1.11", "192.168.1.12" ]
 
+# Where the systems started by the evaluation (deploy: true) keep their data: a folder on the host for each one
+# (relative paths: from the repository root; created if missing), e.g. on a disk with room for the large sizes.
+# Without a folder, the Docker volume of the system. The folder of pgage must be writable by the user 1000 (postgres
+# in its container). Empty the folder of asterixdb or graphix when the partitions of its cc.conf change
+volumes:
+  asterixdb:   # the AsterixDB of STGraph (docker-compose.yaml of the repository root)
+  graphix:
+  neo4j:
+  pgage:
+
 # Parameters common to the specific runs and to the evaluation: each run, and the evaluation, can set its own
 defaults:
   # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode.

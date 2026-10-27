@@ -67,6 +67,7 @@ private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<
     )
     progress("  STGraph: setups ${evaluation.setups.joinToString()}, threads ${evaluation.threads.joinToString()}, modes ${evaluation.modes.joinToString()}")
     progress("  download: ${evaluation.download}, deploy: ${evaluation.deploy}")
+    progress("  data folders: " + evaluation.volumes.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" })
 }
 
 /** Runs [command] from the repository root, with the output on the console; fails if it does not succeed */
@@ -118,6 +119,6 @@ fun <T> deployed(
         return block()
     } finally {
         progress("deploy | $system: stopping")
-        runCommand(listOf("docker", "compose", "-f", composeFile, "stop") + services)
+        runCommand(listOf("docker", "compose", "-f", composeFile, "stop") + services, env)
     }
 }

@@ -73,7 +73,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     private fun neo4j() {
         download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j")
         val ready = { neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() } }
-        deployed(evaluation.deploy, "evaluation/architectures/neo4j/docker-compose.yaml", ready = ready) {
+        deployed(evaluation.deploy, "evaluation/architectures/neo4j/docker-compose.yaml", env = evaluation.volumes, ready = ready) {
             repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI) } }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
@@ -87,7 +87,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
         download("datasets/original/smartbench/$size", "smartbench")
         // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
         val connects: () -> Unit = { DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } } }
-        deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, ready = connects) {
+        deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, env = evaluation.volumes, ready = connects) {
             repeat(evaluation.ingestionIterations) { ingest("pgage", it) { SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD) } }
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
                 queries("pgage", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }
@@ -97,7 +97,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun graphix() {
         download("datasets/original/smartbench/$size", "smartbench")
-        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
+        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = evaluation.volumes, ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
             repeat(evaluation.ingestionIterations) { ingest("graphix", it) { SmartBenchGraphix(size, port = GRAPHIX_PORT) } }
             queries("graphix", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QGraphix(queryId, size, selectivity, rangeIndex) }
         }

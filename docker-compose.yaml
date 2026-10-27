@@ -15,7 +15,8 @@ services:
     volumes:
       - "./evaluation/architectures/stgraph/conf:/asterixsetup/"
       # Data of AsterixDB (storage and transaction log), kept when the container is recreated; ASTERIXDB_DATA: a host
-      # directory instead of the Docker volume. Empty it when the partitions of cc.conf change
+      # directory instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml).
+      # Empty it when the partitions of cc.conf change
       - "${ASTERIXDB_DATA:-asterixdb-data}:/workspace/apache-asterixdb-0.9.9/opt/local/data"
     ports:
       - 19006:19006

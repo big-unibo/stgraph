@@ -12,6 +12,12 @@ services:
     volumes:
       # The files in /conf override the configuration of the image
       - ./conf:/conf
+      # Data of Neo4j, kept when the container is recreated; NEO4J_DATA: a host directory instead of the Docker volume
+      # (set by the evaluation from the volumes section of test_config.yml)
+      - "${NEO4J_DATA:-neo4j-data}:/data"
     ports:
       - 7474:7474
       - 7687:7687
+
+volumes:
+  neo4j-data:

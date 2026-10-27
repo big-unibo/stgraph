@@ -20,7 +20,8 @@ services:
     volumes:
       - "./conf:/graphixsetup/"
       # Data of AsterixDB (storage and transaction log), kept when the container is recreated; GRAPHIX_DATA: a host
-      # directory instead of the Docker volume. Empty it when the partitions of cc.conf change
+      # directory instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml).
+      # Empty it when the partitions of cc.conf change
       - "${GRAPHIX_DATA:-graphix-data}:/opt/graphix/opt/local/data"
     # Host ports differ from the AsterixDB of STGraph (19001/19002/19006), so both can run on the same machine
     ports:
