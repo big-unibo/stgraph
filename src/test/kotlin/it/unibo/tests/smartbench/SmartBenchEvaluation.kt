@@ -110,9 +110,10 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
                 progress("$run: ${loader.graphNodes} graph nodes, ${loader.events} events, ${loader.relationships} relationships; importing")
                 try {
                     runCommand(listOf("docker", "compose", "-f", NEO4J_COMPOSE, "stop"), volumes)
+                    // The database (neo4j) before the options: after them, --relationships (several files) would take it as a file
                     runCommand(
                         listOf("docker", "compose", "-f", NEO4J_COMPOSE, "run", "--rm", "--no-deps", "-v", "$importDir:/import:ro", "neo4j",
-                            "neo4j-admin", "database", "import", "full", "--overwrite-destination", "--id-type=integer") + importArgs + "neo4j",
+                            "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination", "--id-type=integer") + importArgs,
                         volumes
                     )
                 } finally {
