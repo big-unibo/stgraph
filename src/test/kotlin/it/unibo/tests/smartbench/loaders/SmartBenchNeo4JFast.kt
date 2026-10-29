@@ -65,9 +65,10 @@ class SmartBenchNeo4JFast(val size: String) {
                         graphNodes++
                     }
                     match != null -> {
-                        val (sourceLabel, sourceId, destId, from, type, to) = match.destructured
-                        val sources = nodesById[sourceId].orEmpty().filter { it.label == sourceLabel }
-                        val dests = nodesById[destId].orEmpty()
+                        // Without a label, every node with that id (as the MATCH)
+                        val (sourceLabel, sourceId, destLabel, destId, from, type, to) = match.destructured
+                        val sources = nodesById[sourceId].orEmpty().filter { sourceLabel.isEmpty() || it.label == sourceLabel }
+                        val dests = nodesById[destId].orEmpty().filter { destLabel.isEmpty() || it.label == destLabel }
                         for (u in sources) for (v in dests) {
                             val (start, end) = if (from == "u" && to == "v") u to v else v to u
                             rels.write("${start.importId},${end.importId},$type\n")
@@ -256,9 +257,11 @@ class SmartBenchNeo4JFast(val size: String) {
         // CREATE (n:Label { ... }) of graph.cypher
         private val CREATE_NODE = Regex("""CREATE \(n:(\w+) \{(.*)\}\)""", RegexOption.DOT_MATCHES_ALL)
 
-        // MATCH (u : Label {id : 'x' }), (v {id : 'y' }) CREATE (u) - [r:type] -> (v) (or from v to u) of graph.cypher
+        // MATCH (u : Label {id : 'x' }), (v {id : 'y' }) CREATE (u) - [r:type] -> (v) (or from v to u) of graph.cypher:
+        // the labels of u and v are optional (e.g., MATCH (u {id : 'user1' }), (v {id : 'ISG' }) ...)
         private val MATCH_RELATIONSHIP = Regex(
-            """MATCH \(u : (\w+) \{id : '([^']*)' \}\), \(v \{id : '([^']*)' \}\) CREATE \((\w)\) - \[r:(\w+)\] -> \((\w)\)"""
+            """MATCH\s*\(u\s*(?::\s*(\w+))?\s*\{\s*id\s*:\s*'([^']*)'\s*\}\s*\)\s*,\s*\(v\s*(?::\s*(\w+))?\s*\{\s*id\s*:\s*'([^']*)'\s*\}\s*\)""" +
+                """\s*CREATE\s*\((\w)\)\s*-\s*\[r:(\w+)\]\s*->\s*\((\w)\)"""
         )
 
         // MATCH (s_N: Sensor {id: 'x'}) and CREATE (s_N)-[:hasTemperature]->(:Temperature {...}) of ts.cypher
