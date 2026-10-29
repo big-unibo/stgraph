@@ -8,6 +8,7 @@ import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
 import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
+import it.unibo.tests.evaluation.seconds
 import it.unibo.tests.systems.neo4jDriver
 import it.unibo.tests.systems.pgAgeConnection
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QGraphix
@@ -16,9 +17,12 @@ import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QPGAge
 import it.unibo.tests.smartbench.loaders.SmartBenchDataLoader
 import it.unibo.tests.smartbench.loaders.SmartBenchGraphix
 import it.unibo.tests.smartbench.loaders.SmartBenchNeo4J
+import it.unibo.tests.smartbench.loaders.SmartBenchNeo4JFast
 import it.unibo.tests.smartbench.loaders.SmartBenchPGAge
+import it.unibo.tests.smartbench.loaders.SmartBenchPGAgeFast
 import it.unibo.tests.smartbench.loaders.SmartBenchSTGraph
 import it.unibo.tests.smartbench.queries.*
+import java.io.File
 import java.sql.DriverManager
 
 /**
@@ -70,10 +74,69 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             }
         }
 
+    /**
+     * Loads SmartBench into [system] (neo4j or pgage) in bulk, to query it afterwards (./gradlew fastLoadNeo4j,
+     * fastLoadPgAge, then e.g. evaluateQueries): the system is left with the data of its ingestion (same nodes, edges,
+     * rows and indexes), in its data folder (volumes section), but the load is not timed and nothing goes to results/.
+     * - pgage: SmartBenchPGAgeFast on the system started as for the evaluation (deploy);
+     * - neo4j: the CSV files of SmartBenchNeo4JFast (datasets/import/neo4j/<size>, removed at the end), imported with
+     *   neo4j-admin into an empty database while Neo4j is stopped, then the range index of SmartBenchNeo4J; it starts
+     *   and stops Neo4j itself, so it needs deploy: true.
+     */
+    fun fastLoad(system: String) {
+        val run = "fast load | $system | $dataset $size"
+        val start = System.currentTimeMillis()
+        when (system) {
+            "pgage" -> {
+                download("datasets/original/smartbench/$size", "smartbench", needed = true)
+                deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = volumes, ready = ::pgageReady) {
+                    progress("$run: started")
+                    val loader = SmartBenchPGAgeFast(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD)
+                    try {
+                        loader.loadData()
+                    } finally {
+                        loader.close()
+                    }
+                    progress("$run: done in ${seconds(System.currentTimeMillis() - start)}; ${loader.getGSCardinality()} graph elements, ${loader.getTSCardinality()} events")
+                }
+            }
+            "neo4j" -> {
+                check(evaluation.deploy) { "The fast load of Neo4j stops and starts Neo4j itself: it needs deploy: true" }
+                download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j", needed = true)
+                val importDir = File("datasets/import/neo4j/$size").absoluteFile
+                val loader = SmartBenchNeo4JFast(size)
+                progress("$run: writing the files of the import ($importDir)")
+                val importArgs = loader.writeImportFiles(importDir.toPath())
+                progress("$run: ${loader.graphNodes} graph nodes, ${loader.events} events, ${loader.relationships} relationships; importing")
+                try {
+                    runCommand(listOf("docker", "compose", "-f", NEO4J_COMPOSE, "stop"), volumes)
+                    runCommand(
+                        listOf("docker", "compose", "-f", NEO4J_COMPOSE, "run", "--rm", "--no-deps", "-v", "$importDir:/import:ro", "neo4j",
+                            "neo4j-admin", "database", "import", "full", "--overwrite-destination", "--id-type=integer") + importArgs + "neo4j",
+                        volumes
+                    )
+                } finally {
+                    importDir.deleteRecursively()
+                }
+                deployed(true, NEO4J_COMPOSE, env = volumes, ready = ::neo4jReady) {
+                    neo4jDriver(NEO4J_URI).use { driver -> driver.session().use { SmartBenchNeo4J.createIndexes(it) } }
+                }
+                progress("$run: done in ${seconds(System.currentTimeMillis() - start)}")
+            }
+            else -> error("No fast load for $system: only neo4j and pgage")
+        }
+    }
+
+    private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }
+
+    // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
+    private fun pgageReady() {
+        DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } }
+    }
+
     private fun neo4j() {
         download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j")
-        val ready = { neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() } }
-        deployed(evaluation.deploy, "evaluation/architectures/neo4j/docker-compose.yaml", env = evaluation.volumes, ready = ready) {
+        deployed(evaluation.deploy, NEO4J_COMPOSE, env = volumes, ready = ::neo4jReady) {
             repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI) } }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
@@ -85,9 +148,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun pgage() {
         download("datasets/original/smartbench/$size", "smartbench")
-        // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
-        val connects: () -> Unit = { DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } } }
-        deployed(evaluation.deploy, "evaluation/architectures/pgage/docker-compose.yaml", readyChecks = 3, env = evaluation.volumes, ready = connects) {
+        deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = volumes, ready = ::pgageReady) {
             repeat(evaluation.ingestionIterations) { ingest("pgage", it) { SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD) } }
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
                 queries("pgage", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }
@@ -97,7 +158,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun graphix() {
         download("datasets/original/smartbench/$size", "smartbench")
-        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = evaluation.volumes, ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
+        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = volumes, ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
             repeat(evaluation.ingestionIterations) { ingest("graphix", it) { SmartBenchGraphix(size, port = GRAPHIX_PORT) } }
             queries("graphix", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QGraphix(queryId, size, selectivity, rangeIndex) }
         }
@@ -110,6 +171,10 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     private fun selfContained(system: String) {
         val oldSize = mapOf("small" to "small", "medium" to "large", "large" to "big")[size]
             ?: error("$system runs on small, medium and large only")
+        if (evaluation.ingestionIterations == 0 || evaluation.queryIterations == 0) {
+            progress("$system | $dataset $size: skipped, its container runs the ingestion and the queries together (no single phase)")
+            return
+        }
         val composeFile = "evaluation/architectures/$system/docker-compose.yaml"
         val env = mapOf(
             "DATASET" to dataset,
@@ -132,6 +197,8 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     companion object {
         const val NEO4J_URI = "bolt://localhost:7687"
+        const val NEO4J_COMPOSE = "evaluation/architectures/neo4j/docker-compose.yaml"
+        const val PGAGE_COMPOSE = "evaluation/architectures/pgage/docker-compose.yaml"
         const val PGAGE_URL = "jdbc:postgresql://localhost:5432/smartbench_eval"
         const val PGAGE_USER = "postgres"
         const val PGAGE_PASSWORD = "psw"

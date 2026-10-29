@@ -1,5 +1,6 @@
 package it.unibo.tests.evaluation
 
+import it.unibo.stats.Config
 import it.unibo.stats.TestConfig
 import it.unibo.tests.smartbench.SmartBenchEvaluation
 import it.unibo.tests.synth.SynthEvaluation
@@ -10,14 +11,28 @@ import kotlin.system.exitProcess
  * The evaluation configured by the evaluation section of test_config.yml: for each dataset, size and system (one at a
  * time), it downloads the missing data, deploys the system, loads the data, runs the queries and stops the system.
  * Without arguments (./gradlew evaluate), every combination of the parameters of the section; with the argument
- * "specificRuns" (./gradlew evaluateSpecificRuns), the runs of the specificRuns section, one after the other. The
- * results go to results/
+ * "specificRuns" (./gradlew evaluateSpecificRuns), the runs of the specificRuns section, one after the other. With
+ * "ingestion" or "queries" (./gradlew evaluateIngestion, evaluateQueries, evaluateSpecificRunsIngestion,
+ * evaluateSpecificRunsQueries), only that phase: the queries run on the data already loaded (see the volumes section).
+ * With "fastLoad" and a system (./gradlew fastLoadNeo4j, fastLoadPgAge), the bulk load of SmartBench into it, for each
+ * size of the evaluation section (see SmartBenchEvaluation.fastLoad). The results go to results/
  * (see evaluation/README.md). Run from the repository root. A system that fails is reported at the end, the others go on.
  */
 fun main(args: Array<String>) {
     val config = TestConfig.loadConfig()
+    if ("fastLoad" in args) fastLoad(config, args.getOrNull(args.indexOf("fastLoad") + 1) ?: error("fastLoad needs a system"))
     val byRuns = "specificRuns" in args
-    val runs = if (byRuns) EvaluationConfig.loadSpecificRuns() else listOf(EvaluationConfig.load())
+    val onlyIngestion = "ingestion" in args
+    val onlyQueries = "queries" in args
+    require(!(onlyIngestion && onlyQueries)) { "Either ingestion or queries, not both (both: no argument)" }
+    // Only one phase: the other one runs zero times
+    val runs = (if (byRuns) EvaluationConfig.loadSpecificRuns() else listOf(EvaluationConfig.load())).map {
+        when {
+            onlyIngestion -> it.copy(queryIterations = 0)
+            onlyQueries -> it.copy(ingestionIterations = 0)
+            else -> it
+        }
+    }
     val failures = mutableListOf<String>()
     runs.forEachIndexed { index, evaluation ->
         val run = if (byRuns) "specific run ${index + 1}/${runs.size}" else "evaluation"
@@ -56,8 +71,34 @@ fun main(args: Array<String>) {
     exitProcess(0)
 }
 
+/**
+ * The bulk load of SmartBench into [system] (neo4j or pgage), for each size of the evaluation section (default:
+ * datasets.smartbench.sizes), to query it afterwards; then the process ends
+ */
+private fun fastLoad(config: Config, system: String): Nothing {
+    val evaluation = EvaluationConfig.load()
+    val sizes = evaluation.sizes ?: config.datasets["smartbench"]?.sizes?.map { TestConfig.normalizeSize(it) }
+        ?: error("No sizes for the dataset smartbench in test_config.yml")
+    progress("fast load | $system | smartbench (sizes: ${sizes.joinToString()}), deploy: ${evaluation.deploy}, data folders: " +
+        evaluation.volumeFolders.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" })
+    val failures = sizes.filter { size ->
+        runCatching { SmartBenchEvaluation(config, evaluation, size).fastLoad(system) }
+            .onFailure { progress("fast load | $system | smartbench $size: FAILED ($it)"); it.printStackTrace() }
+            .isFailure
+    }
+    progress("fast load done" + if (failures.isEmpty()) "" else ", failed: ${failures.joinToString()}")
+    exitProcess(if (failures.isEmpty()) 0 else 1)
+}
+
 private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<String, List<String>>) {
     progress("$run, parameters (test_config.yml):")
+    progress(
+        "  phases: " + when {
+            evaluation.queryIterations == 0 -> "ingestion only"
+            evaluation.ingestionIterations == 0 -> "queries only, on the data already loaded"
+            else -> "ingestion and queries"
+        }
+    )
     progress("  systems: ${evaluation.systems.joinToString()}")
     progress("  datasets: " + sizes.entries.joinToString("; ") { (dataset, s) -> "$dataset (sizes: ${s.joinToString()})" })
     progress("  ingestion: ${evaluation.ingestionIterations} iteration(s)")
@@ -67,7 +108,8 @@ private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<
     )
     progress("  STGraph: setups ${evaluation.setups.joinToString()}, threads ${evaluation.threads.joinToString()}, modes ${evaluation.modes.joinToString()}")
     progress("  download: ${evaluation.download}, deploy: ${evaluation.deploy}")
-    progress("  data folders: " + evaluation.volumes.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" })
+    progress("  label: " + (evaluation.label?.let { "$it (models of the results: ${evaluation.model("<system>")})" } ?: "none"))
+    progress("  data folders: " + evaluation.volumeFolders.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" })
 }
 
 /** Runs [command] from the repository root, with the output on the console; fails if it does not succeed */

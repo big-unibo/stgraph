@@ -29,6 +29,9 @@ abstract class DatasetEvaluation(
 ) {
     protected val setups: List<SetupConfig> = evaluation.setups.map { config.setups[it] ?: error("Unknown setup: $it") }
 
+    /** The data folders of the systems for this size, as the variables of their compose files */
+    protected val volumes: Map<String, String> = evaluation.volumes(size)
+
     /** Whether the queries of the dataset have the time windows of time_constraints.yaml */
     protected open val timeWindows = true
 
@@ -47,7 +50,7 @@ abstract class DatasetEvaluation(
     ) {
         for (setup in setups) {
             val local = setup.host == "localhost"
-            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = evaluation.volumes, ready = { asterixDBReady(setup.host, setup.port) }) {
+            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = volumes, ready = { asterixDBReady(setup.host, setup.port) }) {
                 for (threads in evaluation.threads) {
                     repeat(evaluation.ingestionIterations) { iteration ->
                         resetPort()
@@ -55,7 +58,7 @@ abstract class DatasetEvaluation(
                     }
                 }
                 // numMachines: the number of node controllers, as for the ingestion (1 on a local setup)
-                queries?.invoke(setup, setup.controllerIPs.toSet().size)
+                if (evaluation.queryIterations > 0) queries?.invoke(setup, setup.controllerIPs.toSet().size)
             }
         }
     }
@@ -73,13 +76,17 @@ abstract class DatasetEvaluation(
         }
     }
 
-    /** Loads the data with the loader that [create] returns (loadDataset), recording it as [model], between two progress lines */
+    /**
+     * Loads the data with the loader that [create] returns (loadDataset), recording it as [model] (with the label of
+     * the run, see EvaluationConfig.model), between two progress lines
+     */
     protected fun ingest(model: String, iteration: Int, threads: Int = 1, numMachines: Int = 1, create: () -> Loader) {
-        val run = "ingestion | $model | $dataset $size | iteration ${iteration + 1}/${evaluation.ingestionIterations}, $threads thread(s)"
+        val recorded = evaluation.model(model)
+        val run = "ingestion | $recorded | $dataset $size | iteration ${iteration + 1}/${evaluation.ingestionIterations}, $threads thread(s)"
         progress("$run: started")
         val start = System.currentTimeMillis()
         val loader = create()
-        loadDataset(loader, model, threads = threads, numMachines = numMachines, dataset, size)
+        loadDataset(loader, recorded, threads = threads, numMachines = numMachines, dataset, size)
         progress(
             "$run: done in ${seconds(System.currentTimeMillis() - start)} (timed: graph ${seconds(loader.getGSTime())}, " +
                 "time series ${seconds(loader.getTSTime())}, index ${seconds(loader.getIndexTime())}); " +
@@ -89,7 +96,8 @@ abstract class DatasetEvaluation(
 
     /**
      * Runs every query of [queryIds] [queryIterations][EvaluationConfig.queryIterations] times, on every time window of
-     * each selectivity (as the Python evaluation), with each mode and number of threads; [build] returns null to skip a run
+     * each selectivity (as the Python evaluation), with each mode and number of threads, recorded as [model] (with the
+     * label of the run); [build] returns null to skip a run
      */
     protected fun queries(
         model: String,
@@ -99,19 +107,20 @@ abstract class DatasetEvaluation(
         modes: List<QueryMode> = listOf(QueryMode.OPTIMIZED),
         build: (queryId: String, selectivity: String, rangeIndex: Int, mode: QueryMode) -> Querying?
     ) {
+        val recorded = evaluation.model(model)
         for (iteration in 0 until evaluation.queryIterations) {
             for (queryId in queryIds) {
                 for ((selectivity, rangeIndex) in windows(queryId)) {
                     for (mode in modes) {
                         for (thread in threads) {
                             val query = build(queryId, selectivity, rangeIndex, mode) ?: continue
-                            val run = "query | $model | $dataset $size | $queryId ($selectivity, window $rangeIndex, " +
+                            val run = "query | $recorded | $dataset $size | $queryId ($selectivity, window $rangeIndex, " +
                                 "iteration ${iteration + 1}/${evaluation.queryIterations}, $mode, $thread thread(s))"
                             progress("$run: started")
                             // The time and the cardinality recorded by runQuery, to print them
                             var elapsed = 0L
                             var cardinality = 0
-                            val recorded = object : Querying {
+                            val timed = object : Querying {
                                 override val queryId = query.queryId
                                 override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
                                     val begin = System.currentTimeMillis()
@@ -122,7 +131,7 @@ abstract class DatasetEvaluation(
                                 }
                             }
                             resetPort()
-                            runQuery(recorded, model, thread, numMachines, dataset, size, mode, iteration, selectivity, rangeIndex)
+                            runQuery(timed, recorded, thread, numMachines, dataset, size, mode, iteration, selectivity, rangeIndex)
                             progress("$run: $elapsed ms, $cardinality results")
                         }
                     }
@@ -147,9 +156,12 @@ abstract class DatasetEvaluation(
         }
     }
 
-    /** Downloads [path] (the dataset [name] of downloadDataset.sh) when it is missing and the configuration allows it */
-    protected fun download(path: String, name: String) {
-        if (File(path).exists()) return
+    /**
+     * Downloads [path] (the dataset [name] of downloadDataset.sh) when it is missing and the configuration allows it;
+     * not when the run only queries the data already loaded, unless [needed]
+     */
+    protected fun download(path: String, name: String, needed: Boolean = evaluation.ingestionIterations > 0) {
+        if (!needed || File(path).exists()) return
         check(evaluation.download) { "Missing $path: run ./downloadDataset.sh $name $size, or set download: true" }
         progress("download | $name $size: started")
         downloadDataset(name, size)

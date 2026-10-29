@@ -47,7 +47,7 @@ replication.
 | System | Graph | Time series | Indexes                                                                                                                                                                             |
 |--------|-------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | STGraph | in-memory graph store: one node per entity and per time series | AsterixDB dataset of the events | primary key `(tsid, _id)` of the events; R-tree on the event location, built after the ingestion                                                                                    |
-| Graphix | one dataset per collection (the WKT locations stored as 2D geometries, while STGraph keeps them as strings, see `INCONSISTENCIES.txt`), and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them and over `Observations`, with the model of STGraph: sensor `-[hasTemperature]->` series (`Temperature`) `-[hasTS]->` events (`TemperatureEvent`) | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the vertices `TemperatureEvent` and the edges `hasTS` | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph, not used by the joins between vertices and edges (hash joins on scans, see Query planning below); R-tree on `Observations.location`, built after the ingestion |
+| Graphix | one dataset per collection (the WKT locations stored as 2D geometries, while STGraph keeps them as strings, see `INCONSISTENCIES.txt`), and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them and over `Observations`, with the model of STGraph: sensor `-[hasTemperature]->` series (`Temperature`) `-[hasTS]->` events (`TemperatureEvent`) | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the vertices `TemperatureEvent` and the edges `hasTS` | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph, used by the joins between vertices and edges (`graphix.evaluation.prefer-indexnl`, see Query planning below); R-tree on `Observations.location`, built after the ingestion |
 | Neo4j | the statements of the Cypher dump (`graph.cypher`) | one `Temperature` node per event, linked to its sensor | range index on `Temperature.timestamp`, built after the ingestion; the label and relationship-type lookup indexes that Neo4j creates by itself |
 | PGAge | AGE graph `smartbench_graph`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `public.measurements` | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph                                         |
 | AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation                                                                                                                                                           |
@@ -70,13 +70,14 @@ Memory: the defaults of each system, except the page cache of Neo4j (512 MB) and
 Query planning: the defaults of each system, except Graphix. Its `cc.conf` has the AsterixDB configuration of STGraph
 plus the settings of the Graphix extension: the pattern semantics of its original configuration
 (`graphix.semantics.pattern=isomorphism`, `graphix.semantics.navigation=no-repeat-anything`) and
-`graphix.evaluation.minimize-joins=true` (default `false`, a setting of Graphix that the AsterixDB of STGraph does
-not have): no join between an edge and a vertex defined on the same records, so an event is read once, as the edge
-`hasTS` and as the vertex `TemperatureEvent`, instead of twice and joined on `(tsid, _id)`. It does not choose the
-access paths: every join is still a hash join on scans, and the queries read the events with a scan of
-`Observations`, not through its primary key (the cost-based optimizer of Graphix does not run, see
-`INCONSISTENCIES.txt`). The queries have no hints, and `graphix.evaluation.prefer-indexnl` (index nested-loop joins
-between vertices and edges, whatever their cost) is not enabled.
+two evaluation settings of Graphix, both default `false`, which the AsterixDB of STGraph does not have:
+`graphix.evaluation.minimize-joins=true` (no join between an edge and a vertex defined on the same records, so an
+event is read once, as the edge `hasTS` and as the vertex `TemperatureEvent`, instead of twice and joined on
+`(tsid, _id)`) and `graphix.evaluation.prefer-indexnl=true` (index nested-loop joins between vertices and edges, so
+the events of a series are read through the primary key `(tsid, _id)` of `Observations`). Without them, every join is
+a hash join on scans: the optimizer of the last release of Graphix has no cost-based optimizer, despite its
+documentation (its rule set leaves out the CBO rules of AsterixDB), so `prefer-indexnl` applies to every join between
+vertices and edges, whatever its cost (see `INCONSISTENCIES.txt`). The queries have no hints.
 
 ### Measurement
 
@@ -109,8 +110,8 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 | Section | Content |
 |---------|---------|
 | `datasets`, `setups` | the sizes of each dataset (for MIMIC-IV, also the PostgreSQL the data is read from: `postgres_endpoint`, `port`, `database`, `user`, `password`); the AsterixDB setups of STGraph |
-| `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`; default: a Docker volume of each system) |
-| `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy` |
+| `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
+| `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
 | `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
 
@@ -120,7 +121,22 @@ The sizes default to `datasets.<dataset>.sizes`, the time windows are the ones o
 | Task | Section | What it runs |
 |------|---------|--------------|
 | `./gradlew evaluate` | `evaluation` | every combination of its parameters |
+| `./gradlew evaluateIngestion`, `evaluateQueries` | `evaluation` | the same, only the ingestion or only the queries |
 | `./gradlew evaluateSpecificRuns` | `specificRuns` | its runs, one after the other |
+| `./gradlew evaluateSpecificRunsIngestion`, `evaluateSpecificRunsQueries` | `specificRuns` | the same, only the ingestion or only the queries |
+| `./gradlew fastLoadNeo4j`, `fastLoadPgAge` | `evaluation` (sizes, `deploy`) | the bulk load of SmartBench into Neo4j or PGAge, to query it afterwards (see below) |
+
+The queries of `evaluateQueries` and `evaluateSpecificRunsQueries` run on the data already loaded (kept in the data
+folders of the systems, see below), without downloading the datasets; AeonG and HyGraph, which load and query in the
+same container, are skipped by the tasks of a single phase.
+
+The fast loads leave Neo4j and PGAge with the data of their ingestion (same nodes, edges, rows and indexes), in bulk and
+much faster, but they are not ingestions of the evaluation: they are not timed nor recorded in `results/`.
+`fastLoadPgAge` (`SmartBenchPGAgeFast`) creates the vertices in batches, decides the edges in memory (same rules as the
+ingestion) and copies the events with `COPY`, adding the primary key after them. `fastLoadNeo4j` (`SmartBenchNeo4JFast`)
+writes the nodes and relationships of the Cypher dumps as CSV files (`datasets/import/neo4j/<size>`, removed at the
+end) and imports them with `neo4j-admin database import`, into an empty database while Neo4j is stopped, then builds
+its range index: it starts and stops Neo4j itself, so it needs `deploy: true`.
 
 For each dataset, size and system, one system at a time, a run:
 1. downloads the missing data (`smartbench <size>`: JSON dataset of STGraph, PGAge and Graphix; `smartbench/neo4j <size>`:
@@ -136,8 +152,17 @@ kept also when the container is recreated (e.g., `docker compose down`, or a cha
 the large sizes): the evaluation passes them to the compose files (`ASTERIXDB_DATA`, `GRAPHIX_DATA`, `NEO4J_DATA`,
 `PGAGE_DATA`; to start a system by hand on the same folder, set the same variable). Every ingestion drops and
 reloads its data: with `ingestion.iterations: 0`, a run only queries the data already loaded (STGraph also needs its
-graph, dumped by its loader in `datasets/dump/smartbench/<size>`). After a change of the partitions in a `cc.conf`, the
-data of that AsterixDB must be emptied.
+graph, dumped by its loader in `datasets/dump/smartbench/<size>`). The AsterixDB of STGraph and Graphix keep a
+dataverse per size, Neo4j and PGAge a single database (the last size loaded): with `{size}` in their folders
+(e.g., `neo4j: /data/neo4j/{size}`), each size has its own and stays queryable. After a change of the partitions in a
+`cc.conf`, the data of that AsterixDB must be emptied (or kept in another folder).
+
+To compare configurations of the systems on the same data (CPU and memory limits in the compose files, the settings
+of their configuration files, the threads of STGraph), load each size once, then for each configuration change the
+files, set its `label` and run `./gradlew evaluateQueries` (or `evaluateSpecificRunsQueries`): each system is started
+with the new files on its data and queried, and its results are recorded as `<model>_<label>`. Only the partitions of
+AsterixDB and Graphix, the indexes and the data model change the data, and need a new ingestion. AeonG and HyGraph
+write their results themselves, without the label.
 
 The datasets are SmartBench (every system) and the synthetic dataset (STGraph, with the loader and the queries of its
 tests; `queries.ids` selects their families, e.g., `SynthFilter`). STGraph runs its reference loader (`SmartBenchDataLoader`) and queries; `stgraph-std` loads the data through the shared

@@ -36,10 +36,23 @@ data class EvaluationConfig(
     val deploy: Boolean,
     /**
      * The data folders of the systems, as the variables of their compose files (e.g., NEO4J_DATA to an absolute path),
-     * from the volumes section; a system without one keeps its data in its Docker volume
+     * from the volumes section, with {size} for the size of the run (see [volumes]); a system without one keeps its
+     * data in its Docker volume
      */
-    val volumes: Map<String, String> = emptyMap()
+    val volumeFolders: Map<String, String> = emptyMap(),
+    /** Appended to the model of the results (e.g., stgraph_4CPU for the label 4CPU): the configuration the run measures */
+    val label: String? = null
 ) {
+    /**
+     * The data folders of [volumeFolders] for [size], with {size} replaced (e.g., a folder per size for Neo4j and PGAge,
+     * which keep a single database), created if missing, so that Docker does not create them as root
+     */
+    fun volumes(size: String): Map<String, String> =
+        volumeFolders.mapValues { (_, folder) -> File(folder.replace("{size}", size)).apply { mkdirs() }.path }
+
+    /** [system] as the model of the results: with the [label] of the run, if any */
+    fun model(system: String): String = label?.let { "${system}_$it" } ?: system
+
     companion object {
         val knownSystems = listOf("stgraph", "stgraph-std", "neo4j", "pgage", "graphix", "aeong", "hygraph")
 
@@ -57,7 +70,7 @@ data class EvaluationConfig(
             val yaml = yaml(path)
             val section = yaml["evaluation"] as? Map<String, Any?>
                 ?: error("No evaluation section in $path: copy it from test_config.example.yml")
-            return parse(section, defaults(yaml), path).copy(volumes = volumes(yaml, path))
+            return parse(section, defaults(yaml), path).copy(volumeFolders = volumes(yaml, path))
         }
 
         /** The runs of the specificRuns section of [path] */
@@ -67,7 +80,7 @@ data class EvaluationConfig(
             val runs = (yaml["specificRuns"] as? Map<String, Any?>)?.get("runs") as? List<Map<String, Any?>>
             require(!runs.isNullOrEmpty()) { "No specificRuns.runs in $path: copy them from test_config.example.yml" }
             val volumes = volumes(yaml, path)
-            return runs.map { parse(it, defaults(yaml), path).copy(volumes = volumes) }
+            return runs.map { parse(it, defaults(yaml), path).copy(volumeFolders = volumes) }
         }
 
         private fun yaml(path: String): Map<String, Any?> = Yaml().load(File(path).inputStream())
@@ -76,8 +89,8 @@ data class EvaluationConfig(
         private fun defaults(yaml: Map<String, Any?>): Map<String, Any?> = yaml["defaults"] as? Map<String, Any?> ?: emptyMap()
 
         /**
-         * The data folders of the volumes section of [yaml] (relative paths: from the repository root), created if
-         * missing, so that Docker does not create them as root
+         * The data folders of the volumes section of [yaml] (relative paths: from the repository root), still with
+         * {size}: they are created for each size (see [EvaluationConfig.volumes])
          */
         @Suppress("UNCHECKED_CAST")
         private fun volumes(yaml: Map<String, Any?>, path: String): Map<String, String> {
@@ -85,10 +98,7 @@ data class EvaluationConfig(
             val unknown = section.keys - volumeVariables.keys
             require(unknown.isEmpty()) { "Unknown systems in the volumes section of $path: $unknown (known: ${volumeVariables.keys})" }
             return section.mapNotNull { (system, folder) ->
-                folder?.toString()?.takeIf { it.isNotBlank() }?.let {
-                    val dir = File(it).absoluteFile.apply { mkdirs() }
-                    volumeVariables.getValue(system) to dir.path
-                }
+                folder?.toString()?.takeIf { it.isNotBlank() }?.let { volumeVariables.getValue(system) to File(it).absoluteFile.path }
             }.toMap()
         }
 
@@ -115,7 +125,8 @@ data class EvaluationConfig(
                     ?: listOf("increased"),
                 queryIds = strings(section(map, "queries"), "ids") ?: strings(section(defaults, "queries"), "ids") ?: emptyList(),
                 download = boolean("download") ?: true,
-                deploy = boolean("deploy") ?: true
+                deploy = boolean("deploy") ?: true,
+                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() }
             )
             val unknown = config.systems - knownSystems.toSet()
             require(unknown.isEmpty()) { "Unknown systems in $path: $unknown (known: $knownSystems)" }

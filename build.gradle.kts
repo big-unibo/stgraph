@@ -67,10 +67,17 @@ tasks.jar {
 }
 
 // The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
-// test_config.yml (evaluation/README.md). Not tests: the CI does not run them.
+// test_config.yml (evaluation/README.md), with both phases or only one of them; and the fast loads of Neo4j and PGAge,
+// to query them afterwards. Not tests: the CI does not run them.
 mapOf(
-    "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to emptyList()),
-    "evaluateSpecificRuns" to ("Runs the specificRuns.runs of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns"))
+    "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to listOf()),
+    "evaluateIngestion" to ("As evaluate, only the ingestion" to listOf("ingestion")),
+    "evaluateQueries" to ("As evaluate, only the queries, on the data already loaded" to listOf("queries")),
+    "evaluateSpecificRuns" to ("Runs the specificRuns.runs of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns")),
+    "evaluateSpecificRunsIngestion" to ("As evaluateSpecificRuns, only the ingestion" to listOf("specificRuns", "ingestion")),
+    "evaluateSpecificRunsQueries" to ("As evaluateSpecificRuns, only the queries, on the data already loaded" to listOf("specificRuns", "queries")),
+    "fastLoadNeo4j" to ("Loads SmartBench into Neo4j in bulk (sizes of the evaluation section), to query it afterwards; not timed" to listOf("fastLoad", "neo4j")),
+    "fastLoadPgAge" to ("Loads SmartBench into PGAge in bulk (sizes of the evaluation section), to query it afterwards; not timed" to listOf("fastLoad", "pgage"))
 ).forEach { (name, task) ->
     tasks.register<JavaExec>(name) {
         description = task.first

@@ -18,17 +18,17 @@ import java.util.*
  * Not ported: the multi-device entities (type "Device" with "hasDevice") and the GeoJSON locations, which SmartBench
  * does not have.
  */
-class SmartBenchPGAge(
+open class SmartBenchPGAge(
     size: String,
     url: String = "jdbc:postgresql://localhost:5432/smartbench_eval",
     user: String = "postgres",
     password: String = "psw",
-    private val graphName: String = "smartbench_graph",
+    protected val graphName: String = "smartbench_graph",
     private val batchSize: Int = 20_000
 ) : SmartBenchJsonLoader(size, threads = 1) {
-    private val measurementTable = "public.measurements"
+    protected val measurementTable = "public.measurements"
     // With the session settings of the Python code (applied once); multi-row INSERTs from a batch, as execute_values
-    private val conn: Connection = pgAgeConnection(url, user, password, mapOf("reWriteBatchedInserts" to "true"))
+    protected val conn: Connection = pgAgeConnection(url, user, password, mapOf("reWriteBatchedInserts" to "true"))
     private var skippedEvents = 0L
 
     init {
@@ -99,7 +99,7 @@ class SmartBenchPGAge(
     }
 
     /** The references of an entity: a field (not "id") holding {"id": ...}, or a list with some of them */
-    private fun extractEdges(entity: Map<String, Any?>): List<Triple<String, String, String>> {
+    protected fun extractEdges(entity: Map<String, Any?>): List<Triple<String, String, String>> {
         val source = entity["id"].toString()
         return entity.entries
             .filter { (key, value) ->
@@ -162,7 +162,7 @@ class SmartBenchPGAge(
     }
 
     // Cypher literals as written by age_middleware.py (strings are not escaped, as there)
-    private fun formatProperties(properties: Map<*, *>): String =
+    protected fun formatProperties(properties: Map<*, *>): String =
         properties.entries.joinToString(", ", "{", "}") { (key, value) ->
             if (key == "location") "$key: '${toWkt(value)}'" else "$key: ${formatValue(value)}"
         }
@@ -189,11 +189,11 @@ class SmartBenchPGAge(
     /** Python's str.capitalize: first character upper case, the others lower case */
     private fun capitalize(s: String) = s.lowercase().replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
-    private fun execute(sql: String) {
+    protected fun execute(sql: String) {
         conn.createStatement().use { it.execute(sql) }
     }
 
-    private fun query(sql: String): List<List<Any?>> =
+    protected fun query(sql: String): List<List<Any?>> =
         conn.createStatement().use { st ->
             st.executeQuery(sql).use { rs ->
                 val columns = rs.metaData.columnCount

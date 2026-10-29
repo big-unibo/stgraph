@@ -39,15 +39,25 @@ EnvironmentOutlier
   on large (259,200,000 events) EnvironmentCoverage did not end in two days, on 1 core. With minimize-joins, an
   event is read once. On small, same results as before, row by row (EnvironmentOutlier: see above).
 
-- Graphix, primary key of the events: NOT FIXED (limit of the system). The queries read the events with a scan of
-  Observations (hash joins), not through the primary key (tsid, _id) as STGraph does (one search per series, in the
-  time window): e.g. AgentHistory, one sensor, scans all the events (on small 5 s, STGraph 0.03 s). The optimizer of
-  Graphix uses an index in a join only with a hint (/*+ indexnl */), which the queries do not have, and its
-  cost-based optimizer does not run (the plan is the same after ANALYZE DATASET, also for a plain SQL++ join, and
-  SET `compiler.cbo` "true" fails with an IndexOutOfBoundsException), while the AsterixDB 0.9.9 of STGraph uses the
-  primary key by itself after ANALYZE. Not enabled: graphix.evaluation.prefer-indexnl, which places the hint on
-  every join between vertices and edges, whatever its cost (alone, it also looks every event up again by
-  (tsid, _id): on small, AgentOutlier 20 s instead of 17 s with the defaults).
+- Graphix, primary key of the events: FIXED with a setting of Graphix (graphix.evaluation.prefer-indexnl=true in its
+  cc.conf, default false; it belongs to the Graphix extension, the AsterixDB of STGraph does not have it), with a
+  trade-off. Without it, the queries read the events with a scan of Observations (hash joins), not through the
+  primary key (tsid, _id) as STGraph does: e.g. AgentHistory, one sensor, scanned all the events. The optimizer of
+  Graphix uses an index in a join only with a hint (/*+ indexnl */), which the queries do not have, and it has no
+  cost-based optimizer. Its documentation says that Graphix uses the CBO of AsterixDB, but the optimizer of its last
+  release (0.4.1-alpha, extension 0.2.0-SNAPSHOT) does not: its rule set (GraphixRuleSetFactory) rebuilds the rule
+  collections of AsterixDB without the CBO one (buildCBORuleCollection, with EnumerateJoinsRule, in the
+  DefaultRuleSetFactory of AsterixDB), for every query, also plain SQL++. The plan is the same after ANALYZE DATASET,
+  also with SET `compiler.cbo` "true", while on the AsterixDB 0.9.9 of STGraph, after ANALYZE, the same join uses the
+  primary key by itself. prefer-indexnl places the hint on every join between vertices and edges, whatever its
+  cost: it reads the events of a series through (tsid) and pays off for selective navigation (AgentHistory, on
+  small 0.18 s instead of 2.5 s, on medium 0.25 s instead of 8.9 s), but it also turns the joins that follow the
+  events into one index search per event (e.g., hasOwner of MaintenanceOwners, a search on Sensors per event): on
+  small and medium EnvironmentAggregate and MaintenanceOwners take about 50% more, EnvironmentOutlier and
+  AgentOutlier 5-10% more (averages of 9 iterations, with minimize-joins in both cases). Alone, without
+  minimize-joins, it also looks every event up again as a vertex (on small, AgentOutlier 20 s). Difference from
+  STGraph left: the time window is applied after reading the events of a series, since the tsid comes from a join
+  (STGraph searches (tsid, _id) in the window).
 
 
 2. Loaders (Kotlin port vs Python code)

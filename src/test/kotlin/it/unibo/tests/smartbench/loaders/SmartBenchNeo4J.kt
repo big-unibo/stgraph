@@ -41,10 +41,7 @@ class SmartBenchNeo4J(
      * TimescaleDB: a range index on the timestamps of the Temperature nodes, built after the load and awaited until
      * it is online (Neo4j populates it in the background). The planner decides whether to use it (no hints)
      */
-    override fun createIndexes() {
-        session.run("CREATE RANGE INDEX $TIMESTAMP_INDEX FOR (t:Temperature) ON (t.timestamp)").consume()
-        session.run("CALL db.awaitIndex('$TIMESTAMP_INDEX', 3600)").consume()
-    }
+    override fun createIndexes() = createIndexes(session)
 
     override fun loadGraph() {
         val statements = cypherStatements(dumpPath.resolve("graph.cypher"))
@@ -99,6 +96,12 @@ class SmartBenchNeo4J(
 
     companion object {
         private const val TIMESTAMP_INDEX = "temperature_timestamp"
+
+        /** The range index on the timestamps of the Temperature nodes (see the KDoc of the override), awaited */
+        fun createIndexes(session: Session) {
+            session.run("CREATE RANGE INDEX $TIMESTAMP_INDEX FOR (t:Temperature) ON (t.timestamp)").consume()
+            session.run("CALL db.awaitIndex('$TIMESTAMP_INDEX', 3600)").consume()
+        }
 
         private val UNWIND_QUERY = """
             MATCH (s:Sensor {id: ${'$'}sensor_id})

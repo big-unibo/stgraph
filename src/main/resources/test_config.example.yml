@@ -28,8 +28,11 @@ setups:
 
 # Where the systems started by the evaluation (deploy: true) keep their data: a folder on the host for each one
 # (relative paths: from the repository root; created if missing), e.g. on a disk with room for the large sizes.
+# {size} stands for the size of the run (e.g., neo4j: /data/neo4j/{size}): a folder per size, so that Neo4j and PGAge,
+# which keep a single database, can be queried on every size without reloading it.
 # Without a folder, the Docker volume of the system. The folder of pgage must be writable by the user 1000 (postgres
-# in its container). Empty the folder of asterixdb or graphix when the partitions of its cc.conf change
+# in its container). Empty the folder of asterixdb or graphix when the partitions of its cc.conf change (or use a
+# folder per partitioning)
 volumes:
   asterixdb:   # the AsterixDB of STGraph (docker-compose.yaml of the repository root)
   graphix:
@@ -56,6 +59,9 @@ defaults:
   download: true
   # Starts each system (docker compose up -d) before its runs and stops it after; false: the systems are already running
   deploy: true
+  # Appended to the model of the results (e.g., 4CPU: stgraph_4CPU, neo4j_4CPU): the configuration the runs measure
+  # (CPU, memory, partitions...), to tell its results apart; empty: the bare model
+  label:
 
 # Only the listed runs: the tests of STGraph (CI) run the ones with stgraph among the approaches, ./gradlew
 # evaluateSpecificRuns runs all of them. Each run sets approaches (stgraph, stgraph-std, neo4j, pgage, graphix, aeong,
