@@ -89,7 +89,8 @@ mapOf(
             languageVersion = JavaLanguageVersion.of(jVersion)
         }
         workingDir = projectDir
-        maxHeapSize = "64g"
+        // The heap of the evaluation, i.e., of STGraph: 64g, or -PevaluationHeap (e.g., 3g, in a memory budget)
+        maxHeapSize = providers.gradleProperty("evaluationHeap").getOrElse("64g")
     }
 }
 

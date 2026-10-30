@@ -80,7 +80,8 @@ private fun fastLoad(config: Config, system: String): Nothing {
     val sizes = evaluation.sizes ?: config.datasets["smartbench"]?.sizes?.map { TestConfig.normalizeSize(it) }
         ?: error("No sizes for the dataset smartbench in test_config.yml")
     progress("fast load | $system | smartbench (sizes: ${sizes.joinToString()}), deploy: ${evaluation.deploy}, data folders: " +
-        evaluation.volumeFolders.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" })
+        evaluation.volumeFolders.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" } +
+        ", resources: " + evaluation.resources.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "those of the compose files" })
     val failures = sizes.filter { size ->
         runCatching { SmartBenchEvaluation(config, evaluation, size).fastLoad(system) }
             .onFailure { progress("fast load | $system | smartbench $size: FAILED ($it)"); it.printStackTrace() }
@@ -110,6 +111,8 @@ private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<
     progress("  download: ${evaluation.download}, deploy: ${evaluation.deploy}")
     progress("  label: " + (evaluation.label?.let { "$it (models of the results: ${evaluation.model("<system>")})" } ?: "none"))
     progress("  data folders: " + evaluation.volumeFolders.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" })
+    progress("  resources: " + evaluation.resources.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "those of the compose files" })
+    progress("  heap of this JVM (STGraph): ${Runtime.getRuntime().maxMemory() / (1024 * 1024)} MB, processors: ${Runtime.getRuntime().availableProcessors()}")
 }
 
 /** Runs [command] from the repository root, with the output on the console; fails if it does not succeed */

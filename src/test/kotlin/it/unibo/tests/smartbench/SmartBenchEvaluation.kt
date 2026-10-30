@@ -89,7 +89,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
         when (system) {
             "pgage" -> {
                 download("datasets/original/smartbench/$size", "smartbench", needed = true)
-                deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = volumes, ready = ::pgageReady) {
+                deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
                     progress("$run: started")
                     val loader = SmartBenchPGAgeFast(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD)
                     try {
@@ -109,17 +109,17 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
                 val importArgs = loader.writeImportFiles(importDir.toPath())
                 progress("$run: ${loader.graphNodes} graph nodes, ${loader.events} events, ${loader.relationships} relationships; importing")
                 try {
-                    runCommand(listOf("docker", "compose", "-f", NEO4J_COMPOSE, "stop"), volumes)
+                    runCommand(listOf("docker", "compose", "-f", NEO4J_COMPOSE, "stop"), environment)
                     // The database (neo4j) before the options: after them, --relationships (several files) would take it as a file
                     runCommand(
                         listOf("docker", "compose", "-f", NEO4J_COMPOSE, "run", "--rm", "--no-deps", "-v", "$importDir:/import:ro", "neo4j",
                             "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination", "--id-type=integer") + importArgs,
-                        volumes
+                        environment
                     )
                 } finally {
                     importDir.deleteRecursively()
                 }
-                deployed(true, NEO4J_COMPOSE, env = volumes, ready = ::neo4jReady) {
+                deployed(true, NEO4J_COMPOSE, env = environment, ready = ::neo4jReady) {
                     neo4jDriver(NEO4J_URI).use { driver -> driver.session().use { SmartBenchNeo4J.createIndexes(it) } }
                 }
                 progress("$run: done in ${seconds(System.currentTimeMillis() - start)}")
@@ -137,7 +137,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun neo4j() {
         download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j")
-        deployed(evaluation.deploy, NEO4J_COMPOSE, env = volumes, ready = ::neo4jReady) {
+        deployed(evaluation.deploy, NEO4J_COMPOSE, env = environment, ready = ::neo4jReady) {
             repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI) } }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
@@ -149,7 +149,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun pgage() {
         download("datasets/original/smartbench/$size", "smartbench")
-        deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = volumes, ready = ::pgageReady) {
+        deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
             repeat(evaluation.ingestionIterations) { ingest("pgage", it) { SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD) } }
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
                 queries("pgage", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }
@@ -159,7 +159,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun graphix() {
         download("datasets/original/smartbench/$size", "smartbench")
-        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = volumes, ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
+        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
             repeat(evaluation.ingestionIterations) { ingest("graphix", it) { SmartBenchGraphix(size, port = GRAPHIX_PORT) } }
             queries("graphix", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QGraphix(queryId, size, selectivity, rangeIndex) }
         }

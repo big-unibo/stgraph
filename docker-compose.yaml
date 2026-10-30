@@ -3,8 +3,12 @@ services:
     image: mp4sini/asterixdb:latest
     hostname: asterixdb
     container_name: asterixdb
-    # Single-core comparison with the other systems (see evaluation/README.md)
-    cpus: 1
+    # Single-core comparison with the other systems (see evaluation/README.md). ASTERIXDB_CPUS, ASTERIXDB_CPUSET (the
+    # cores), ASTERIXDB_MEMORY and ASTERIXDB_CONF (the folder of cc.conf): other resources and configuration (set by
+    # the evaluation from the resources section of test_config.yml)
+    cpus: ${ASTERIXDB_CPUS:-1}
+    cpuset: "${ASTERIXDB_CPUSET:-}"
+    mem_limit: ${ASTERIXDB_MEMORY:-0}
     command:
       - /bin/bash
       - -c
@@ -13,7 +17,7 @@ services:
         opt/local/bin/start-sample-cluster.sh
         tail -f /dev/null
     volumes:
-      - "./evaluation/architectures/stgraph/conf:/asterixsetup/"
+      - "${ASTERIXDB_CONF:-./evaluation/architectures/stgraph/conf}:/asterixsetup/"
       # Data of AsterixDB (storage and transaction log), kept when the container is recreated; ASTERIXDB_DATA: a host
       # directory instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml).
       # Empty it when the partitions of cc.conf change

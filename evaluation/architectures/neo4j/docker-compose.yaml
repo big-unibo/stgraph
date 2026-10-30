@@ -5,13 +5,17 @@ services:
     image: neo4j:5.26
     container_name: neo4j
     hostname: neo4j
-    # Single-core comparison with the other systems (see evaluation/README.md)
-    cpus: 1
+    # Single-core comparison with the other systems (see evaluation/README.md). NEO4J_CPUS, NEO4J_CPUSET (the cores),
+    # NEO4J_MEMORY and NEO4J_CONF (the folder of neo4j.conf): other resources and configuration (set by the evaluation
+    # from the resources section of test_config.yml)
+    cpus: ${NEO4J_CPUS:-1}
+    cpuset: "${NEO4J_CPUSET:-}"
+    mem_limit: ${NEO4J_MEMORY:-0}
     environment:
       - NEO4J_AUTH=none
     volumes:
       # The files in /conf override the configuration of the image
-      - ./conf:/conf
+      - "${NEO4J_CONF:-./conf}:/conf"
       # Data of Neo4j, kept when the container is recreated; NEO4J_DATA: a host directory instead of the Docker volume
       # (set by the evaluation from the volumes section of test_config.yml)
       - "${NEO4J_DATA:-neo4j-data}:/data"
