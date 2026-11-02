@@ -70,6 +70,10 @@ class MimicIVSTGraph(
         }
     }
 
+    override fun awaitLast(tsId: Long, row: TSRecord) {
+        while (runCatching { tsMap[tsId]!!.get(row.timestamp) }.isFailure) Thread.sleep(1)
+    }
+
     override fun close() {
         g.flushToDisk()
         g.close()

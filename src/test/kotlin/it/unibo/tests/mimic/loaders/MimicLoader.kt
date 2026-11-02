@@ -152,9 +152,13 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
                 val isLast = index + 1 == events.size || events[index].first != events[index + 1].first
                 addMeasurement(pair.first, pair.second, isFirst = isFirst, isLast = isLast)
             }
+            events.lastOrNull()?.let { (tsId, row) -> awaitLast(tsId, row) }
         }
         return time
     }
+
+    /** Waits until the last measurement [row] of the worker is stored (timed as time-series time, as in SmartBench) */
+    open fun awaitLast(tsId: Long, row: TSRecord) {}
 
     fun addTs() {
         val chunkSize = users.size / threads
