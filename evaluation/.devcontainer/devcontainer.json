@@ -1,0 +1,42 @@
+// The notebooks of the evaluation (postprocessing/STGraph.ipynb, stats.ipynb), as the devcontainer of the repository
+// STGraph-evaluation; open the folder evaluation (the one of STGraph, Java and Gradle, is in the repository root)
+{
+    "name": "stgraph-evaluation",
+    // Built from the folder evaluation, for requirements.txt
+    "context": "..",
+    "dockerFile": "Dockerfile",
+    // The whole repository, as the notebooks read results/ (and find its root by settings.gradle.kts)
+    "workspaceMount": "source=${localWorkspaceFolder}/..,target=/home,type=bind",
+    "workspaceFolder": "/home/evaluation",
+    // Set *default* container specific settings.json values on container create.
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "files.eol": "\n",
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "python.formatting.provider": "black",
+                "editor.formatOnSave": true,
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "editor.insertSpaces": true,
+                "editor.tabSize": 4,
+                "editor.detectIndentation": false,
+                "editor.defaultFormatter": "ms-python.black-formatter",
+                "[python]": {
+                    "editor.formatOnSave": true
+                }
+            },
+            "extensions": [
+                "ms-python.python",
+                "shardulm94.trailing-spaces",
+                "vscode-icons-team.vscode-icons",
+                "janisdd.vscode-edit-csv",
+                "ms-python.flake8",
+                "ms-python.black-formatter",
+                "ms-toolsai.jupyter",
+                "jock.SVG",
+                "tomoki1207.pdf",
+                "mechatroner.rainbow-csv"
+            ]
+        }
+    }
+}

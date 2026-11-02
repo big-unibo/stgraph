@@ -17,9 +17,10 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 | `src/test/kotlin/it/unibo/tests/smartbench/SmartBenchEvaluation.kt`, `src/test/kotlin/it/unibo/tests/synth/SynthEvaluation.kt` | Ingestion and queries of each system on SmartBench, and of STGraph on the synthetic dataset (on `DatasetEvaluation.kt`) |
 | `src/test/kotlin/it/unibo/tests/smartbench/loaders/` | One loader per system on a shared skeleton (`SmartBenchLoader.kt`) |
 | `src/test/resources/smartbench/queries/<system>/` | The queries of the competitors, as templates; `INCONSISTENCIES.txt`: their differences from STGraph and the differences of the loaders from the original Python code |
-| `results/` | The results: `dt_graph/` (Kotlin runs), `aeong/`, `hygraph/`, and `paper/` (the data of the article, not updated by the runs) |
-| `evaluation/postprocessing/STGraph.ipynb` | The figures, in `evaluation/figures/current/` (`evaluation/figures/paper/` for the data of the article) |
+| `results/` | The results: `dt_graph/` (Kotlin runs), `aeong/`, `hygraph/`; the archives, not updated by the runs: `paper/` (the data of the article) and `rebuttal/` (the data of the article and the runs of the rebuttal, from the repository STGraph-evaluation) |
+| `evaluation/postprocessing/STGraph.ipynb` | The figures and tables, of the archive set by `archive` (default: `rebuttal`; `None` for the current runs), in `evaluation/figures/<archive>/` (`current/` for the current runs) |
 | `evaluation/stats.ipynb` | Exploration of the MIMIC-IV subjects and time series |
+| `evaluation/.devcontainer/` | The devcontainer of the notebooks (Python, `evaluation/requirements.txt`), opening the folder `evaluation` (the whole repository is mounted in `/home`); `.devcontainer/` in the repository root is the one of STGraph (Java, Gradle) |
 
 ## Systems
 
