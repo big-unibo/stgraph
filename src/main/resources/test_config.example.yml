@@ -39,6 +39,23 @@ volumes:
   neo4j:
   pgage:
 
+# Resources and configuration of the systems started by the evaluation (deploy: true), for their compose files; what is
+# not set keeps the value of the compose file: one core, no memory limit, the configuration in conf/ of the system (the
+# single-core comparison). cpus: the CPU time (e.g., 2); cpuset: the cores (e.g., "0,1"); memory: the limit (e.g.,
+# 12g); shm (pgage only): the shared memory of the parallel workers of PostgreSQL; conf: the folder of the
+# configuration (relative paths: from the repository root). They need no reload, as long as the partitions of
+# AsterixDB and Graphix are those of the load. E.g., the budget of 3 CPUs and 12 GB of each system (see
+# evaluation/README.md: STGraph has the third core and 3 GB for its JVM, with threads: [ 2 ]):
+#  asterixdb: { cpus: 2, cpuset: "0,1", memory: 9g, conf: evaluation/architectures/stgraph/conf-3cpu-12g }
+#  graphix: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/graphix/conf-3cpu-12g }
+#  neo4j: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/neo4j/conf-3cpu-12g }
+#  pgage: { cpus: 3, cpuset: "0-2", memory: 12g, shm: 1g, conf: evaluation/architectures/pgage/conf-3cpu-12g }
+resources:
+  asterixdb:
+  graphix:
+  neo4j:
+  pgage:
+
 # Parameters common to the specific runs and to the evaluation: each run, and the evaluation, can set its own
 defaults:
   # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode.

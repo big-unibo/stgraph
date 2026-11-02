@@ -111,6 +111,7 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 |---------|---------|
 | `datasets`, `setups` | the sizes of each dataset (for MIMIC-IV, also the PostgreSQL the data is read from: `postgres_endpoint`, `port`, `database`, `user`, `password`); the AsterixDB setups of STGraph |
 | `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
+| `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., the single-core comparison (see below) |
 | `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
 | `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
@@ -163,6 +164,26 @@ files, set its `label` and run `./gradlew evaluateQueries` (or `evaluateSpecific
 with the new files on its data and queried, and its results are recorded as `<model>_<label>`. Only the partitions of
 AsterixDB and Graphix, the indexes and the data model change the data, and need a new ingestion. AeonG and HyGraph
 write their results themselves, without the label.
+
+The `resources` section sets the CPU and memory limits and the configuration folder of each system without editing the
+compose files (the evaluation passes them as `<SYSTEM>_CPUS`, `_CPUSET`, `_MEMORY`, `_SHM`, `_CONF`). Its example is
+the budget of 3 CPUs and 12 GB per system, with a configuration folder `conf-3cpu-12g` per system that changes only
+what the budget needs, the rest as in `conf/` or as the defaults of the system:
+
+| System | Budget | Configuration (`conf-3cpu-12g`) |
+|--------|--------|---------------------------------|
+| STGraph | AsterixDB 2 CPUs (cores 0, 1) and 9 GB; its JVM the third core and 3 GB, with `threads: [ 2 ]` (one query of AsterixDB per CPU of AsterixDB) | the `cc.conf` of the image (two nodes, one partition each, the default parallelism); the heap of each node at 30% of the container (`jvm.args=-Xmx2765m`): by default each node takes 60% of the memory it sees, and the two nodes would together exceed the limit |
+| Graphix | 3 CPUs (cores 0-2) and 12 GB | the same, 30% of 12 GB (`-Xmx3686m`), and the Graphix extension with `minimize-joins` only |
+| Neo4j | 3 CPUs (cores 0-2) and 12 GB | `conf/` without its least parallelism, with the heap and page cache of `neo4j-admin server memory-recommendation --memory=12g` (by default the image keeps a 512 MB page cache whatever the memory) |
+| PGAge | 3 CPUs (cores 0-2), 12 GB, 1 GB of shared memory for the parallel workers | `conf/` with the memory, parallelism and workers of `timescaledb-tune --memory=12GB --cpus=3` (as the TimescaleDB image tunes itself) and the PostgreSQL defaults instead of its least parallelism |
+
+The JVM of STGraph runs on the host, outside Docker: its core and heap are set on the command line, e.g.,
+`taskset -c 2 ./gradlew --no-daemon evaluateQueries -PevaluationHeap=3g` (without the daemon, the JVM of the
+evaluation is started by the pinned process; the run prints its heap and processors). The memory recommendation of
+Neo4j was computed on Neo4j 5.2; to check it on the Neo4j of the compose file:
+`docker compose -f evaluation/architectures/neo4j/docker-compose.yaml run --rm --no-deps neo4j neo4j-admin server memory-recommendation --memory=12g`.
+The two nodes of the budget are the ones of the image, so the data loaded with them (or with the `cc.conf` of the
+image) are queryable without a new ingestion; the data loaded with the single partition of `conf/` are not.
 
 The datasets are SmartBench (every system) and the synthetic dataset (STGraph, with the loader and the queries of its
 tests; `queries.ids` selects their families, e.g., `SynthFilter`). STGraph runs its reference loader (`SmartBenchDataLoader`) and queries; `stgraph-std` loads the data through the shared

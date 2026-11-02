@@ -8,8 +8,12 @@ services:
     image: graphix:${GRAPHIX_VERSION:-0.4.1}
     hostname: graphix
     container_name: graphix
-    # Single-core comparison with the other systems (see evaluation/README.md)
-    cpus: 1
+    # Single-core comparison with the other systems (see evaluation/README.md). GRAPHIX_CPUS, GRAPHIX_CPUSET (the cores),
+    # GRAPHIX_MEMORY and GRAPHIX_CONF (the folder of cc.conf): other resources and configuration (set by the evaluation
+    # from the resources section of test_config.yml)
+    cpus: ${GRAPHIX_CPUS:-1}
+    cpuset: "${GRAPHIX_CPUSET:-}"
+    mem_limit: ${GRAPHIX_MEMORY:-0}
     command:
       - /bin/bash
       - -c
@@ -18,7 +22,7 @@ services:
         opt/local/bin/start-sample-cluster.sh
         tail -f /dev/null
     volumes:
-      - "./conf:/graphixsetup/"
+      - "${GRAPHIX_CONF:-./conf}:/graphixsetup/"
       # Data of AsterixDB (storage and transaction log), kept when the container is recreated; GRAPHIX_DATA: a host
       # directory instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml).
       # Empty it when the partitions of cc.conf change

@@ -11,7 +11,7 @@ import java.io.File
  * - [loadSpecificRuns]: the runs of the specificRuns section, one after the other (./gradlew evaluateSpecificRuns),
  *   the same runs that the tests of STGraph read (TestConfig).
  * The setups of STGraph and the sizes of the datasets come from the rest of the file (TestConfig), the data folders of
- * the systems from its volumes section.
+ * the systems from its volumes section, their resources and configuration from its resources section.
  */
 data class EvaluationConfig(
     val systems: List<String>,
@@ -41,7 +41,13 @@ data class EvaluationConfig(
      */
     val volumeFolders: Map<String, String> = emptyMap(),
     /** Appended to the model of the results (e.g., stgraph_4CPU for the label 4CPU): the configuration the run measures */
-    val label: String? = null
+    val label: String? = null,
+    /**
+     * The resources and configuration of the systems, as the variables of their compose files (e.g., NEO4J_MEMORY to
+     * 12g, NEO4J_CONF to an absolute path), from the resources section; a variable not set keeps the value of the
+     * compose file
+     */
+    val resources: Map<String, String> = emptyMap()
 ) {
     /**
      * The data folders of [volumeFolders] for [size], with {size} replaced (e.g., a folder per size for Neo4j and PGAge,
@@ -49,6 +55,9 @@ data class EvaluationConfig(
      */
     fun volumes(size: String): Map<String, String> =
         volumeFolders.mapValues { (_, folder) -> File(folder.replace("{size}", size)).apply { mkdirs() }.path }
+
+    /** The variables of the compose files for [size]: the data folders ([volumes]) and the [resources] */
+    fun environment(size: String): Map<String, String> = volumes(size) + resources
 
     /** [system] as the model of the results: with the [label] of the run, if any */
     fun model(system: String): String = label?.let { "${system}_$it" } ?: system
@@ -64,13 +73,16 @@ data class EvaluationConfig(
             "pgage" to "PGAGE_DATA"
         )
 
+        /** The suffix of the variable of each key of the resources section, after the prefix of the system (NEO4J_MEMORY) */
+        private val resourceVariables = mapOf("cpus" to "CPUS", "cpuset" to "CPUSET", "memory" to "MEMORY", "shm" to "SHM", "conf" to "CONF")
+
         /** The evaluation section of [path] */
         @Suppress("UNCHECKED_CAST")
         fun load(path: String = "src/main/resources/test_config.yml"): EvaluationConfig {
             val yaml = yaml(path)
             val section = yaml["evaluation"] as? Map<String, Any?>
                 ?: error("No evaluation section in $path: copy it from test_config.example.yml")
-            return parse(section, defaults(yaml), path).copy(volumeFolders = volumes(yaml, path))
+            return parse(section, defaults(yaml), path).copy(volumeFolders = volumes(yaml, path), resources = resources(yaml, path))
         }
 
         /** The runs of the specificRuns section of [path] */
@@ -80,7 +92,8 @@ data class EvaluationConfig(
             val runs = (yaml["specificRuns"] as? Map<String, Any?>)?.get("runs") as? List<Map<String, Any?>>
             require(!runs.isNullOrEmpty()) { "No specificRuns.runs in $path: copy them from test_config.example.yml" }
             val volumes = volumes(yaml, path)
-            return runs.map { parse(it, defaults(yaml), path).copy(volumeFolders = volumes) }
+            val resources = resources(yaml, path)
+            return runs.map { parse(it, defaults(yaml), path).copy(volumeFolders = volumes, resources = resources) }
         }
 
         private fun yaml(path: String): Map<String, Any?> = Yaml().load(File(path).inputStream())
@@ -99,6 +112,28 @@ data class EvaluationConfig(
             require(unknown.isEmpty()) { "Unknown systems in the volumes section of $path: $unknown (known: ${volumeVariables.keys})" }
             return section.mapNotNull { (system, folder) ->
                 folder?.toString()?.takeIf { it.isNotBlank() }?.let { volumeVariables.getValue(system) to File(it).absoluteFile.path }
+            }.toMap()
+        }
+
+        /**
+         * The variables of the resources section of [yaml]: for each system, its cpus, cpuset, memory, shm and conf
+         * (relative paths: from the repository root), e.g., NEO4J_CPUS, as the volumes
+         */
+        @Suppress("UNCHECKED_CAST")
+        private fun resources(yaml: Map<String, Any?>, path: String): Map<String, String> {
+            val section = yaml["resources"] as? Map<String, Any?> ?: return emptyMap()
+            val unknown = section.keys - volumeVariables.keys
+            require(unknown.isEmpty()) { "Unknown systems in the resources section of $path: $unknown (known: ${volumeVariables.keys})" }
+            return section.flatMap { (system, values) ->
+                val keys = values as? Map<String, Any?> ?: emptyMap()
+                val unknownKeys = keys.keys - resourceVariables.keys
+                require(unknownKeys.isEmpty()) { "Unknown keys of $system in the resources section of $path: $unknownKeys (known: ${resourceVariables.keys})" }
+                val prefix = volumeVariables.getValue(system).removeSuffix("_DATA")
+                keys.mapNotNull { (key, value) ->
+                    value?.toString()?.takeIf { it.isNotBlank() }?.let {
+                        "${prefix}_${resourceVariables.getValue(key)}" to if (key == "conf") File(it).absoluteFile.path else it
+                    }
+                }
             }.toMap()
         }
 

@@ -6,15 +6,21 @@ services:
     image: mp4sini/pgage:latest
     container_name: pgage
     hostname: pgage
-    # Single-core comparison with the other systems (see evaluation/README.md)
-    cpus: 1
+    # Single-core comparison with the other systems (see evaluation/README.md). PGAGE_CPUS, PGAGE_CPUSET (the cores),
+    # PGAGE_MEMORY, PGAGE_SHM (the shared memory of the parallel workers, 64 MB by default in Docker) and PGAGE_CONF (the
+    # folder of postgresql.conf): other resources and configuration (set by the evaluation from the resources section
+    # of test_config.yml)
+    cpus: ${PGAGE_CPUS:-1}
+    cpuset: "${PGAGE_CPUSET:-}"
+    mem_limit: ${PGAGE_MEMORY:-0}
+    shm_size: ${PGAGE_SHM:-64m}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PSW:-psw}
       POSTGRES_DB: ${DB_NAME:-smartbench_eval}
       PGDATA: /home/postgres/pgdata/data
     volumes:
-      - ./conf:/pgconf
+      - "${PGAGE_CONF:-./conf}:/pgconf"
       # Data of PostgreSQL (PGDATA is a folder inside), kept when the container is recreated; PGAGE_DATA: a host directory
       # instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml), writable by
       # the user 1000 of the container (postgres)

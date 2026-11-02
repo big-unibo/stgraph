@@ -29,8 +29,8 @@ abstract class DatasetEvaluation(
 ) {
     protected val setups: List<SetupConfig> = evaluation.setups.map { config.setups[it] ?: error("Unknown setup: $it") }
 
-    /** The data folders of the systems for this size, as the variables of their compose files */
-    protected val volumes: Map<String, String> = evaluation.volumes(size)
+    /** The data folders of the systems for this size and their resources, as the variables of their compose files */
+    protected val environment: Map<String, String> = evaluation.environment(size)
 
     /** Whether the queries of the dataset have the time windows of time_constraints.yaml */
     protected open val timeWindows = true
@@ -50,7 +50,7 @@ abstract class DatasetEvaluation(
     ) {
         for (setup in setups) {
             val local = setup.host == "localhost"
-            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = volumes, ready = { asterixDBReady(setup.host, setup.port) }) {
+            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = environment, ready = { asterixDBReady(setup.host, setup.port) }) {
                 for (threads in evaluation.threads) {
                     repeat(evaluation.ingestionIterations) { iteration ->
                         resetPort()
