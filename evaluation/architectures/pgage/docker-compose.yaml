@@ -6,11 +6,11 @@ services:
     image: mp4sini/pgage:latest
     container_name: pgage
     hostname: pgage
-    # Single-core comparison with the other systems (see evaluation/README.md). PGAGE_CPUS, PGAGE_CPUSET (the cores),
-    # PGAGE_MEMORY, PGAGE_SHM (the shared memory of the parallel workers, 64 MB by default in Docker) and PGAGE_CONF (the
-    # folder of postgresql.conf): other resources and configuration (set by the evaluation from the resources section
-    # of test_config.yml)
-    cpus: ${PGAGE_CPUS:-1}
+    # No CPU or memory limit by default (free). PGAGE_CPUS, PGAGE_CPUSET (the cores), PGAGE_MEMORY, PGAGE_SHM (the
+    # shared memory of the parallel workers, 64 MB by default in Docker) and PGAGE_CONF (the folder of postgresql.conf):
+    # the resources and configuration of a run, e.g. cpus 1 for the single-core comparison of the paper (set by the
+    # evaluation from the resources section of test_config.yml, see evaluation/README.md)
+    cpus: ${PGAGE_CPUS:-0}
     cpuset: "${PGAGE_CPUSET:-}"
     mem_limit: ${PGAGE_MEMORY:-0}
     shm_size: ${PGAGE_SHM:-64m}

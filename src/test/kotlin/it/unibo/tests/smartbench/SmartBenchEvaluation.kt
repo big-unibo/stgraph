@@ -5,6 +5,7 @@ import it.unibo.stats.Config
 import it.unibo.stats.SetupConfig
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
+import it.unibo.tests.evaluation.datasetAvailable
 import it.unibo.tests.evaluation.deployed
 import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
@@ -79,7 +80,8 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
      * fastLoadPgAge, then e.g. evaluateQueries): the system is left with the data of its ingestion (same nodes, edges,
      * rows and indexes), in its data folder (volumes section), but the load is not timed and nothing goes to results/.
      * - pgage: SmartBenchPGAgeFast on the system started as for the evaluation (deploy);
-     * - neo4j: the CSV files of SmartBenchNeo4JFast (datasets/import/neo4j/<size>, removed at the end), imported with
+     * - neo4j: the CSV files of SmartBenchNeo4JFast (datasets/import/neo4j/<size>, removed at the end; from the Cypher
+     *   dump, or from the JSON dataset for a size without one, e.g. extralarge), imported with
      *   neo4j-admin into an empty database while Neo4j is stopped, then the range index of SmartBenchNeo4J; it starts
      *   and stops Neo4j itself, so it needs deploy: true.
      */
@@ -102,7 +104,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             }
             "neo4j" -> {
                 check(evaluation.deploy) { "The fast load of Neo4j stops and starts Neo4j itself: it needs deploy: true" }
-                download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j", needed = true)
+                downloadNeo4jFast()
                 val importDir = File("datasets/import/neo4j/$size").absoluteFile
                 val loader = SmartBenchNeo4JFast(size)
                 progress("$run: writing the files of the import ($importDir)")
@@ -133,6 +135,20 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
     private fun pgageReady() {
         DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } }
+    }
+
+    /**
+     * The data of the fast load of Neo4j: its Cypher dump (smartbench/neo4j <size>) when it is on disk or on the server,
+     * as for the sizes of the paper; otherwise (e.g., extralarge) the JSON dataset of the other systems
+     */
+    private fun downloadNeo4jFast() {
+        if (SmartBenchNeo4JFast.hasCypherDump(size)) return
+        if (evaluation.download && datasetAvailable("smartbench/neo4j", size)) {
+            download("${SmartBenchNeo4JFast.CYPHER_DUMPS}/$size", "smartbench/neo4j", needed = true)
+        } else {
+            progress("fast load | neo4j | $dataset $size: no Cypher dump, the JSON dataset is loaded")
+            download("datasets/original/smartbench/$size", "smartbench", needed = true)
+        }
     }
 
     private fun neo4j() {

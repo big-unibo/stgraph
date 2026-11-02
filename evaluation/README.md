@@ -23,10 +23,11 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 
 ## Systems
 
-Every system runs in a container limited to one core (`cpus: 1`): the database of STGraph, Graphix, Neo4j and PGAge,
-whose client (the evaluation) runs outside; the whole evaluation of AeonG and HyGraph, client included. The JVMs see one
-processor and use a single-threaded garbage collector. Each system is configured to use as little parallelism as it
-allows.
+Every system runs in a container: the database of STGraph, Graphix, Neo4j and PGAge, whose client (the evaluation)
+runs outside, without CPU or memory limits unless the `resources` section of `test_config.yml` sets them (the
+single-core comparison of the paper: `cpus: 1` for each; see below); the whole evaluation of AeonG and HyGraph, client
+included, limited to one core (`cpus: 1` in their compose files). The JVMs see one processor and use a single-threaded
+garbage collector. Each system is configured to use as little parallelism as it allows.
 
 | System | Version | Deploy | Configuration |
 |--------|---------|--------|---------------|
@@ -111,7 +112,7 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 |---------|---------|
 | `datasets`, `setups` | the sizes of each dataset (for MIMIC-IV, also the PostgreSQL the data is read from: `postgres_endpoint`, `port`, `database`, `user`, `password`); the AsterixDB setups of STGraph |
 | `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
-| `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., the single-core comparison (see below) |
+| `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., no CPU or memory limit and the configuration in `conf/` (see below) |
 | `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
 | `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
@@ -166,9 +167,11 @@ AsterixDB and Graphix, the indexes and the data model change the data, and need 
 write their results themselves, without the label.
 
 The `resources` section sets the CPU and memory limits and the configuration folder of each system without editing the
-compose files (the evaluation passes them as `<SYSTEM>_CPUS`, `_CPUSET`, `_MEMORY`, `_SHM`, `_CONF`). Its example is
-the budget of 3 CPUs and 12 GB per system, with a configuration folder `conf-3cpu-12g` per system that changes only
-what the budget needs, the rest as in `conf/` or as the defaults of the system:
+compose files (the evaluation passes them as `<SYSTEM>_CPUS`, `_CPUSET`, `_MEMORY`, `_SHM`, `_CONF`). Without it, the
+systems run with no CPU or memory limit (free) and the configuration in `conf/`; the single-core comparison of the
+paper is `{ cpus: 1 }` for each system. Its example is the budget of 3 CPUs and 12 GB per system, with a configuration
+folder `conf-3cpu-12g` per system that changes only what the budget needs, the rest as in `conf/` or as the defaults
+of the system:
 
 | System | Budget | Configuration (`conf-3cpu-12g`) |
 |--------|--------|---------------------------------|

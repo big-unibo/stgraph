@@ -2,6 +2,7 @@ package it.unibo.tests.smartbench.loaders
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import it.unibo.graph.utils.TYPE
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.nio.file.Files
@@ -21,11 +22,16 @@ import kotlin.io.path.name
  *   (location as a cartesian 3D point), as the UNWIND of SmartBenchNeo4J; in both cases a hasTemperature relationship
  *   from every Sensor node with the id of the series, and no event for a series without one;
  * - the timestamps as datetime, the numbers as integers or floats as in the dumps (one file per property types).
+ * A size without a Cypher dump (e.g., extralarge) is read [fromJson]: the JSON dataset of the other systems
+ * (datasets/original/smartbench/<size>), with the graph as the loaders of STGraph build it (see [jsonGraph]) and the
+ * events of its timeseries/<sensor>.json, as above.
  * The import itself (stop, neo4j-admin, start) and the range index of [SmartBenchNeo4J.createIndexes] are run by
  * SmartBenchEvaluation.fastLoad. Not an ingestion of the evaluation: its times are not comparable.
  */
-class SmartBenchNeo4JFast(val size: String) {
-    private val dumpPath: Path = Paths.get("").toAbsolutePath().normalize().resolve("datasets/original/smartbench/neo4j/$size")
+class SmartBenchNeo4JFast(val size: String, private val fromJson: Boolean = !hasCypherDump(size)) {
+    private val projectRoot: Path = Paths.get("").toAbsolutePath().normalize()
+    private val dumpPath: Path = projectRoot.resolve("$CYPHER_DUMPS/$size")
+    private val jsonPath: Path = projectRoot.resolve("datasets/original/smartbench/$size")
     private val mapper = jacksonObjectMapper()
 
     /** A node of the graph: its import id, label and properties */
@@ -53,31 +59,7 @@ class SmartBenchNeo4JFast(val size: String) {
         val graphNodesByFile = mutableMapOf<String, MutableList<Node>>()
         val args = mutableListOf<String>()
         relationshipWriter(dir.resolve("relationships.csv.gz")).use { rels ->
-            // Graph: the statements of graph.cypher, in order
-            for (statement in SmartBenchNeo4J.cypherStatements(dumpPath.resolve("graph.cypher"))) {
-                val create = CREATE_NODE.matchEntire(statement)
-                val match = MATCH_RELATIONSHIP.matchEntire(statement)
-                when {
-                    create != null -> {
-                        val node = Node(nextId++, create.groupValues[1], parseProperties(create.groupValues[2]))
-                        nodesById.getOrPut(node.properties["id"].toString()) { mutableListOf() } += node
-                        graphNodesByFile.getOrPut(fileKey(node)) { mutableListOf() } += node
-                        graphNodes++
-                    }
-                    match != null -> {
-                        // Without a label, every node with that id (as the MATCH)
-                        val (sourceLabel, sourceId, destLabel, destId, from, type, to) = match.destructured
-                        val sources = nodesById[sourceId].orEmpty().filter { sourceLabel.isEmpty() || it.label == sourceLabel }
-                        val dests = nodesById[destId].orEmpty().filter { destLabel.isEmpty() || it.label == destLabel }
-                        for (u in sources) for (v in dests) {
-                            val (start, end) = if (from == "u" && to == "v") u to v else v to u
-                            rels.write("${start.importId},${end.importId},$type\n")
-                            relationships++
-                        }
-                    }
-                    else -> error("Statement of ${dumpPath.resolve("graph.cypher")} not supported by the fast load: ${statement.take(200)}")
-                }
-            }
+            if (fromJson) jsonGraph(nodesById, graphNodesByFile, rels) else cypherGraph(nodesById, graphNodesByFile, rels)
             graphNodesByFile.values.forEachIndexed { index, nodes ->
                 val file = dir.resolve("nodes_${nodes.first().label}_$index.csv")
                 writeNodes(file, nodes)
@@ -92,7 +74,7 @@ class SmartBenchNeo4JFast(val size: String) {
                 file to writer
             }.second
             try {
-                if (size == "small") smallEvents(nodesById, rels, ::eventWriter) else jsonEvents(nodesById, rels, ::eventWriter)
+                if (!fromJson && size == "small") smallEvents(nodesById, rels, ::eventWriter) else jsonEvents(nodesById, rels, ::eventWriter)
             } finally {
                 eventFiles.values.forEach { it.second.close() }
             }
@@ -100,6 +82,76 @@ class SmartBenchNeo4JFast(val size: String) {
         }
         args += "--relationships=$importDir/relationships.csv.gz"
         return args
+    }
+
+    /** The graph of graph.cypher: its statements, in order */
+    private fun cypherGraph(nodesById: MutableMap<String, MutableList<Node>>, nodesByFile: MutableMap<String, MutableList<Node>>, rels: BufferedWriter) {
+        for (statement in SmartBenchNeo4J.cypherStatements(dumpPath.resolve("graph.cypher"))) {
+            val create = CREATE_NODE.matchEntire(statement)
+            val match = MATCH_RELATIONSHIP.matchEntire(statement)
+            when {
+                create != null -> addNode(create.groupValues[1], parseProperties(create.groupValues[2]), nodesById, nodesByFile)
+                match != null -> {
+                    // Without a label, every node with that id (as the MATCH)
+                    val (sourceLabel, sourceId, destLabel, destId, from, type, to) = match.destructured
+                    val sources = nodesById[sourceId].orEmpty().filter { sourceLabel.isEmpty() || it.label == sourceLabel }
+                    val dests = nodesById[destId].orEmpty().filter { destLabel.isEmpty() || it.label == destLabel }
+                    for (u in sources) for (v in dests) {
+                        val (start, end) = if (from == "u" && to == "v") u to v else v to u
+                        rels.write("${start.importId},${end.importId},$type\n")
+                        relationships++
+                    }
+                }
+                else -> error("Statement of ${dumpPath.resolve("graph.cypher")} not supported by the fast load: ${statement.take(200)}")
+            }
+        }
+    }
+
+    /**
+     * The graph of the JSON dataset, as the loaders of STGraph build it: a node per entity of the collections of
+     * [SmartBenchJsonLoader] (label: its capitalized type; properties: its fields, but the objects with an id), and a
+     * has<Key> relationship from it to each object with an id it refers to (alone or in a list), once every entity
+     * exists. The labels and the relationships of the queries (hasCoverage, hasInfrastructure, hasOwner, hasType_) are
+     * the ones of graph.cypher
+     */
+    private fun jsonGraph(nodesById: MutableMap<String, MutableList<Node>>, nodesByFile: MutableMap<String, MutableList<Node>>, rels: BufferedWriter) {
+        val references = mutableListOf<Triple<Node, String, String>>()
+        for (collection in SmartBenchJsonLoader.collections) {
+            val file = jsonPath.resolve("$collection.json")
+            require(Files.exists(file)) { "File not found: $file" }
+            val entities: List<Map<String, Any?>> = mapper.readValue(file.toFile())
+            for (entity in entities) {
+                val properties = linkedMapOf<String, Any?>()
+                val referenced = mutableListOf<Pair<String, String>>()
+                for ((key, value) in entity) {
+                    when {
+                        key == TYPE || value == null -> {}
+                        value is Map<*, *> && "id" in value -> referenced += key to value["id"].toString()
+                        // An empty list too: nothing, as in STGraph
+                        value is List<*> && value.all { it is Map<*, *> && "id" in it } -> value.forEach { referenced += key to (it as Map<*, *>)["id"].toString() }
+                        value is Map<*, *> -> error("Field $key of $file not supported by the fast load: an object without id")
+                        else -> properties[key] = value
+                    }
+                }
+                val label = SmartBenchJsonLoader.label(entity[TYPE] as? String ?: error("Missing \"$TYPE\" in $file"))
+                val node = addNode(label, properties, nodesById, nodesByFile)
+                referenced.forEach { (key, id) -> references += Triple(node, "has" + key.replaceFirstChar { it.uppercase() }, id) }
+            }
+        }
+        for ((source, type, id) in references) {
+            for (dest in nodesById[id].orEmpty()) {
+                rels.write("${source.importId},${dest.importId},$type\n")
+                relationships++
+            }
+        }
+    }
+
+    private fun addNode(label: String, properties: Map<String, Any?>, nodesById: MutableMap<String, MutableList<Node>>, nodesByFile: MutableMap<String, MutableList<Node>>): Node {
+        val node = Node(nextId++, label, properties)
+        nodesById.getOrPut(node.properties["id"].toString()) { mutableListOf() } += node
+        nodesByFile.getOrPut(fileKey(node)) { mutableListOf() } += node
+        graphNodes++
+        return node
     }
 
     /** The events of ts.cypher: one statement per series, MATCH of its sensor and one CREATE per event */
@@ -116,7 +168,7 @@ class SmartBenchNeo4JFast(val size: String) {
 
     /** The events of timeseries/<sensor>.json, as the UNWIND of SmartBenchNeo4J */
     private fun jsonEvents(nodesById: Map<String, List<Node>>, rels: BufferedWriter, writer: (String) -> BufferedWriter) {
-        val files = Files.list(dumpPath.resolve("timeseries")).use { it.sorted().toList() }
+        val files = Files.list((if (fromJson) jsonPath else dumpPath).resolve("timeseries")).use { it.sorted().toList() }
         for (file in files) {
             Files.newBufferedReader(file).useLines { lines ->
                 for (line in lines) {
@@ -254,6 +306,12 @@ class SmartBenchNeo4JFast(val size: String) {
     }
 
     companion object {
+        /** The Cypher dumps of Neo4j, one folder per size (./downloadDataset.sh smartbench/neo4j <size>) */
+        const val CYPHER_DUMPS = "datasets/original/smartbench/neo4j"
+
+        /** Whether [size] has its Cypher dump on disk: without it, the fast load reads the JSON dataset */
+        fun hasCypherDump(size: String): Boolean = Files.exists(Paths.get("$CYPHER_DUMPS/$size/graph.cypher"))
+
         // CREATE (n:Label { ... }) of graph.cypher
         private val CREATE_NODE = Regex("""CREATE \(n:(\w+) \{(.*)\}\)""", RegexOption.DOT_MATCHES_ALL)
 

@@ -26,15 +26,14 @@ private const val BASE_URL = "https://big.csr.unibo.it/downloads/stgraph"
  * <size>.tar.gz) into datasets/original/[dataset] and extracts the .tar.gz archives, which are then removed
  */
 fun downloadDataset(dataset: String, sizeOrFile: String) {
-    val fileName = if (sizeOrFile.contains(".")) sizeOrFile else "$sizeOrFile.tar.gz"
+    val fileName = archiveName(sizeOrFile)
     val outputDir = Paths.get("datasets/original/$dataset").toAbsolutePath().normalize()
     Files.createDirectories(outputDir)
     val url = "$BASE_URL/$dataset/$fileName"
     val target = outputDir.resolve(fileName)
     val partial = outputDir.resolve("$fileName.part")
     logger.info("Downloading $url")
-    // As curl -k -fL --retry 3 in downloadDataset.sh: the certificate of the server is not checked
-    val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).sslContext(insecureSslContext()).build()
+    val client = httpClient()
     val request = HttpRequest.newBuilder(URI(url)).GET().build()
     var attempt = 0
     while (true) {
@@ -59,6 +58,23 @@ fun downloadDataset(dataset: String, sizeOrFile: String) {
         Files.delete(target)
     }
 }
+
+/** Whether the server has [dataset]/[sizeOrFile] (a size means <size>.tar.gz), without downloading it */
+fun datasetAvailable(dataset: String, sizeOrFile: String): Boolean {
+    val url = "$BASE_URL/$dataset/${archiveName(sizeOrFile)}"
+    val request = HttpRequest.newBuilder(URI(url)).method("HEAD", HttpRequest.BodyPublishers.noBody()).build()
+    return when (val status = httpClient().send(request, HttpResponse.BodyHandlers.discarding()).statusCode()) {
+        in 200..299 -> true
+        404 -> false
+        else -> error("Check of $url failed: HTTP $status")
+    }
+}
+
+private fun archiveName(sizeOrFile: String) = if (sizeOrFile.contains(".")) sizeOrFile else "$sizeOrFile.tar.gz"
+
+/** As curl -k -fL in downloadDataset.sh: redirects followed, the certificate of the server not checked */
+private fun httpClient(): HttpClient =
+    HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).sslContext(insecureSslContext()).build()
 
 /** Retries after the first attempt, as curl --retry 3 */
 private const val RETRIES = 3

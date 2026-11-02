@@ -5,10 +5,10 @@ services:
     image: neo4j:5.26
     container_name: neo4j
     hostname: neo4j
-    # Single-core comparison with the other systems (see evaluation/README.md). NEO4J_CPUS, NEO4J_CPUSET (the cores),
-    # NEO4J_MEMORY and NEO4J_CONF (the folder of neo4j.conf): other resources and configuration (set by the evaluation
-    # from the resources section of test_config.yml)
-    cpus: ${NEO4J_CPUS:-1}
+    # No CPU or memory limit by default (free). NEO4J_CPUS, NEO4J_CPUSET (the cores), NEO4J_MEMORY and NEO4J_CONF (the
+    # folder of neo4j.conf): the resources and configuration of a run, e.g. cpus 1 for the single-core comparison of the
+    # paper (set by the evaluation from the resources section of test_config.yml, see evaluation/README.md)
+    cpus: ${NEO4J_CPUS:-0}
     cpuset: "${NEO4J_CPUSET:-}"
     mem_limit: ${NEO4J_MEMORY:-0}
     environment:

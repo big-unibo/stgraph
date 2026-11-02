@@ -3,10 +3,11 @@ services:
     image: mp4sini/asterixdb:latest
     hostname: asterixdb
     container_name: asterixdb
-    # Single-core comparison with the other systems (see evaluation/README.md). ASTERIXDB_CPUS, ASTERIXDB_CPUSET (the
-    # cores), ASTERIXDB_MEMORY and ASTERIXDB_CONF (the folder of cc.conf): other resources and configuration (set by
-    # the evaluation from the resources section of test_config.yml)
-    cpus: ${ASTERIXDB_CPUS:-1}
+    # No CPU or memory limit by default (free). ASTERIXDB_CPUS, ASTERIXDB_CPUSET (the cores), ASTERIXDB_MEMORY and
+    # ASTERIXDB_CONF (the folder of cc.conf): the resources and configuration of a run, e.g. cpus 1 for the single-core
+    # comparison of the paper (set by the evaluation from the resources section of test_config.yml, see
+    # evaluation/README.md)
+    cpus: ${ASTERIXDB_CPUS:-0}
     cpuset: "${ASTERIXDB_CPUSET:-}"
     mem_limit: ${ASTERIXDB_MEMORY:-0}
     command:
