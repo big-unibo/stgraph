@@ -8,6 +8,11 @@
     // The whole repository, as the notebooks read results/ (and find its root by settings.gradle.kts)
     "workspaceMount": "source=${localWorkspaceFolder}/..,target=/home,type=bind",
     "workspaceFolder": "/home/evaluation",
+    // results/ of the repository root also in the opened folder, to browse it (the same files: the notebooks read
+    // /home/results)
+    "mounts": [
+        "source=${localWorkspaceFolder}/../results,target=/home/evaluation/results,type=bind"
+    ],
     // Set *default* container specific settings.json values on container create.
     "customizations": {
         "vscode": {

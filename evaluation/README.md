@@ -170,7 +170,31 @@ write their results themselves, without the label.
 The `resources` section sets the CPU and memory limits and the configuration folder of each system without editing the
 compose files (the evaluation passes them as `<SYSTEM>_CPUS`, `_CPUSET`, `_MEMORY`, `_SHM`, `_CONF`). Without it, the
 systems run with no CPU or memory limit (free) and the configuration in `conf/`; the single-core comparison of the
-paper is `{ cpus: 1 }` for each system. Its example is the budget of 3 CPUs and 12 GB per system, with a configuration
+paper is `{ cpus: 1 }` for each system.
+
+Each system has two configurations (the blocks of the example of `test_config.yml`):
+
+| | Resources | Configuration |
+|---|---|---|
+| Limited | one core (`cpus: 1`), no memory limit | `conf/`: the least parallelism the system allows (see above) |
+| Free | 20 cores (`cpus: 20`, `cpuset: "0-19"`), no memory limit | `conf-free/`: the defaults of the system, no setting chosen by us or by a tuning tool |
+
+The free configuration of each system:
+
+| System | `conf-free` |
+|--------|-------------|
+| STGraph | the `cc.conf` of the image as one node with two data partitions (`iodevices=data/io0,data/io1`) instead of its two nodes with one partition each: the same parallelism (one per partition) in one JVM, without exchanges between nodes on localhost, with one heap (60% of the memory it sees) instead of two |
+| Graphix | the same, with the Graphix extension and the semantics of the patterns; `minimize-joins` and `prefer-indexnl` at their defaults (off) |
+| Neo4j | `conf/` without its least parallelism and its page cache: the configuration of the distribution, on which the image sets a 512 MB page cache (its default whatever the memory) |
+| PGAge | the `postgresql.conf.sample` of PostgreSQL 16 in the image (with its TimescaleDB library and listen address) and the settings of initdb: 128 MB of shared buffers, two parallel workers per query; `shm: 1g` removes the 64 MB limit of Docker on the shared memory of the parallel workers |
+
+Without a memory limit, the memory of the machine is a parameter of the runs (run every system on the same node, and
+report its RAM), and the systems use it as their defaults do: the heap of AsterixDB grows with the memory it sees,
+while Neo4j and PostgreSQL keep their small caches and rely on the cache of the operating system. The JVM of STGraph
+(outside Docker) takes the default heap of the JVM. The two partitions of AsterixDB and Graphix are not those of
+`conf/`: their data are loaded in another folder (e.g., `volumes` per partitioning).
+
+Another example is the budget of 3 CPUs and 12 GB per system, with a configuration
 folder `conf-3cpu-12g` per system that changes only what the budget needs, the rest as in `conf/` or as the defaults
 of the system:
 

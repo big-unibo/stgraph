@@ -45,8 +45,20 @@ volumes:
 # 12g); shm (pgage only): the shared memory of the parallel workers of PostgreSQL; conf: the folder of the
 # configuration (relative paths: from the repository root). They need no reload, as long as the partitions of
 # AsterixDB and Graphix are those of the load. E.g., the single-core comparison of the paper: { cpus: 1 } for each
-# system. Or the budget of 3 CPUs and 12 GB of each system (see evaluation/README.md: STGraph has the third core and
-# 3 GB for its JVM, with threads: [ 2 ]):
+# system. The two configurations of each system (see evaluation/README.md), limited (one core, the least parallelism
+# of conf/):
+#  asterixdb: { cpus: 1, conf: evaluation/architectures/stgraph/conf }
+#  graphix: { cpus: 1, conf: evaluation/architectures/graphix/conf }
+#  neo4j: { cpus: 1, conf: evaluation/architectures/neo4j/conf }
+#  pgage: { cpus: 1, conf: evaluation/architectures/pgage/conf }
+# and free (20 cores, no memory limit, the defaults of the systems in conf-free/; AsterixDB and Graphix with two
+# partitions, so their data in another folder than the one of conf/, see volumes):
+#  asterixdb: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/stgraph/conf-free }
+#  graphix: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/graphix/conf-free }
+#  neo4j: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/neo4j/conf-free }
+#  pgage: { cpus: 20, cpuset: "0-19", shm: 1g, conf: evaluation/architectures/pgage/conf-free }
+# Or the budget of 3 CPUs and 12 GB of each system (see evaluation/README.md: STGraph has the third core and 3 GB for
+# its JVM, with threads: [ 2 ]):
 #  asterixdb: { cpus: 2, cpuset: "0,1", memory: 9g, conf: evaluation/architectures/stgraph/conf-3cpu-12g }
 #  graphix: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/graphix/conf-3cpu-12g }
 #  neo4j: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/neo4j/conf-3cpu-12g }
