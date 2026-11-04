@@ -2,7 +2,6 @@
 # queries run from the evaluation (./gradlew evaluate, see evaluation/README.md), which also starts and stops it.
 services:
   pgage:
-    build: .
     image: mp4sini/pgage:latest
     container_name: pgage
     hostname: pgage

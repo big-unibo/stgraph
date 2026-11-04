@@ -1,6 +1,5 @@
 services:
   aeong:
-    build: .
     image: mp4sini/aeong:latest
     hostname: aeong
     container_name: aeong

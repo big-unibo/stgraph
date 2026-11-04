@@ -1,6 +1,5 @@
 services:
   hygraph:
-    build: .
     image: mp4sini/hygraph:latest
     hostname: hygraph
     container_name: hygraph
