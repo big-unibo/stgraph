@@ -16,7 +16,7 @@ class MimicIVPGAge(
     postgres: PostgresConfig = PostgresConfig()
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres)  {
     private val graphName = "mimic_${if (limit == Long.MAX_VALUE) "full" else limit}"
-    // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path, no parallel workers),
+    // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path),
     // applied once: not at every statement, inside the timed ingestion
     private val conn: Connection = pgAgeConnection(url, user, password)
     private val baseDir = File("datasets/dump/pgage/mimic/$limit").apply { mkdirs() }

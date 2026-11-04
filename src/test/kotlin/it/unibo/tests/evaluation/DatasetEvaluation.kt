@@ -168,6 +168,35 @@ abstract class DatasetEvaluation(
         progress("download | $name $size: done")
     }
 
+    /**
+     * [system] loads the data and runs the queries inside its container, configured by environment variables, on
+     * [containerSize]; [extraEnv]: further variables of its compose file
+     */
+    protected fun selfContained(system: String, containerSize: String, queryIds: List<String>, extraEnv: Map<String, String> = emptyMap()) {
+        if (evaluation.ingestionIterations == 0 || evaluation.queryIterations == 0) {
+            progress("$system | $dataset $size: skipped, its container runs the ingestion and the queries together (no single phase)")
+            return
+        }
+        val composeFile = "evaluation/architectures/$system/docker-compose.yaml"
+        val env = mapOf(
+            "DATASET" to dataset,
+            "DATASET_SIZE" to containerSize,
+            "INGESTION_ITERATIONS" to evaluation.ingestionIterations.toString(),
+            "QUERY_ITERATIONS" to evaluation.queryIterations.toString(),
+            "THREAD" to "1",
+            "QUERY_SELECTIVITY" to evaluation.selectivities.joinToString(","),
+            "QUERIES" to queryIds.joinToString(",")
+        ) + extraEnv
+        val run = "$system | $dataset $size (size $containerSize in its container)"
+        progress("$run: ingestion and queries inside its container, started")
+        try {
+            runCommand(listOf("docker", "compose", "-f", composeFile, "up", "--abort-on-container-exit", "--exit-code-from", system), env)
+        } finally {
+            runCommand(listOf("docker", "compose", "-f", composeFile, "down"), env)
+        }
+        progress("$run: done, results in results/$system")
+    }
+
     protected fun asterixDBReady(host: String, port: Int) {
         GraphixClient(host, port, "Default").exec("SELECT VALUE 1;")
     }

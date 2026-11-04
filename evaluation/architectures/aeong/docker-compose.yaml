@@ -18,7 +18,8 @@ services:
     volumes:
       - ../../../results/aeong:/home/AeonG/tests/results/aeong/
       - ./time_constraints_commit.yaml:/vol/time_constraints.yaml
-      - ./queries:/home/AeonG/tests/results/temporal_query
+      # AEONG_QUERIES: the query files of the dataset (./queries/mimic for MIMIC-IV, set by the evaluation)
+      - ${AEONG_QUERIES:-./queries}:/home/AeonG/tests/results/temporal_query
       - ./datasets:/home/AeonG/tests/datasets/T-mgBench/
     command:
       - /bin/bash
