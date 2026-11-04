@@ -10,8 +10,9 @@ import java.util.*
 
 /**
  * A connection to PostgreSQL with Apache AGE (PGAge), with the session settings that the original evaluation
- * (pg_connector.py) applied before each statement, applied here once: AGE loaded, ag_catalog in the search path, no
- * parallel workers. [properties] go to the JDBC driver (e.g., reWriteBatchedInserts)
+ * (pg_connector.py) applied before each statement, applied here once: AGE loaded, ag_catalog in the search path. The
+ * parallel workers are those of the configuration of PostgreSQL (see the conf folders of the system). [properties] go
+ * to the JDBC driver (e.g., reWriteBatchedInserts)
  */
 fun pgAgeConnection(url: String, user: String, password: String, properties: Map<String, String> = emptyMap()): Connection {
     val connection = DriverManager.getConnection(url, Properties().apply {
@@ -22,8 +23,6 @@ fun pgAgeConnection(url: String, user: String, password: String, properties: Map
     connection.createStatement().use { st ->
         st.execute("LOAD 'age';")
         st.execute("SET search_path = ag_catalog, \"\$user\", public;")
-        st.execute("SET max_parallel_workers_per_gather = 0;")
-        st.execute("SET max_parallel_workers = 0;")
     }
     return connection
 }

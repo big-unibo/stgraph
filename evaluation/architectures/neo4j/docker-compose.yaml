@@ -15,7 +15,7 @@ services:
       - NEO4J_AUTH=none
     volumes:
       # The files in /conf override the configuration of the image
-      - "${NEO4J_CONF:-./conf}:/conf"
+      - "${NEO4J_CONF:-./conf-free}:/conf"
       # Data of Neo4j, kept when the container is recreated; NEO4J_DATA: a host directory instead of the Docker volume
       # (set by the evaluation from the volumes section of test_config.yml)
       - "${NEO4J_DATA:-neo4j-data}:/data"

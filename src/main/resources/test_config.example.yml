@@ -5,8 +5,7 @@ datasets:
     sizes: [ "xsmall"]
 
   mimic:
-    sizes: [ "x1692200" ]
-    # PostgreSQL the ingestion reads the MIMIC-IV data from (here, the mimic-postgres of docker-compose.yaml)
+    sizes: [ "x1692200" ] # "1692200", "16922000", "9223372036854775807"
     postgres_endpoint: "localhost"
     port: 5434
     database: "mimic-iv"
@@ -108,4 +107,4 @@ specificRuns:
 # systems (one at a time, in this order) and datasets, optionally sizes and any key of the defaults
 evaluation:
   systems: [ "stgraph", "neo4j", "pgage", "graphix" ]
-  datasets: [ "smartbench"]
+  datasets: [ "smartbench", "mimic" ]

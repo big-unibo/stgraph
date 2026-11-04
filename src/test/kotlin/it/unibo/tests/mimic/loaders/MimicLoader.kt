@@ -17,8 +17,7 @@ import kotlin.random.Random
  */
 fun mimicLimit(size: String): Long = when {
     size == "full" -> Long.MAX_VALUE
-    size.startsWith("x") -> size.removePrefix("x").toLong()
-    else -> size.toLong()
+    else -> size.replace("x", "").toLong()
 }
 
 interface MimicIVLoader: Loader {
@@ -152,7 +151,7 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
                 val isLast = index + 1 == events.size || events[index].first != events[index + 1].first
                 addMeasurement(pair.first, pair.second, isFirst = isFirst, isLast = isLast)
             }
-            events.lastOrNull()?.let { (tsId, row) -> awaitLast(tsId, row) }
+            events.lastOrNull()?.let { (tsId, row) -> println("Awaiting ${tsId}:${row}"); awaitLast(tsId, row) }
         }
         return time
     }

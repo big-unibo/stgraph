@@ -78,46 +78,4 @@ class MimicIVSTGraph(
         g.flushToDisk()
         g.close()
     }
-
-//    init {
-//        g.tsm = t
-//        g.clear()
-//        t.clear()
-//    }
-//
-//    override fun addPerson(subjectId: Int): Long {
-//        val person = g.addNode(Person)
-//        g.addProperty(person.id, key = "subject_id", value = subjectId, PropType.INT)
-//        return person.id
-//    }
-//
-//    override fun addTimeseries(abbreviation: String, unitname: String?, category: String, label: String, itemid: Int, person: Long): Long {
-//        val n = g.addNode(abbreviation, isTs = true)
-//        if (unitname != null) g.addProperty(n.id, key = "unitname", value = unitname, PropType.STRING)
-//        g.addProperty(n.id, key = "category", value = category, PropType.STRING)
-//        g.addProperty(n.id, key = "label", value = label, PropType.STRING)
-//        g.addProperty(n.id, key = "itemid", value = itemid, PropType.INT)
-//        val ts = (g.getTSM() as AsterixDBTSM).addTS(n.id) as AsterixDBTS
-//        tsMap[n.id] = ts
-//        g.addEdge("hasParameters", fromNode = person, toNode = n.id)
-//        return n.id
-//    }
-//
-//    override fun addMeasurement(tsId: Long, row: TSRecord, isLast: Boolean) {
-//        val ts = tsMap[tsId]!!
-//        ts.add(
-//            label = Measurement,
-//            timestamp = row.timestamp,
-//            value = row.value as Long,
-//            flush = false
-//        )
-//        if (isLast) {
-//            ts.connection.flush()
-//        }
-//    }
-//
-//    override fun close() {
-//        g.flushToDisk()
-//        g.close()
-//    }
 }

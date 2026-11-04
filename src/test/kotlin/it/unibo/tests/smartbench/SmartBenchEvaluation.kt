@@ -188,28 +188,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     private fun selfContained(system: String) {
         val oldSize = mapOf("small" to "small", "medium" to "large", "large" to "big")[size]
             ?: error("$system runs on small, medium and large only")
-        if (evaluation.ingestionIterations == 0 || evaluation.queryIterations == 0) {
-            progress("$system | $dataset $size: skipped, its container runs the ingestion and the queries together (no single phase)")
-            return
-        }
-        val composeFile = "evaluation/architectures/$system/docker-compose.yaml"
-        val env = mapOf(
-            "DATASET" to dataset,
-            "DATASET_SIZE" to oldSize,
-            "INGESTION_ITERATIONS" to evaluation.ingestionIterations.toString(),
-            "QUERY_ITERATIONS" to evaluation.queryIterations.toString(),
-            "THREAD" to "1",
-            "QUERY_SELECTIVITY" to evaluation.selectivities.joinToString(","),
-            "QUERIES" to queryIds.joinToString(",")
-        )
-        val run = "$system | $dataset $size (size $oldSize of the old evaluation)"
-        progress("$run: ingestion and queries inside its container, started")
-        try {
-            runCommand(listOf("docker", "compose", "-f", composeFile, "up", "--abort-on-container-exit", "--exit-code-from", system), env)
-        } finally {
-            runCommand(listOf("docker", "compose", "-f", composeFile, "down"), env)
-        }
-        progress("$run: done, results in results/$system")
+        selfContained(system, oldSize, queryIds)
     }
 
     companion object {
