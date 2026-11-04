@@ -50,7 +50,7 @@ class SmartBenchNeo4J(
     }
 
     override fun loadEvents() {
-        if (size == "small") {
+        if (size == "small" || size == "xsmall") {
             val statements = cypherStatements(dumpPath.resolve("ts.cypher"))
             tsTime += getTime { statements.forEach { session.run(it).consume() } }
         } else {
