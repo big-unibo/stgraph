@@ -151,7 +151,8 @@ class SmartBenchGraphix(
      * feed stops (the 0.9.9 of STGraph stores it while the feed is open), so the last events are never readable while
      * the feed is open. Hence, before the wait:
      * 1. wait until AsterixDB has read the whole stream of the worker (time-series time, as the rest of the wait):
-     *    stopping the feed earlier loses the unread events;
+     *    stopping the feed earlier loses the unread events (closeDataFeedConnection would wait as well: it is called
+     *    here only to time the read as time-series time, while the close is timed as index time);
      * 2. close the feed as STGraph closes its feeds (AsterixDBTSM.close), timed as index time, as in STGraph.
      */
     override fun awaitLast(worker: Int, ts: SmartBenchTimeSeries, last: SmartBenchEvent): Long {

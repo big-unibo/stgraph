@@ -12,6 +12,7 @@ import java.io.OutputStreamWriter
 import java.io.PrintWriter
 import java.io.Writer
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 
@@ -36,6 +37,7 @@ class AsterixDBHTTPClient(
     private lateinit var writer: Writer
     private var isFeedConnectionOpen: Boolean = false
     private var isFeedInitialized: Boolean = false
+    private var isFeedDrained: Boolean = false
     private val mutex = ReentrantLock()
 
     fun flush() {
@@ -81,36 +83,55 @@ class AsterixDBHTTPClient(
             // writer = PrintWriter(outputStream, true)
             writer = BufferedWriter(OutputStreamWriter(outputStream), 1024 * 1024)
             isFeedConnectionOpen = true
+            isFeedDrained = false
         }
     }
 
+    /**
+     * Closes the data feed connection. With [closeRemote], it also stops and drops the feed, after waiting until
+     * AsterixDB has read the whole stream ([awaitDataFeedRead]): stopping the feed while AsterixDB is still reading
+     * from the socket loses the unread records. Without [closeRemote], the feed keeps running and reads the stream up
+     * to its end.
+     */
     fun closeDataFeedConnection(closeRemote: Boolean = false) {
-        if (this::writer.isInitialized) {
-            writer.close()
-            outputStream.close()
-            socket.close()
-            if (closeRemote) {
-                stopFeed()
-                dropFeed()
-                isFeedInitialized = false
+        if (!this::writer.isInitialized) return
+        try {
+            if (closeRemote) awaitDataFeedRead()
+        } finally {
+            try {
+                writer.close()
+                outputStream.close()
+                socket.close()
+            } finally {
+                if (closeRemote) {
+                    stopFeed()
+                    dropFeed()
+                    isFeedInitialized = false
+                }
+                isFeedConnectionOpen = false
             }
-            isFeedConnectionOpen = false
         }
     }
 
     /**
      * Half-closes the data feed connection and waits until AsterixDB has read the whole stream (it closes its side
      * once it reaches the end of the stream): the feed can then be stopped without losing records, while stopping it
-     * when it is still reading from the socket loses the unread ones. Not used by STGraph: for an engine that keeps
-     * the last frame of a feed until the feed stops (the AsterixDB of Graphix), where the feed must be stopped before
-     * the last record is readable.
+     * when it is still reading from the socket loses the unread ones. Called by [closeDataFeedConnection] before
+     * stopping the feed; it can be called before it to time the read on its own (e.g., the AsterixDB of Graphix, which
+     * keeps the last frame of a feed until the feed stops). Idempotent: a drained connection is not drained again.
+     * Fails if AsterixDB has not read the whole stream within [timeoutMs].
      */
-    fun awaitDataFeedRead() {
-        if (isFeedConnectionOpen) {
-            writer.flush()
-            socket.shutdownOutput()
-            socket.getInputStream().read()
+    fun awaitDataFeedRead(timeoutMs: Int = 30 * 60 * 1000) {
+        if (!isFeedConnectionOpen || isFeedDrained) return
+        flush()
+        socket.shutdownOutput()
+        socket.soTimeout = timeoutMs
+        try {
+            socket.getInputStream().read() // -1 once AsterixDB has read the whole stream and closed its side
+        } catch (e: SocketTimeoutException) {
+            throw IllegalStateException("Feed $feedName ($dataFeedIp:$dataFeedPort): AsterixDB did not read the whole stream within $timeoutMs ms", e)
         }
+        isFeedDrained = true
     }
 
     fun stopFeed() = queryAsterixDB("USE $dataverse; STOP FEED $feedName;", blockOnError = false) // The feed could not exist yet
