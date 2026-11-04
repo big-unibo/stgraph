@@ -46,7 +46,7 @@ const val METEO_POINT = "POINT (11.80164 44.234831)"
 
 /** AsterixDB Constants  **/
 const val FIRSTFEEDPORT: Int = 10001
-const val LASTFEEDPORT: Int = 12000
+const val LASTFEEDPORT: Int = 11000 // Inclusive: the last port published by docker-compose.yaml (10001-11000)
 const val DATASET_PREFIX = "dataset_"
 const val DATAFEED_PREFIX = "feed_"
 
