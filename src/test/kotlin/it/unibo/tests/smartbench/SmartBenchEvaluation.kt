@@ -43,12 +43,6 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
                     SmartBenchDataLoader(size, threads = threads, host = setup.host, controllerIPs = setup.controllerIPs)
                 }) { setup, numMachines -> stgraphQueries(setup, numMachines) }
             }
-            "stgraph-std" -> {
-                download("datasets/original/smartbench/$size", "smartbench")
-                stgraph("stgraph-std", { threads, setup ->
-                    SmartBenchSTGraph(size, threads = threads, host = setup.host, controllerIPs = setup.controllerIPs)
-                })
-            }
             "neo4j" -> neo4j()
             "pgage" -> pgage()
             "graphix" -> graphix()
