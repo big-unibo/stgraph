@@ -30,7 +30,7 @@ abstract class DatasetEvaluation(
     protected val setups: List<SetupConfig> = evaluation.setups.map { config.setups[it] ?: error("Unknown setup: $it") }
 
     /** The data folders of the systems for this size and their resources, as the variables of their compose files */
-    protected val environment: Map<String, String> = evaluation.environment(size)
+    protected val environment: Map<String, String> = evaluation.environment(dataset, size)
 
     /** Whether the queries of the dataset have the time windows of time_constraints.yaml */
     protected open val timeWindows = true

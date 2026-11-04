@@ -1,0 +1,111 @@
+datasets:
+#  synth:
+#    sizes: [ "full" ]
+  smartbench:
+    sizes: [ "xsmall"]
+
+  mimic:
+    sizes: [ "x1692200" ]
+    # PostgreSQL the ingestion reads the MIMIC-IV data from (here, the mimic-postgres of docker-compose.yaml)
+    postgres_endpoint: "localhost"
+    port: 5434
+    database: "mimic-iv"
+    user: "postgres"
+    password: "password"
+
+# AsterixDB of STGraph: host and port of the cluster controller (CC, query API), addresses of the node controllers
+# (NC, which receive the data feeds)
+setups:
+  c0:
+    host: localhost
+    port: 19002
+    controllerIPs: [ "localhost" ]
+  # Scale-out on an AsterixDB cluster deployed beforehand (see evaluation/README.md)
+  # c1:
+  #   host: 192.168.1.10
+  #   port: 19002
+  #   controllerIPs: [ "192.168.1.11", "192.168.1.12" ]
+
+# Where the systems started by the evaluation (deploy: true) keep their data: a folder on the host for each one
+# (relative paths: from the repository root; created if missing), e.g. on a disk with room for the large sizes.
+# {dataset} and {size} stand for the dataset and the size of the run (e.g., neo4j: /data/neo4j/{dataset}/{size}): a
+# folder per dataset and size, so that Neo4j and PGAge, which keep a single database, can be queried on every one
+# without reloading it. Their loads require {size} (and refuse a folder loaded with another dataset or size, see the
+# marker <folder>.loaded), so that they never replace another loaded database.
+# Without a folder, the Docker volume of the system. The folder of pgage must be writable by the user 1000 (postgres
+# in its container). Empty the folder of asterixdb or graphix when the partitions of its cc.conf change (or use a
+# folder per partitioning)
+volumes:
+  asterixdb:   # the AsterixDB of STGraph (docker-compose.yaml of the repository root)
+  graphix:
+  neo4j: datasets/volumes/neo4j/{dataset}/{size}
+  pgage: datasets/volumes/pgage/{dataset}/{size}
+
+# Resources and configuration of the systems started by the evaluation (deploy: true), for their compose files; what is
+# not set keeps the value of the compose file: no CPU or memory limit (free), the configuration in conf/ of the system
+# (the least parallelism). cpus: the CPU time (e.g., 2); cpuset: the cores (e.g., "0,1"); memory: the limit (e.g.,
+# 12g); shm (pgage only): the shared memory of the parallel workers of PostgreSQL; conf: the folder of the
+# configuration (relative paths: from the repository root). They need no reload, as long as the partitions of
+# AsterixDB and Graphix are those of the load. E.g., the single-core comparison of the paper: { cpus: 1 } for each
+# system. The two configurations of each system (see evaluation/README.md), limited (one core, the least parallelism
+# of conf/):
+#  asterixdb: { cpus: 1, conf: evaluation/architectures/stgraph/conf }
+#  graphix: { cpus: 1, conf: evaluation/architectures/graphix/conf }
+#  neo4j: { cpus: 1, conf: evaluation/architectures/neo4j/conf }
+#  pgage: { cpus: 1, conf: evaluation/architectures/pgage/conf }
+# and free (20 cores, no memory limit, the defaults of the systems in conf-free/; AsterixDB and Graphix with two
+# partitions, so their data in another folder than the one of conf/, see volumes):
+#  asterixdb: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/stgraph/conf-free }
+#  graphix: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/graphix/conf-free }
+#  neo4j: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/neo4j/conf-free }
+#  pgage: { cpus: 20, cpuset: "0-19", shm: 1g, conf: evaluation/architectures/pgage/conf-free }
+# Or the budget of 3 CPUs and 12 GB of each system (see evaluation/README.md: STGraph has the third core and 3 GB for
+# its JVM, with threads: [ 2 ]):
+#  asterixdb: { cpus: 2, cpuset: "0,1", memory: 9g, conf: evaluation/architectures/stgraph/conf-3cpu-12g }
+#  graphix: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/graphix/conf-3cpu-12g }
+#  neo4j: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/neo4j/conf-3cpu-12g }
+#  pgage: { cpus: 3, cpuset: "0-2", memory: 12g, shm: 1g, conf: evaluation/architectures/pgage/conf-3cpu-12g }
+resources:
+  asterixdb:
+  graphix:
+  neo4j:
+  pgage:
+
+# Parameters common to the specific runs and to the evaluation: each run, and the evaluation, can set its own
+defaults:
+  # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode.
+  # A local setup (host: localhost) runs on the AsterixDB of docker-compose.yaml; a cluster must be already running
+  modes: [ "OPTIMIZED" ]
+  setups: [ "c0" ]
+  threads: [ 1 ]
+  # The rest is used only by the evaluation (./gradlew evaluate, ./gradlew evaluateSpecificRuns), not by the tests
+  ingestion:
+    iterations: 1
+  queries:
+    iterations: 10
+    # Selectivities of time_constraints.yaml: each query runs on every time window of each one
+    selectivities: [ "increased" ]
+    # Query ids (empty: all)
+    ids: [ ]
+  # Downloads the missing datasets (from the same URLs as downloadDataset.sh)
+  download: true
+  # Starts each system (docker compose up -d) before its runs and stops it after; false: the systems are already running
+  deploy: true
+  # Appended to the model of the results (e.g., 4CPU: stgraph_4CPU, neo4j_4CPU): the configuration the runs measure
+  # (CPU, memory, partitions...), to tell its results apart; empty: the bare model
+  label:
+
+# Only the listed runs: the tests of STGraph (CI) run the ones with stgraph among the approaches, ./gradlew
+# evaluateSpecificRuns runs all of them. Each run sets approaches (stgraph, stgraph-std, neo4j, pgage, graphix, aeong,
+# hygraph) and datasets, optionally sizes (default: datasets.<dataset>.sizes) and any key of the defaults
+specificRuns:
+  runs:
+    - approaches: [ "stgraph" ]
+      datasets: [ "smartbench", "mimic" ]
+      modes: [ "OPTIMIZED" ]
+
+# Every combination of its parameters (./gradlew evaluate, see evaluation/README.md); not used by the tests. It sets
+# systems (one at a time, in this order) and datasets, optionally sizes and any key of the defaults
+evaluation:
+  systems: [ "stgraph", "neo4j", "pgage", "graphix" ]
+  datasets: [ "smartbench"]

@@ -53,11 +53,11 @@ data class EvaluationConfig(
      * The data folders of [volumeFolders] for [size], with {size} replaced (e.g., a folder per size for Neo4j and PGAge,
      * which keep a single database), created if missing, so that Docker does not create them as root
      */
-    fun volumes(size: String): Map<String, String> =
-        volumeFolders.mapValues { (_, folder) -> File(folder.replace("{size}", size)).apply { mkdirs() }.path }
+    fun volumes(dataset: String, size: String): Map<String, String> =
+        volumeFolders.mapValues { (_, folder) -> File(folder.replace("{dataset}", dataset).replace("{size}", size)).apply { mkdirs() }.path }
 
     /** The variables of the compose files for [size]: the data folders ([volumes]) and the [resources] */
-    fun environment(size: String): Map<String, String> = volumes(size) + resources
+    fun environment(dataset: String, size: String): Map<String, String> = volumes(dataset, size) + resources
 
     /** [system] as the model of the results: with the [label] of the run, if any */
     fun model(system: String): String = label?.let { "${system}_$it" } ?: system

@@ -66,7 +66,7 @@ class TestMimicQuery {
         /** The Neo4j and the PostgreSQL (PGAge) of the MIMIC-IV evaluation */
         const val NEO4J_USER = "neo4j"
         const val NEO4J_PASSWORD = "password"
-        const val PGAGE_URL = "jdbc:postgresql://192.168.30.108:5435/mimic-iv"
+        const val PGAGE_URL = "jdbc:postgresql://localhost:5435/mimic-iv" // The PGAge of MimicIVPGAge (its default url)
         const val PGAGE_USER = "postgres"
         const val PGAGE_PASSWORD = "password"
     }

@@ -1,0 +1,160 @@
+package it.unibo.tests.mimic
+
+import it.unibo.graph.query.QueryMode
+import it.unibo.stats.Config
+import it.unibo.stats.SetupConfig
+import it.unibo.tests.evaluation.DatasetEvaluation
+import it.unibo.tests.evaluation.EvaluationConfig
+import it.unibo.tests.evaluation.deployed
+import it.unibo.tests.evaluation.downloadDataset
+import it.unibo.tests.mimic.loaders.MimicIVAeonG
+import it.unibo.tests.mimic.loaders.MimicIVGraphix
+import it.unibo.tests.mimic.loaders.MimicIVSTGraph
+import it.unibo.tests.mimic.loaders.MimicNeo4J
+import it.unibo.tests.mimic.loaders.MimicPGAge
+import it.unibo.tests.mimic.loaders.mimicLimit
+import it.unibo.tests.systems.neo4jDriver
+import it.unibo.tests.systems.pgAgeConnection
+import java.io.File
+import java.sql.DriverManager
+
+/**
+ * The evaluation of MIMIC-IV (see it.unibo.tests.evaluation.main), with the loaders of TestMimicIngestion.main and the
+ * queries Q1-Q3 of TestMimicQuery (no time windows; queries.ids selects them). The data is read from the PostgreSQL of
+ * datasets.mimic: on localhost, the mimic-postgres of the root docker-compose.yaml, deployed for the ingestion as the
+ * other systems, which restores the dump of datasets/original/mimic at its first start (see [source]).
+ * - stgraph: deployed as for the other datasets (the AsterixDB of the root docker-compose.yaml);
+ * - graphix: deployed as for the other datasets (evaluation/architectures/graphix);
+ * - neo4j, pgage: deployed as for the other datasets (evaluation/architectures/neo4j and pgage), loaded by MimicNeo4J
+ *   and MimicPGAge as SmartBenchNeo4J and SmartBenchPGAge load SmartBench;
+ * - aeong: only the ingestion of TestMimicIngestion (MimicIVAeonG), no queries.
+ */
+class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
+    DatasetEvaluation(config, evaluation, "mimic", size) {
+    override val timeWindows = false
+
+    private val limit = mimicLimit(size)
+    /** The size in the dump of STGraph and in the dataverses: "full" for all the events (as MimicIVSTGraph) */
+    private val name = if (limit == Long.MAX_VALUE) "full" else size
+    private val postgres = config.datasets.getValue(dataset).postgres
+    private val queryIds = evaluation.queryIds.ifEmpty { listOf("Q1", "Q2", "Q3") }
+
+    override fun run(system: String) = source { runSystem(system) }
+
+    private fun runSystem(system: String) {
+        when (system) {
+            "stgraph" -> stgraph("stgraph", { threads, setup ->
+                MimicIVSTGraph(size, threads = threads, host = setup.host, controllerIPs = setup.controllerIPs, postgres = postgres)
+            }) { setup, numMachines -> stgraphQueries(setup, numMachines) }
+            "neo4j" -> neo4j()
+            "pgage" -> pgage()
+            "graphix" -> graphix()
+            "aeong" -> repeat(evaluation.ingestionIterations) { ingest("aeong", it) { MimicIVAeonG(limit, postgres = postgres) } }
+            else -> error("$system is not evaluated on $dataset")
+        }
+    }
+
+    /** As TestMimicQuery: NAIVE is skipped on the full dataset */
+    private fun stgraphQueries(setup: SetupConfig, numMachines: Int) =
+        withStgraph(setup, "datasets/dump/$dataset/$name/", "${dataset}_$name") { graph ->
+            queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { queryId, _, _, mode ->
+                if (mode == QueryMode.NAIVE && name == "full") null
+                else when (queryId) {
+                    "Q1" -> TestMimicQuery.Q1(graph)
+                    "Q2" -> TestMimicQuery.Q2(graph)
+                    "Q3" -> TestMimicQuery.Q3(graph)
+                    else -> error("Unknown query: $queryId")
+                }
+            }
+        }
+
+    private fun neo4j() {
+        deployed(evaluation.deploy, NEO4J_COMPOSE, env = environment, ready = ::neo4jReady) {
+            repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { MimicNeo4J(size, NEO4J_URI, postgres = postgres) } }
+            neo4jDriver(NEO4J_URI).use { driver ->
+                driver.session().use { session ->
+                    queries("neo4j", numMachines = 1, queryIds) { queryId, _, _, _ ->
+                        when (queryId) {
+                            "Q1" -> TestMimicQuery.Q1Neo4J(session)
+                            "Q2" -> TestMimicQuery.Q2Neo4J(session)
+                            "Q3" -> TestMimicQuery.Q3Neo4J(session)
+                            else -> error("Unknown query: $queryId")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun pgage() {
+        deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
+            repeat(evaluation.ingestionIterations) {
+                ingest("pgage", it) { MimicPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD, postgres = postgres) }
+            }
+            val graph = MimicPGAge.graphName(size)
+            pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
+                queries("pgage", numMachines = 1, queryIds) { queryId, _, _, _ ->
+                    when (queryId) {
+                        "Q1" -> TestMimicQuery.Q1PGAge(graph, connection)
+                        "Q2" -> TestMimicQuery.Q2PGAge(graph, connection)
+                        "Q3" -> TestMimicQuery.Q3PGAge(graph, connection)
+                        else -> error("Unknown query: $queryId")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Runs [block] with the PostgreSQL the data is read from, when the run loads data: on localhost, the mimic-postgres
+     * of the root docker-compose.yaml, deployed as the other systems (with deploy: true), with the dump it restores at its
+     * first start (downloaded if missing, as run.sh: <size>.dump, e.g., x1692200.dump)
+     */
+    private fun source(block: () -> Unit) {
+        val local = postgres.host == "localhost" || postgres.host == "127.0.0.1"
+        if (evaluation.ingestionIterations == 0 || !local) return block()
+        if (evaluation.deploy && File("datasets/original/mimic").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
+            check(evaluation.download) { "No dump in datasets/original/mimic: run ./downloadDataset.sh mimic $size.dump, or set download: true" }
+            downloadDataset("mimic", "$size.dump")
+        }
+        // Three successful connections in a row, as PGAge: PostgreSQL restarts at the end of its initialization (the
+        // restore of the dump, up to hours on the large dumps)
+        deployed(evaluation.deploy, "docker-compose.yaml", "mimic-postgres", readyChecks = 3, readyTimeoutMs = 6 * 60 * 60 * 1000L, env = environment, ready = ::sourceReady) { block() }
+    }
+
+    private fun sourceReady() {
+        DriverManager.getConnection("jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}", postgres.user, postgres.password)
+            .use { it.createStatement().use { st -> st.execute("SELECT 1 FROM d_items LIMIT 1") } }
+    }
+
+    private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }
+
+    // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
+    private fun pgageReady() {
+        DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } }
+    }
+
+    private fun graphix() {
+        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", 29002) }) {
+            repeat(evaluation.ingestionIterations) { ingest("graphix", it) { MimicIVGraphix(size, postgres = postgres) } }
+            queries("graphix", numMachines = 1, queryIds) { queryId, _, _, _ ->
+                when (queryId) {
+                    "Q1" -> TestMimicQuery.Q1Graphix(name)
+                    "Q2" -> TestMimicQuery.Q2Graphix(name)
+                    "Q3" -> TestMimicQuery.Q3Graphix(name)
+                    else -> error("Unknown query: $queryId")
+                }
+            }
+        }
+    }
+
+    companion object {
+        // The Neo4j and the PGAge of the evaluation (evaluation/architectures/neo4j and pgage)
+        const val NEO4J_URI = "bolt://localhost:7687"
+        const val NEO4J_COMPOSE = "evaluation/architectures/neo4j/docker-compose.yaml"
+        const val PGAGE_COMPOSE = "evaluation/architectures/pgage/docker-compose.yaml"
+        const val PGAGE_URL = "jdbc:postgresql://localhost:5432/smartbench_eval"
+        const val PGAGE_USER = "postgres"
+        const val PGAGE_PASSWORD = "psw"
+    }
+}
