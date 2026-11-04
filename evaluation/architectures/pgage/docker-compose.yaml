@@ -1,6 +1,18 @@
 # PostgreSQL + TimescaleDB + PostGIS + Apache AGE for the SmartBench evaluation. The database only: ingestion and
 # queries run from the evaluation (./gradlew evaluate, see evaluation/README.md), which also starts and stops it.
 services:
+  # One-shot: makes the data folder writable by the user 1000 of the pgage container (postgres), whoever created it
+  # (e.g., the evaluation creates the folders of PGAGE_DATA as the user that runs it, Docker as root); pgage starts once
+  # it has exited successfully
+  pgage-init:
+    image: busybox:1.36
+    container_name: pgage-init
+    user: root
+    command: [ "chown", "1000:1000", "/home/postgres/pgdata" ]
+    volumes:
+      - "${PGAGE_DATA:-pgage-data}:/home/postgres/pgdata"
+    restart: "no"
+
   pgage:
     image: mp4sini/pgage:latest
     container_name: pgage
@@ -21,9 +33,12 @@ services:
     volumes:
       - "${PGAGE_CONF:-./conf-free}:/pgconf"
       # Data of PostgreSQL (PGDATA is a folder inside), kept when the container is recreated; PGAGE_DATA: a host directory
-      # instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml), writable by
-      # the user 1000 of the container (postgres)
+      # instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml), made
+      # writable by the user 1000 of the container (postgres) by pgage-init
       - "${PGAGE_DATA:-pgage-data}:/home/postgres/pgdata"
+    depends_on:
+      pgage-init:
+        condition: service_completed_successfully
     command: [ "-c", "config_file=/pgconf/postgresql.conf" ]
     ports:
       - ${POSTGRES_PORT_EXT:-5432}:5432
