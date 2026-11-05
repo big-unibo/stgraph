@@ -7,28 +7,34 @@ import org.neo4j.driver.Driver
 import org.neo4j.driver.Session
 import java.io.File
 
-fun limitToPort(limit: Long): Int {
-    return if (limit < 5_000_000) {
-        8687
-    } else if (limit < 50_000_000) {
-        8688
-    } else {
-        8689
-    }
-}
+/** Whether MIMIC-IV is loaded into Neo4j from CSV files (neo4j-admin import) rather than one node at a time: above the small sizes */
+fun neo4jCsv(limit: Long): Boolean = limit >= 5_000_000
 
+/**
+ * Loads MIMIC-IV into Neo4j, in two ways that produce the same graph (the one of the CSV files):
+ * - (:Person {person_id, subject_id, rnd, pId, c})-[:HAS_PARAMETERS]->(:TimeSeries {ts_id}), a time series per person;
+ * - (:TimeSeries)-[:HAS_EVENT]->(:<abbreviation> {measurement_id, ts_id, category, abbreviation, itemid, timestamp, value});
+ * every property is a string, as neo4j-admin import stores the untyped columns.
+ * With [csv], the nodes and relationships are written to CSV files (datasets/dump/neo4j/mimic/<limit>), then
+ * [csvImport] (if any) imports them (e.g., neo4j-admin database import full) and returns the time of the import, added
+ * to the time-series time. Without [csv], the nodes are created one at a time through [uri].
+ */
 class MimicIVNeo4J(
     limit: Long,
-    uri: String = "bolt://localhost:${limitToPort(limit)}",
-    user: String = "neo4j",
-    password: String = "password",
+    uri: String = "bolt://localhost:7687",
+    user: String? = "neo4j",
+    password: String? = "password",
     val csv: Boolean,
     postgres: PostgresConfig = PostgresConfig(),
+    private val csvImport: ((File) -> Long)? = null,
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
 
-    private val driver: Driver = neo4jDriver(uri, user, password)
-    private val session: Session = driver.session()
+    private val driver: Driver? = if (csv) null else neo4jDriver(uri, user, password)
+    private val session: Session? = driver?.session()
     val tsMap = mutableMapOf<Long, Long>()
+    // Without csv: the element ids of the Person and TimeSeries nodes, by their person_id and ts_id
+    private val personNodes = mutableMapOf<Long, String>()
+    private val tsNodes = mutableMapOf<Long, String>()
 
     private val baseDir = File("datasets/dump/neo4j/mimic/$limit").apply {
         mkdirs()
@@ -61,22 +67,33 @@ class MimicIVNeo4J(
         personWriter.flush()
     }
 
-    /** Deletes all nodes and relationships in the database */
+    /** Deletes all nodes and relationships in the database (in batches: a single transaction may not fit the heap) */
     private fun clearGraph() {
-        if (!csv) session.run("MATCH (n) DETACH DELETE n")
+        session?.run("MATCH (n) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS")?.consume()
+    }
+
+    /**
+     * Creates a node with [labels] and the [properties] as the CSV import stores them (strings, no property for an empty
+     * field), linked by [type] from the node [from], if any; returns its element id
+     */
+    private fun createNode(labels: String, properties: Map<String, Any?>, from: String? = null, type: String? = null): String {
+        val props = properties.mapValues { clean(it.value) }.filterValues { it.isNotEmpty() }
+        val query = if (from == null) "CREATE (n:$labels) SET n = \$props RETURN elementId(n)"
+        else "MATCH (f) WHERE elementId(f) = \$from CREATE (f)-[:$type]->(n:$labels) SET n = \$props RETURN elementId(n)"
+        return session!!.run(query, mapOf("props" to props, "from" to from)).single()[0].asString()
     }
 
     override fun addPerson(subjectId: Int, c: Int): Long {
+        val personId = ++personCounter
         if (!csv) {
-            val result = session.run(
-                "CREATE (p:Person {subject_id: ${subjectId}}) RETURN id(p) AS id"
+            personNodes[personId] = createNode(
+                "Person",
+                linkedMapOf("person_id" to personId, "subject_id" to subjectId, "rnd" to subjectId % 10, "pId" to personId - 1, "c" to c)
             )
-            return result.single()["id"].asLong()
         } else {
-            val personId = ++personCounter
             personWriter.write("$personId,$subjectId,${subjectId % 10},${personId-1},$c,Person\n")
-            return personId
         }
+        return personId
     }
 
     fun clean(v: Any?): String {
@@ -94,25 +111,11 @@ class MimicIVNeo4J(
         itemid: Int,
         person: Long
     ): Long {
-        if (!csv) {
-            val result = session.run(
-                """
-            MATCH (p) WHERE id(p) = $person
-            CREATE (ts:TimeSeries {
-                abbreviation: '${abbreviation}',
-                unitname: '${unitname}',
-                category: '${category}',
-                label: '${label}',
-                itemid: '${itemid}'
-            })
-            CREATE (p)-[:HAS_PARAMETERS]->(ts)
-            RETURN id(ts) AS id
-            """.trimIndent()
-            )
-            return result.single()["id"].asLong()
-        } else {
-            if (!tsMap.contains(person)) {
-                val tsId = ++tsCounter
+        if (!tsMap.contains(person)) {
+            val tsId = ++tsCounter
+            if (!csv) {
+                tsNodes[tsId] = createNode("TimeSeries", mapOf("ts_id" to tsId), from = personNodes.getValue(person), type = "HAS_PARAMETERS")
+            } else {
                 hasParamsWriter.write("$person,$tsId,HAS_PARAMETERS\n")
                 tsWriter.println(
                     listOf(
@@ -120,28 +123,27 @@ class MimicIVNeo4J(
                         "TimeSeries"
                     ).joinToString(",")
                 )
-                tsMap[person] = tsId
             }
-            return person
+            tsMap[person] = tsId
         }
+        return person
     }
 
     override fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean) {
+        val ts = tsMap[tsId]!!
+        val tmp = tsCache[row.label.toInt()]!!
+        val measurementId = ++measurementCounter
         if (!csv) {
-            session.run(
-                """
-            MATCH (ts) WHERE id(ts) = $tsId
-            CREATE (m:${row.label} {
-                timestamp: ${row.timestamp},
-                value: ${row.value}
-            })
-            CREATE (ts)-[:HAS_MEASUREMENT]->(m)
-            """.trimIndent()
+            createNode(
+                "`${tmp.abbreviation.replace("`", "``")}`",
+                linkedMapOf(
+                    "measurement_id" to measurementId, "ts_id" to ts, "category" to tmp.category, "abbreviation" to tmp.abbreviation,
+                    "itemid" to tmp.itemid, "timestamp" to row.timestamp, "value" to row.value
+                ),
+                from = tsNodes.getValue(ts),
+                type = "HAS_EVENT"
             )
         } else {
-            val ts = tsMap[tsId]!!
-            val tmp = tsCache[row.label.toInt()]!!
-            val measurementId = ++measurementCounter
             // write node
             measurementWriter.write(
                 "$measurementId,$ts,${tmp.category},${tmp.abbreviation},${tmp.itemid},${row.timestamp},${row.value},${tmp.abbreviation}\n"
@@ -158,11 +160,17 @@ class MimicIVNeo4J(
         }
     }
 
+    /** As the skeleton; with [csv], the CSV files are then imported by [csvImport], if any (time-series time) */
+    override fun loadData() {
+        addGs()
+        addTs()
+        close()
+        if (csv && csvImport != null) tsTime += csvImport.invoke(baseDir)
+    }
+
     override fun close() {
-        if (!csv) {
-            session.close()
-            driver.close()
-        }
+        session?.close()
+        driver?.close()
 
         tsWriter.close()
         hasParamsWriter.close()

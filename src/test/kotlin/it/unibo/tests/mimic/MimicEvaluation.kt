@@ -10,9 +10,13 @@ import it.unibo.tests.evaluation.downloadDataset
 import it.unibo.tests.mimic.loaders.MimicIVAeonG
 import it.unibo.tests.mimic.loaders.MimicIVGraphix
 import it.unibo.tests.mimic.loaders.MimicIVSTGraph
-import it.unibo.tests.mimic.loaders.MimicNeo4J
-import it.unibo.tests.mimic.loaders.MimicPGAge
+import it.unibo.tests.mimic.loaders.MimicIVNeo4J
+import it.unibo.tests.mimic.loaders.MimicIVPGAge
+import it.unibo.tests.mimic.loaders.pgageCsv
 import it.unibo.tests.mimic.loaders.mimicLimit
+import it.unibo.tests.mimic.loaders.neo4jCsv
+import it.unibo.tests.evaluation.runCommand
+import it.unibo.graph.utils.getTime
 import it.unibo.tests.systems.neo4jDriver
 import it.unibo.tests.systems.pgAgeConnection
 import java.io.File
@@ -25,8 +29,10 @@ import java.sql.DriverManager
  * other systems, which restores the dump of datasets/original/mimic at its first start (see [source]).
  * - stgraph: deployed as for the other datasets (the AsterixDB of the root docker-compose.yaml);
  * - graphix: deployed as for the other datasets (evaluation/architectures/graphix);
- * - neo4j, pgage: deployed as for the other datasets (evaluation/architectures/neo4j and pgage), loaded by MimicNeo4J
- *   and MimicPGAge as SmartBenchNeo4J and SmartBenchPGAge load SmartBench;
+ * - neo4j: deployed as for the other datasets (evaluation/architectures/neo4j), loaded by MimicIVNeo4J: one node at a
+ *   time on the small sizes, otherwise CSV files imported with neo4j-admin (see [neo4jImport]);
+ * - pgage: deployed as for the other datasets (evaluation/architectures/pgage), loaded by MimicIVPGAge: batches of
+ *   INSERTs on the small sizes, otherwise a CSV file copied with COPY (see [pgageImport]);
  * - aeong: only the ingestion of TestMimicIngestion (MimicIVAeonG), no queries.
  */
 class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
@@ -70,7 +76,11 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
 
     private fun neo4j() {
         deployed(evaluation.deploy, NEO4J_COMPOSE, env = environment, ready = ::neo4jReady) {
-            repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { MimicNeo4J(size, NEO4J_URI, postgres = postgres) } }
+            val csv = neo4jCsv(limit)
+            if (csv && evaluation.ingestionIterations > 0) check(evaluation.deploy) { "The CSV import of Neo4j ($size) stops and starts Neo4j itself: it needs deploy: true" }
+            repeat(evaluation.ingestionIterations) {
+                ingest("neo4j", it) { MimicIVNeo4J(limit, NEO4J_URI, user = null, password = null, csv = csv, postgres = postgres, csvImport = ::neo4jImport) }
+            }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
                     queries("neo4j", numMachines = 1, queryIds) { queryId, _, _, _ ->
@@ -89,9 +99,11 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     private fun pgage() {
         deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
             repeat(evaluation.ingestionIterations) {
-                ingest("pgage", it) { MimicPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD, postgres = postgres) }
+                ingest("pgage", it) {
+                    MimicIVPGAge(limit, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD, postgres = postgres, csv = pgageCsv(limit), csvImport = ::pgageImport)
+                }
             }
-            val graph = MimicPGAge.graphName(size)
+            val graph = MimicIVPGAge.graphName(limit)
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
                 queries("pgage", numMachines = 1, queryIds) { queryId, _, _, _ ->
                     when (queryId) {
@@ -129,6 +141,53 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
 
     private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }
 
+    /**
+     * Imports the CSV files of MimicIVNeo4J in [csvDir] into the database of the Neo4j of the evaluation (replaced), as
+     * loaders/start.sh: Neo4j stopped, neo4j-admin database import full, Neo4j started again. Returns the time of the
+     * import alone (not of the stop and start)
+     */
+    private fun neo4jImport(csvDir: File): Long {
+        val compose = listOf("docker", "compose", "-f", NEO4J_COMPOSE)
+        runCommand(compose + "stop", environment)
+        val time = getTime {
+            runCommand(
+                compose + listOf("run", "--rm", "--no-deps", "-v", "${csvDir.absolutePath}:/csv:ro", "neo4j",
+                    "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination",
+                    "--nodes=/csv/person.csv", "--nodes=/csv/ts.csv", "--nodes=/csv/measurement.csv",
+                    "--relationships=/csv/has_parameters.csv", "--relationships=/csv/has_measurement.csv"),
+                environment
+            )
+        }
+        runCommand(compose + listOf("start", "neo4j"), environment)
+        val deadline = System.currentTimeMillis() + 15 * 60 * 1000
+        while (runCatching { neo4jReady() }.isFailure) {
+            check(System.currentTimeMillis() < deadline) { "Neo4j not ready after the import" }
+            Thread.sleep(2000)
+        }
+        return time
+    }
+
+    /**
+     * Copies the CSV file [csv] of MimicIVPGAge into <graph>.measurements of the PGAge of the evaluation: the file is
+     * copied into the container (not timed), then COPY ... FROM ... CSV runs there with psql. Returns the time of the COPY
+     */
+    private fun pgageImport(csv: File): Long {
+        val compose = listOf("docker", "compose", "-f", PGAGE_COMPOSE)
+        val inContainer = "/tmp/mimic_measurements.csv"
+        runCommand(compose + listOf("cp", csv.absolutePath, "pgage:$inContainer"), environment)
+        try {
+            return getTime {
+                runCommand(
+                    compose + listOf("exec", "-T", "pgage", "psql", "-v", "ON_ERROR_STOP=1", "-U", PGAGE_USER, "-d", PGAGE_DB, "-c",
+                        "COPY ${MimicIVPGAge.graphName(limit)}.measurements (${MimicIVPGAge.COLUMNS}) FROM '$inContainer' DELIMITER ',' CSV;"),
+                    environment
+                )
+            }
+        } finally {
+            runCommand(compose + listOf("exec", "-T", "pgage", "rm", "-f", inContainer), environment)
+        }
+    }
+
     // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
     private fun pgageReady() {
         DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } }
@@ -155,6 +214,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         const val PGAGE_COMPOSE = "evaluation/architectures/pgage/docker-compose.yaml"
         const val PGAGE_URL = "jdbc:postgresql://localhost:5432/smartbench_eval"
         const val PGAGE_USER = "postgres"
+        const val PGAGE_DB = "smartbench_eval"
         const val PGAGE_PASSWORD = "psw"
     }
 }

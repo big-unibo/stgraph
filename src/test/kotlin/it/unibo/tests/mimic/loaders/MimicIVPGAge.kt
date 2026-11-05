@@ -7,20 +7,37 @@ import it.unibo.tests.systems.pgAgeConnection
 import java.io.File
 import java.sql.*
 
+/** Whether MIMIC-IV is loaded into PGAge from a CSV file (COPY) rather than with batches of INSERTs: above the small sizes, as [neo4jCsv] */
+fun pgageCsv(limit: Long): Boolean = limit >= 5_000_000
+
+/**
+ * Loads MIMIC-IV into PGAge, in two ways that produce the same database: the graph (Person and TimeSeries vertices) is
+ * always created through the driver, one Cypher statement each; the measurements go to <graph>.measurements:
+ * - without [csv], with batches of [batchSize] INSERTs through the driver;
+ * - with [csv], to the CSV file datasets/dump/pgage/mimic/<limit>/ts.csv (text fields quoted, so that COPY reads back
+ *   the same strings), then [csvImport] (if any) copies it into the table (e.g., COPY ... FROM ... CSV) and returns the
+ *   time of the copy, added to the time-series time.
+ */
 class MimicIVPGAge(
     limit: Long,
     url: String = "jdbc:postgresql://localhost:5435/mimic-iv",
     user: String = "postgres",
     password: String = "password",
     // The PostgreSQL of MIMIC-IV the data is read from (url, user and password: the one of PGAge)
-    postgres: PostgresConfig = PostgresConfig()
+    postgres: PostgresConfig = PostgresConfig(),
+    val csv: Boolean = pgageCsv(limit),
+    private val csvImport: ((File) -> Long)? = null,
+    private val batchSize: Int = 20_000
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres)  {
-    private val graphName = "mimic_${if (limit == Long.MAX_VALUE) "full" else limit}"
+    private val graphName = graphName(limit)
     // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path),
-    // applied once: not at every statement, inside the timed ingestion
-    private val conn: Connection = pgAgeConnection(url, user, password)
+    // applied once: not at every statement, inside the timed ingestion. Without csv, multi-row INSERTs from a batch
+    private val conn: Connection = pgAgeConnection(url, user, password, mapOf("reWriteBatchedInserts" to "true"))
     private val baseDir = File("datasets/dump/pgage/mimic/$limit").apply { mkdirs() }
-    private val tsWriter = File("$baseDir/ts.csv").printWriter()
+    private val csvFile = File("$baseDir/ts.csv")
+    private val tsWriter = if (csv) csvFile.printWriter() else null
+    // Without csv: the measurements not inserted yet
+    private val pending = mutableListOf<List<Any>>()
 
     var pId = 0
     val tsMap = mutableMapOf<Long, Long>()
@@ -72,11 +89,14 @@ class MimicIVPGAge(
 
             safeExec("TRUNCATE TABLE Measurements")
 
-            // Convert table to hypertable (Timescale)
+            // Convert table to hypertable (Timescale). The timestamps are epoch milliseconds (BIGINT): without an
+            // interval, the default one of integer columns makes tiny chunks, and a batch touching thousands of them
+            // exceeds max_locks_per_transaction; 7 days, the default of TimescaleDB for the time columns
             safeExec("""
                 SELECT create_hypertable(
                     'measurements',
                     'timestamp',
+                    chunk_time_interval => 604800000,
                     if_not_exists => TRUE
                 )
                 """.trimIndent())
@@ -87,7 +107,6 @@ class MimicIVPGAge(
     }
 
     override fun addPerson(subjectId: Int, c: Int): Long {
-        println("addPerson: $subjectId")
         conn.createStatement().use { st ->
             val rs = st.executeQuery(
                 """
@@ -104,13 +123,12 @@ class MimicIVPGAge(
 
     override fun addTimeseries(abbreviation: String, unitname: String?, category: String, label: String, itemid: Int, person: Long): Long {
         if (!tsMap.contains(person)) {
-            println("addTimeseries: $person")
             conn.createStatement().use { st ->
                 val rs = st.executeQuery(
                     """
                 SELECT *
                 FROM cypher('$graphName', $$
-                    MATCH (p) WHERE id(p) = $person
+                    MATCH (p:Person) WHERE id(p) = $person
                     CREATE (ts:TimeSeries)
                     CREATE (p)-[:HAS_PARAMETERS]->(ts)
                     RETURN id(ts)
@@ -128,22 +146,58 @@ class MimicIVPGAge(
     override fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean) {
         val ts = tsMap[tsId]!!
         val tmp = tsCache[row.label.toInt()]!!
-        tsWriter.write(
-            listOf(
-                (++measurementCounter).toString(),
-                ts.toString(),
-                row.timestamp.toString(),
-                (row.value as Long).toString(),
-                tmp.abbreviation,
-                tmp.itemid.toString(),
-                tmp.abbreviation,
-                tmp.category
-            ).joinToString(",") + "\n"
+        // The columns of measurements: measurement_id, ts_id, timestamp, value, label, itemid, abbreviation, category
+        val values = listOf<Any>(
+            (++measurementCounter).toLong(), ts, row.timestamp, row.value as Long, tmp.abbreviation, tmp.itemid.toLong(), tmp.abbreviation, tmp.category
         )
+        if (tsWriter != null) {
+            tsWriter.write(values.joinToString(",") { if (it is String) quote(it) else it.toString() } + "\n")
+        } else {
+            pending += values
+            if (pending.size >= batchSize || isLast) flush()
+        }
+    }
+
+    /** A CSV field: quoted, quotes doubled (COPY reads back the same string, also when empty or with commas) */
+    private fun quote(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
+
+    /** Without csv: inserts the [pending] measurements */
+    private fun flush() {
+        if (pending.isEmpty()) return
+        conn.autoCommit = false
+        try {
+            conn.prepareStatement("INSERT INTO $graphName.measurements ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").use { st ->
+                for (values in pending) {
+                    values.forEachIndexed { i, v -> if (v is String) st.setString(i + 1, v) else st.setLong(i + 1, v as Long) }
+                    st.addBatch()
+                }
+                st.executeBatch()
+            }
+            conn.commit()
+        } finally {
+            conn.autoCommit = true
+        }
+        pending.clear()
+    }
+
+    /** As the skeleton; with [csv], the CSV file is then copied by [csvImport], if any (time-series time) */
+    override fun loadData() {
+        addGs()
+        addTs()
+        close()
+        if (csv && csvImport != null) tsTime += csvImport.invoke(csvFile)
     }
 
     override fun close() {
+        flush()
         conn.close()
-        tsWriter.close()
+        tsWriter?.close()
+    }
+
+    companion object {
+        const val COLUMNS = "measurement_id, ts_id, timestamp, value, label, itemid, abbreviation, category"
+
+        /** The AGE graph of [limit], whose schema holds the table measurements */
+        fun graphName(limit: Long) = "mimic_${if (limit == Long.MAX_VALUE) "full" else limit}"
     }
 }

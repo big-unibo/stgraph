@@ -31,8 +31,8 @@ setups:
 # folder per dataset and size, so that Neo4j and PGAge, which keep a single database, can be queried on every one
 # without reloading it. Their loads require {size} (and refuse a folder loaded with another dataset or size, see the
 # marker <folder>.loaded), so that they never replace another loaded database.
-# Without a folder, the Docker volume of the system. The folder of pgage must be writable by the user 1000 (postgres
-# in its container). Empty the folder of asterixdb or graphix when the partitions of its cc.conf change (or use a
+# Without a folder, the Docker volume of the system. The folder of pgage is made writable by the user 1000 (postgres
+# in its container) by the pgage-init service of its compose file. Empty the folder of asterixdb or graphix when the partitions of its cc.conf change (or use a
 # folder per partitioning)
 volumes:
   asterixdb:   # the AsterixDB of STGraph (docker-compose.yaml of the repository root)

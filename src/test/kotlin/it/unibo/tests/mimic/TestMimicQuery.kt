@@ -13,8 +13,6 @@ import it.unibo.stats.Querying
 import it.unibo.stats.TestConfig
 import it.unibo.stats.runQuery
 import it.unibo.tests.systems.GraphixQuery
-import it.unibo.tests.mimic.loaders.limitToPort
-import it.unibo.tests.mimic.loaders.mimicLimit
 import org.junit.jupiter.api.TestInstance
 import it.unibo.tests.systems.Neo4JQuery
 import it.unibo.tests.systems.PGAgeQuery
@@ -124,7 +122,7 @@ class TestMimicQuery {
                     RETURN DISTINCT p, t, id(t)
                 $$) AS (p agtype, t agtype, tsid bigint)
             ) t
-            JOIN $graph.measurements_csv m ON m.ts_id = t.tsid
+            JOIN $graph.measurements m ON m.ts_id = t.tsid
             WHERE m.value > $mimicFilter;
         """.trimIndent()
     }
@@ -172,7 +170,7 @@ class TestMimicQuery {
                         RETURN DISTINCT id(t)
                     $$) AS (tsid bigint)
                 ) t
-                JOIN $graph.measurements_csv m ON m.ts_id = t.tsid
+                JOIN $graph.measurements m ON m.ts_id = t.tsid
                 GROUP BY m.label
         """.trimIndent()
     }
@@ -219,7 +217,7 @@ class TestMimicQuery {
                         RETURN DISTINCT id(t)
                     $$) AS (tsid bigint)
                 ) t
-                JOIN $graph.measurements_csv m ON m.ts_id = t.tsid
+                JOIN $graph.measurements m ON m.ts_id = t.tsid
                 WHERE m.value > $mimicFilter
                 GROUP BY m.label
         """.trimIndent()
@@ -273,7 +271,7 @@ class TestMimicQuery {
 fun main() {
     TestConfig.loadConfig().datasets["mimic"]!!.sizes.forEach { size ->
         // The sessions and the connections are opened once, not timed (runners of it.unibo.tests.systems)
-        val neo4jUri = "bolt://localhost:${limitToPort(mimicLimit(size.toString()))}"
+        val neo4jUri = "bolt://localhost:7687"
         neo4jDriver(neo4jUri, TestMimicQuery.NEO4J_USER, TestMimicQuery.NEO4J_PASSWORD).use { driver ->
             driver.session().use { session ->
                 listOf(
