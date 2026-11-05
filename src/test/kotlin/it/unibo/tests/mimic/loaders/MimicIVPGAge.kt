@@ -37,7 +37,7 @@ class MimicIVPGAge(
     private val csvFile = File("$baseDir/ts.csv")
     private val tsWriter = if (csv) csvFile.printWriter() else null
     // Without csv: the measurements not inserted yet
-    private val pending = mutableListOf<List<Any>>()
+    private val pending = mutableListOf<List<Any?>>()
 
     var pId = 0
     val tsMap = mutableMapOf<Long, Long>()
@@ -84,6 +84,7 @@ class MimicIVPGAge(
                     itemid BIGINT,
                     abbreviation text,
                     category text,
+                    unitname text,
                     primary key (ts_id, label, timestamp)
                 )""".trimIndent())
 
@@ -146,12 +147,14 @@ class MimicIVPGAge(
     override fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean) {
         val ts = tsMap[tsId]!!
         val tmp = tsCache[row.label.toInt()]!!
-        // The columns of measurements: measurement_id, ts_id, timestamp, value, label, itemid, abbreviation, category
-        val values = listOf<Any>(
-            (++measurementCounter).toLong(), ts, row.timestamp, row.value as Long, tmp.abbreviation, tmp.itemid.toLong(), tmp.abbreviation, tmp.category
+        // The columns of measurements: measurement_id, ts_id, timestamp, value, label, itemid, abbreviation, category,
+        // unitname (null if the item has none)
+        val values = listOf<Any?>(
+            (++measurementCounter).toLong(), ts, row.timestamp, row.value as Long, tmp.abbreviation, tmp.itemid.toLong(), tmp.abbreviation, tmp.category, tmp.unitname
         )
         if (tsWriter != null) {
-            tsWriter.write(values.joinToString(",") { if (it is String) quote(it) else it.toString() } + "\n")
+            // A null as an unquoted empty field, which COPY reads as NULL
+            tsWriter.write(values.joinToString(",") { if (it is String) quote(it) else it?.toString() ?: "" } + "\n")
         } else {
             pending += values
             if (pending.size >= batchSize || isLast) flush()
@@ -166,9 +169,9 @@ class MimicIVPGAge(
         if (pending.isEmpty()) return
         conn.autoCommit = false
         try {
-            conn.prepareStatement("INSERT INTO $graphName.measurements ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").use { st ->
+            conn.prepareStatement("INSERT INTO $graphName.measurements ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").use { st ->
                 for (values in pending) {
-                    values.forEachIndexed { i, v -> if (v is String) st.setString(i + 1, v) else st.setLong(i + 1, v as Long) }
+                    values.forEachIndexed { i, v -> if (v == null) st.setNull(i + 1, Types.VARCHAR) else if (v is String) st.setString(i + 1, v) else st.setLong(i + 1, v as Long) }
                     st.addBatch()
                 }
                 st.executeBatch()
@@ -195,7 +198,7 @@ class MimicIVPGAge(
     }
 
     companion object {
-        const val COLUMNS = "measurement_id, ts_id, timestamp, value, label, itemid, abbreviation, category"
+        const val COLUMNS = "measurement_id, ts_id, timestamp, value, label, itemid, abbreviation, category, unitname"
 
         /** The AGE graph of [limit], whose schema holds the table measurements */
         fun graphName(limit: Long) = "mimic_${if (limit == Long.MAX_VALUE) "full" else limit}"

@@ -152,7 +152,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         val time = getTime {
             runCommand(
                 compose + listOf("run", "--rm", "--no-deps", "-v", "${csvDir.absolutePath}:/csv:ro", "neo4j",
-                    "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination",
+                    "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination", "--id-type=integer",
                     "--nodes=/csv/person.csv", "--nodes=/csv/ts.csv", "--nodes=/csv/measurement.csv",
                     "--relationships=/csv/has_parameters.csv", "--relationships=/csv/has_measurement.csv"),
                 environment

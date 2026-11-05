@@ -108,7 +108,7 @@ class TestMimicQuery {
     }
 
     class Q1Neo4J(session: Session) : QNeo4J(session) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 AND toFloat(m.value) > $mimicFilter RETURN p, t, m"
+        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE p.c > 25000 AND m.value > $mimicFilter RETURN p, t, m"
     }
 
     class Q1PGAge(graph: String, connection: Connection) : QPgAge(graph, connection) {
@@ -156,7 +156,7 @@ class TestMimicQuery {
     }
 
     class Q2Neo4J(session: Session) : QNeo4J(session) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 RETURN labels(m), avg(toFloat(m.value))"
+        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE p.c > 25000 RETURN labels(m), avg(m.value)"
     }
 
     class Q2PGAge(graph: String, connection: Connection) : QPgAge(graph, connection) {
@@ -203,7 +203,7 @@ class TestMimicQuery {
     }
 
     class Q3Neo4J(session: Session) : QNeo4J(session) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 AND toFloat(m.value) > $mimicFilter RETURN m.abbreviation, avg(toFloat(m.value))"
+        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE p.c > 25000 AND m.value > $mimicFilter RETURN m.abbreviation, avg(m.value)"
     }
 
     class Q3PGAge(graph: String, connection: Connection) : QPgAge(graph, connection) {

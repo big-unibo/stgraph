@@ -13,11 +13,14 @@ fun neo4jCsv(limit: Long): Boolean = limit >= 5_000_000
 /**
  * Loads MIMIC-IV into Neo4j, in two ways that produce the same graph (the one of the CSV files):
  * - (:Person {person_id, subject_id, rnd, pId, c})-[:HAS_PARAMETERS]->(:TimeSeries {ts_id}), a time series per person;
- * - (:TimeSeries)-[:HAS_EVENT]->(:<abbreviation> {measurement_id, ts_id, category, abbreviation, itemid, timestamp, value});
- * every property is a string, as neo4j-admin import stores the untyped columns.
+ * - (:TimeSeries)-[:HAS_EVENT]->(:<abbreviation> {measurement_id, ts_id, category, abbreviation, itemid, timestamp, value,
+ *   unitname (if any)});
+ * the ids and the numbers are integers (typed columns of the CSV files, imported with --id-type=integer), the rest strings.
  * With [csv], the nodes and relationships are written to CSV files (datasets/dump/neo4j/mimic/<limit>), then
  * [csvImport] (if any) imports them (e.g., neo4j-admin database import full) and returns the time of the import, added
- * to the time-series time. Without [csv], the nodes are created one at a time through [uri].
+ * to the time-series time. Without [csv], the Person and TimeSeries nodes are created one at a time through [uri], the
+ * measurements in batches of [batchSize], as MimicIVPGAge: a batch is sent when full and at the end of each time series,
+ * in one transaction (one UNWIND per label, since a label cannot be a parameter).
  */
 class MimicIVNeo4J(
     limit: Long,
@@ -27,6 +30,7 @@ class MimicIVNeo4J(
     val csv: Boolean,
     postgres: PostgresConfig = PostgresConfig(),
     private val csvImport: ((File) -> Long)? = null,
+    private val batchSize: Int = 20_000
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
 
     private val driver: Driver? = if (csv) null else neo4jDriver(uri, user, password)
@@ -35,6 +39,8 @@ class MimicIVNeo4J(
     // Without csv: the element ids of the Person and TimeSeries nodes, by their person_id and ts_id
     private val personNodes = mutableMapOf<Long, String>()
     private val tsNodes = mutableMapOf<Long, String>()
+    // Without csv: the measurements not created yet, as (label, element id of the time series, properties)
+    private val pending = mutableListOf<Triple<String, String, Map<String, Any>>>()
 
     private val baseDir = File("datasets/dump/neo4j/mimic/$limit").apply {
         mkdirs()
@@ -55,9 +61,9 @@ class MimicIVNeo4J(
         baseDir.mkdirs()
         tsWriter.println("ts_id:ID(TimeSeries),:LABEL")
         hasParamsWriter.println(":START_ID(Person),:END_ID(TimeSeries),:TYPE")
-        measurementWriter.println("measurement_id:ID(Measurement),ts_id,category,abbreviation,itemid,timestamp,value,:LABEL")
+        measurementWriter.println("measurement_id:ID(Measurement),ts_id:long,category,abbreviation,itemid:long,timestamp:long,value:long,unitname,:LABEL")
         hasMeasurementWriter.println(":START_ID(TimeSeries),:END_ID(Measurement),:TYPE")
-        personWriter.println("person_id:ID(Person),subject_id,rnd,pId,c,:LABEL")
+        personWriter.println("person_id:ID(Person),subject_id:long,rnd:long,pId:long,c:long,:LABEL")
 
         // flush immediately to lock headers
         tsWriter.flush()
@@ -73,15 +79,23 @@ class MimicIVNeo4J(
     }
 
     /**
-     * Creates a node with [labels] and the [properties] as the CSV import stores them (strings, no property for an empty
-     * field), linked by [type] from the node [from], if any; returns its element id
+     * Creates a node with [labels] and the [properties] as the CSV import stores them (numbers as integers, the rest as
+     * strings, no property for an empty field), linked by [type] from the node [from], if any; returns its element id
      */
     private fun createNode(labels: String, properties: Map<String, Any?>, from: String? = null, type: String? = null): String {
-        val props = properties.mapValues { clean(it.value) }.filterValues { it.isNotEmpty() }
+        val props = props(properties)
         val query = if (from == null) "CREATE (n:$labels) SET n = \$props RETURN elementId(n)"
         else "MATCH (f) WHERE elementId(f) = \$from CREATE (f)-[:$type]->(n:$labels) SET n = \$props RETURN elementId(n)"
         return session!!.run(query, mapOf("props" to props, "from" to from)).single()[0].asString()
     }
+
+    /** The [properties] as the CSV import stores them: numbers as integers, the rest as strings, no empty field */
+    private fun props(properties: Map<String, Any?>): Map<String, Any> = properties
+        .mapValues { (_, v) -> if (v is Number) v.toLong() else clean(v) }
+        .filterValues { it != "" }
+
+    /** The label of a measurement, escaped */
+    private fun label(abbreviation: String) = "`${abbreviation.replace("`", "``")}`"
 
     override fun addPerson(subjectId: Int, c: Int): Long {
         val personId = ++personCounter
@@ -134,19 +148,19 @@ class MimicIVNeo4J(
         val tmp = tsCache[row.label.toInt()]!!
         val measurementId = ++measurementCounter
         if (!csv) {
-            createNode(
-                "`${tmp.abbreviation.replace("`", "``")}`",
-                linkedMapOf(
+            pending += Triple(
+                label(tmp.abbreviation),
+                tsNodes.getValue(ts),
+                props(linkedMapOf(
                     "measurement_id" to measurementId, "ts_id" to ts, "category" to tmp.category, "abbreviation" to tmp.abbreviation,
-                    "itemid" to tmp.itemid, "timestamp" to row.timestamp, "value" to row.value
-                ),
-                from = tsNodes.getValue(ts),
-                type = "HAS_EVENT"
+                    "itemid" to tmp.itemid, "timestamp" to row.timestamp, "value" to row.value, "unitname" to tmp.unitname
+                ))
             )
+            if (pending.size >= batchSize || isLast) flush()
         } else {
             // write node
             measurementWriter.write(
-                "$measurementId,$ts,${tmp.category},${tmp.abbreviation},${tmp.itemid},${row.timestamp},${row.value},${tmp.abbreviation}\n"
+                "$measurementId,$ts,${tmp.category},${tmp.abbreviation},${tmp.itemid},${row.timestamp},${row.value},${clean(tmp.unitname)},${tmp.abbreviation}\n"
             )
             // write relationship
             hasMeasurementWriter.write(
@@ -160,6 +174,21 @@ class MimicIVNeo4J(
         }
     }
 
+    /** Without csv: creates the [pending] measurements in one transaction, one UNWIND per label */
+    private fun flush() {
+        if (pending.isEmpty()) return
+        session!!.beginTransaction().use { tx ->
+            pending.groupBy { it.first }.forEach { (label, rows) ->
+                tx.run(
+                    "UNWIND \$rows AS row MATCH (t) WHERE elementId(t) = row.ts CREATE (t)-[:HAS_EVENT]->(n:$label) SET n = row.props",
+                    mapOf("rows" to rows.map { (_, ts, props) -> mapOf("ts" to ts, "props" to props) })
+                ).consume()
+            }
+            tx.commit()
+        }
+        pending.clear()
+    }
+
     /** As the skeleton; with [csv], the CSV files are then imported by [csvImport], if any (time-series time) */
     override fun loadData() {
         addGs()
@@ -169,6 +198,7 @@ class MimicIVNeo4J(
     }
 
     override fun close() {
+        flush()
         session?.close()
         driver?.close()
 
