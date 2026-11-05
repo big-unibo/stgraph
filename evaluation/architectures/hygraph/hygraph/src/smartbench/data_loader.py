@@ -11,6 +11,14 @@ FAR_PAST_DATE = datetime(2010, 1, 1, 0, 0, 0)
 
 oid = 0
 
+# The start of the validity of every node and edge: 1970-01-01 00:00:01, i.e., always (as STGraph, whose elements
+# are valid from Long.MIN_VALUE to Long.MAX_VALUE); the time windows of the queries filter the measurements
+VALID_FROM = pd.Timestamp(1, unit="s")
+
+# The maximum number of measurements loaded for each time series (the first ones of its file): MEASUREMENT_LIMIT, 1000
+# by default; 0 or less: all of them
+MEASUREMENT_LIMIT = int(os.getenv("MEASUREMENT_LIMIT", "0"))
+
 
 def getOOID():
     """Generate a unique object identifier."""
@@ -37,16 +45,18 @@ def parseEdgesAndProperties(document, node, hygraph: HyGraph):
                 and isinstance(document[col][0], dict)
                 and "id" in document[col][0]
             ):
-                # TODO: Why not edges ???
-                doc = document[col][0]
-                target_id = doc["id"]
-                hygraph.add_pgedge(
-                    oid=getOOID(),
-                    source=node.getId(),  # Assuming the source node ID is in the document
-                    target=target_id,
-                    label=f"has{col.capitalize()}",
-                    start_time=pd.to_datetime("2010-01-01"),
-                )
+                # An edge towards every referenced entity (e.g., every infrastructure of the coverage of a sensor),
+                # not only towards the first one, as STGraph
+                for doc in document[col]:
+                    if not (isinstance(doc, dict) and "id" in doc):
+                        continue
+                    hygraph.add_pgedge(
+                        oid=getOOID(),
+                        source=node.getId(),  # Assuming the source node ID is in the document
+                        target=doc["id"],
+                        label=f"has{col.capitalize()}",
+                        start_time=VALID_FROM,
+                    )
             elif isinstance(document[col], dict) and "id" in document[col]:
                 try:
                     # Single edge case
@@ -59,7 +69,7 @@ def parseEdgesAndProperties(document, node, hygraph: HyGraph):
                         ],  # Assuming the source node ID is in the document
                         target=target_id,
                         label=f"has{col.capitalize()}",
-                        start_time=pd.to_datetime("2010-01-01"),
+                        start_time=VALID_FROM,
                     )
                 except Exception as e:
                     print(f"Error adding edge for document {document}: {e}")
@@ -71,16 +81,19 @@ def parseEdgesAndProperties(document, node, hygraph: HyGraph):
     return hygraph
 
 
-def load_json(file):
+def load_json(file, limit=0):
+    """The documents of [file] (one per line): at most the first [limit], if positive"""
     documents = []
     for line in file:
+        if 0 < limit <= len(documents):
+            break
         documents.append(json.loads(line))
     return documents
 
 
-def loadObservations(file_path, sensor_id, hygraph: HyGraph, default_path: str):
+def loadObservations(file_path, sensor_id, hygraph: HyGraph, default_path: str, limit: int = MEASUREMENT_LIMIT):
     with open(file_path, "r", encoding="utf-8") as file:
-        documents = load_json(file)
+        documents = load_json(file, limit)
         hygraph, node = loadNode(
             documents[0], default_path, sensor_id, hygraph
         )  # Insert the TS as a node
@@ -99,7 +112,7 @@ def loadObservations(file_path, sensor_id, hygraph: HyGraph, default_path: str):
             source=sensor_id,
             target=node.getId(),
             label="hasTemperature",
-            start_time=pd.to_datetime("2010-01-01"),
+            start_time=VALID_FROM,
         )
     return hygraph
 
@@ -114,7 +127,7 @@ def loadNode(
     node = hygraph.add_pgnode(
         oid=document["id"],
         label=document["type"],
-        start_time=pd.to_datetime("2010-01-01"),
+        start_time=VALID_FROM,
     )
 
     # Add properties and edges

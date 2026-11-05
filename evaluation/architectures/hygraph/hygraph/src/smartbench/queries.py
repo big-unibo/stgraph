@@ -8,13 +8,21 @@ FAR_FUTURE_DATE = datetime(2100, 12, 31, 23, 59, 59)
 FAR_PAST_DATE = datetime(2010, 1, 1, 0, 0, 0)
 
 
-def temperature_above_threshold(node, threshold=65.0):
-    ts = node.get_temporal_property("Temperature")
-    data = ts.data.to_pandas()
-    result = data["Temperature"].apply(lambda x: x > threshold).any()
-    if result:
-        print(f"Node {node.getId()} passes the temperature threshold check.")
-    return result
+def temperature_values(node, t_from, t_to):
+    """
+    The values of the series of [node] in [t_from, t_to[ (milliseconds, or datetimes), as the time windows of STGraph
+    (timestamp >= from and timestamp < to)
+    """
+    data = node.get_temporal_property("Temperature").data.to_pandas()
+    index = data.index
+    millis = index.asi8 // 1_000_000 if isinstance(index, pd.DatetimeIndex) else index.astype("int64")
+    t_from, t_to = utils.to_ms(t_from), utils.to_ms(t_to)
+    return data["Temperature"][(millis >= t_from) & (millis < t_to)].dropna()
+
+
+def temperature_above_threshold(node, t_from, t_to, threshold=65.0):
+    """Whether a value of the series of [node] in [t_from, t_to[ is at least [threshold] (as STGraph: >=)"""
+    return bool((temperature_values(node, t_from, t_to) >= threshold).any())
 
 
 def match_infrastructure_sensor(
@@ -108,6 +116,8 @@ def environmentCoverage(graph: HyGraph, temporal_constraints: tuple[int, int]):
 
 
 def environmentAggregate(graph: HyGraph, temporal_constraints: tuple[int, int]):
+    # The time window of the query (milliseconds): the readings in [tA, tB[, as STGraph
+    tA, tB = temporal_constraints
     start_time = time()
 
     results = match_infrastructure_sensor(
@@ -134,32 +144,30 @@ def environmentAggregate(graph: HyGraph, temporal_constraints: tuple[int, int]):
             )
             .match_node(label="Temperature", alias="Temperature", node_type="PGNode")
             .connect("Sensor", "hasTemperature", "Temperature")
-            .group_by("Temperature")
-            .aggregate(
-                alias="Temperature",
-                property_name="Temperature",
-                method="mean",
-            )
             .return_(
-                temperature_mean=lambda node: node["Temperature"],
+                # The readings in the time window of the query, as STGraph
+                values=lambda node: temperature_values(node["Temperature"], tA, tB),
             )
             .execute()
         )
-
-        if len(subquery) > 0:
-            subquery.insert(0, {"Infrastructure": infrastructure_id})
-            final_results.append(subquery)
+        values = pd.concat([sensor_path["values"] for sensor_path in subquery]) if subquery else pd.Series(dtype=float)
+        # As STGraph (timeaware): no reading in the window, no result
+        if len(values) > 0:
+            final_results.append((infrastructure_id, sensor_id, float(values.mean())))
     elapsed_time = time() - start_time
     return final_results, elapsed_time
 
 
 def maintenanceOwners(graph: HyGraph, temporal_constraints: tuple[int, int]):
+    # The time window of the query (milliseconds): the readings in [tA, tB[, as STGraph
+    tA, tB = temporal_constraints
     start_time = time()
 
     sensor_in_infrastructure = match_infrastructure_sensor(
         graph, t_from=temporal_constraints[0], t_to=temporal_constraints[1]
     )
-    final_results = []
+    # As STGraph (group by Device, Environment, Owner): the distinct (sensor, environment, owner)
+    final_results = set()
     for path in sensor_in_infrastructure:
         query = HyGraphQuery(graph)
         sensor_id = path["sensor_id"]
@@ -179,7 +187,6 @@ def maintenanceOwners(graph: HyGraph, temporal_constraints: tuple[int, int]):
                 )
             )
             .match_node(label="Temperature", alias="Temperature", node_type="PGNode")
-            .where(temperature_above_threshold)
             .connect("Sensor", "hasTemperature", "Temperature")
             .return_(
                 sensor_id=lambda node: node["Sensor"].get_static_property("id"),
@@ -188,9 +195,13 @@ def maintenanceOwners(graph: HyGraph, temporal_constraints: tuple[int, int]):
                 temperature_id=lambda node: node["Temperature"].get_static_property(
                     "id"
                 ),
+                # The threshold, only on the Temperature nodes of this sensor (after connect), in the time window of the
+                # query, as STGraph
+                above=lambda node: temperature_above_threshold(node["Temperature"], tA, tB),
             )
             .execute()
         )
+        subquery = [sensor_path for sensor_path in subquery if sensor_path["above"]]
 
         for sensor_path in subquery:
             t_from = sensor_path["t_from"]
@@ -218,10 +229,9 @@ def maintenanceOwners(graph: HyGraph, temporal_constraints: tuple[int, int]):
                 )
                 .execute()
             )
-            if len(owner_query) > 0:
-                owner_query.insert(0, {"Infrastructure": infrastructure_id})
-                owner_query.insert(2, {"Temperature": temperature})
-                final_results.append(owner_query)
+            for owner in owner_query:
+                final_results.add((owner["sensor_id"], infrastructure_id, owner["owner_id"]))
+    final_results = list(final_results)
     elapsed_time = time() - start_time
     return final_results, elapsed_time
 
@@ -240,12 +250,17 @@ def avg_temperature_above_threshold(node, t_from, t_to, threshold=25.0):
 
 
 def environmentOutlier(graph: HyGraph, temporal_constraints: tuple[int, int]):
-    threshold = 50.4
+    # The time window of the query (milliseconds): the readings in [tA, tB[, as STGraph
+    tA, tB = temporal_constraints
+    threshold = 50.5  # as STGraph (minTemp of EnvironmentOutlier): average > 50.5
     start_time = time()
     sensor_in_infrastructure = match_infrastructure_sensor(
         graph, t_from=temporal_constraints[0], t_to=temporal_constraints[1]
     )
-    final_results = []
+    # As STGraph (group by Environment, AVG of the measurements, then average > threshold): the sum and the number of
+    # the values in the window of every sensor of each infrastructure, then the average per infrastructure
+    sums = {}
+    counts = {}
     for path in sensor_in_infrastructure:
         sensor_id = path["sensor_id"]
         t_from = path["t_from"]
@@ -265,24 +280,22 @@ def environmentOutlier(graph: HyGraph, temporal_constraints: tuple[int, int]):
                 )
             )
             .match_node(label="Temperature", alias="Temperature", node_type="PGNode")
-            .where(
-                lambda node: avg_temperature_above_threshold(
-                    node, t_from, t_to, threshold=threshold
-                )
-            )
             .connect("Sensor", "hasTemperature", "Temperature")
             .return_(
-                sensor_id=lambda node: node["Sensor"].get_static_property("id"),
-                temperature_id=lambda node: node["Temperature"].get_static_property(
-                    "id"
-                ),
+                # The values of the series of this sensor in the time window of the query, as STGraph
+                values=lambda node: temperature_values(node["Temperature"], tA, tB),
             )
             .execute()
         )
-        if len(subquery) > 0:
-            subquery.insert(0, {"Sensor": sensor_id})
-            subquery.insert(0, {"Infrastructure": infrastructure_id})
-            final_results.append(subquery)
+        for sensor_path in subquery:
+            values = sensor_path["values"]
+            sums[infrastructure_id] = sums.get(infrastructure_id, 0.0) + float(values.sum())
+            counts[infrastructure_id] = counts.get(infrastructure_id, 0) + len(values)
+    final_results = [
+        (infrastructure_id, sums[infrastructure_id] / count)
+        for infrastructure_id, count in counts.items()
+        if count > 0 and sums[infrastructure_id] / count > threshold
+    ]
     elapsed_time = time() - start_time
     return final_results, elapsed_time
 
@@ -301,6 +314,8 @@ def max_temperature(node, t_from, t_to, threshold=65.0):
 
 
 def agentOutlier(graph: HyGraph, temporal_constraints: tuple[int, int]):
+    # The time window of the query (milliseconds): the readings in [tA, tB[, as STGraph
+    tA, tB = temporal_constraints
     start_time = time()
     sensors_in_infrastructure = match_infrastructure_sensor(
         graph, t_from=temporal_constraints[0], t_to=temporal_constraints[1]
@@ -327,22 +342,21 @@ def agentOutlier(graph: HyGraph, temporal_constraints: tuple[int, int]):
             .match_node(label="Temperature", alias="Temperature", node_type="PGNode")
             .connect("Sensor", "hasTemperature", "Temperature")
             .return_(
-                sensor_id=lambda node: node["Sensor"].get_static_property("id"),
-                max_temp=lambda node: node["Temperature"]
-                .get_temporal_property("Temperature", 0)
-                .apply_aggregation("max", start_time=t_from, end_time=t_to),
+                # The readings in the time window of the query, as STGraph
+                values=lambda node: temperature_values(node["Temperature"], tA, tB),
             )
             .execute()
         )
-        if len(subquery) > 0:
-            subquery.append({"Infrastructure": infrastructure_id})
-            final_results.append(subquery)
+        values = pd.concat([sensor_path["values"] for sensor_path in subquery]) if subquery else pd.Series(dtype=float)
+        # As STGraph (group by Device, Environment; timeaware): the maximum, only with readings in the window
+        if len(values) > 0:
+            final_results.append((sensor_id, infrastructure_id, float(values.max())))
     elapsed_time = time() - start_time
     return final_results, elapsed_time
 
 
 def agentHistory(graph: HyGraph, temporal_constraints: tuple[int, int]):
-    deviceid = "thermometer7"
+    deviceid = "thermometer3"  # as STGraph (AgentHistory)
     query = HyGraphQuery(graph)
     final_results = []
     start_time = time()
