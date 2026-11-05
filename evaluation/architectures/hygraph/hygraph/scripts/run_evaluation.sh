@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # -------------------------
 # Validate environment variables
@@ -16,17 +17,26 @@ IFS=',' read -r -a DSETS <<< "$DATASET"
 for DSET in "${DSETS[@]}"; do
     export DATASET=$DSET
     for DSET_SIZE in "${DATASET_SIZES[@]}"; do
-        echo "=== Processing dataset: $DATASET ==="
+        echo "=== Processing dataset: $DATASET $DSET_SIZE ==="
         export DATASET_SIZE="$DSET_SIZE"
 
-        ./scripts/download_dataset.sh $DATASET_SIZE $DSET
+        if [[ "$DATASET" == "mimic" ]]; then
+            # The CSV files of the import of Neo4j, mounted by the compose file (datasets/dump/neo4j/mimic)
+            DATA="/home/hygraph/resources/datasets/mimic/$DATASET_SIZE"
+            [[ -f "$DATA/person.csv" && -f "$DATA/measurement.csv" ]] || { echo "Missing the CSV files of Neo4j in $DATA"; exit 1; }
+        else
+            # The dataset downloaded by the evaluation, mounted by the compose file: the folder of the size of the
+            # evaluation (RESULT_SIZE)
+            DATA="/home/hygraph/resources/datasets/$DATASET/${RESULT_SIZE:-$DATASET_SIZE}"
+            [[ -d "$DATA" ]] || { echo "Missing the dataset in $DATA"; exit 1; }
+        fi
 
-        for EVALTHREAD in "${THREADS[@]}"
-        do
+        for EVALTHREAD in "${THREADS[@]}"; do
             export THREAD="$EVALTHREAD"
             for SELECTIVITY in "${QUERY_SELECTIVITIES[@]}"; do
                 export QUERY_SELECTIVITY="$SELECTIVITY"
-                python3 evaluate_hygraph.py
+                python3 "src/$DATASET/evaluate_hygraph.py"
             done
         done
+    done
 done

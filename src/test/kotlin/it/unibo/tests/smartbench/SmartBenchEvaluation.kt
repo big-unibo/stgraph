@@ -176,13 +176,16 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     }
 
     /**
-     * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables,
-     * with the sizes of the old evaluation (same time windows: small, medium -> large, large -> big)
+     * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables.
+     * AeonG with the sizes of the old evaluation (same time windows: small, medium -> large, large -> big); HyGraph with
+     * the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems, mounted by its compose file
      */
     private fun selfContained(system: String) {
-        val oldSize = mapOf("small" to "small", "medium" to "large", "large" to "big")[size]
-            ?: error("$system runs on small, medium and large only")
-        selfContained(system, oldSize, queryIds)
+        val oldSize = if (system == "hygraph") size
+            else mapOf("small" to "small", "medium" to "large", "large" to "big")[size] ?: error("$system runs on small, medium and large only")
+        if (system == "hygraph") download("datasets/original/smartbench/$size", "smartbench")
+        // HyGraph records in results/dt_graph as the other systems: the model (with the label of the run) and the size
+        selfContained(system, oldSize, queryIds, mapOf("MODEL" to evaluation.model(system), "RESULT_SIZE" to size))
     }
 
     companion object {

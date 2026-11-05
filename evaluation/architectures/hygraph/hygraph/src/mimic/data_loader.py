@@ -1,41 +1,9 @@
 import csv
-from hygraph_core import HyGraph, TimeSeriesMetadata, HyGraphQuery
+from hygraph_core import HyGraph, TimeSeriesMetadata
 import pandas as pd
-import ijson
-import uuid
-import json
 import os
-from datetime import datetime
 
 start_time = pd.to_datetime("2010-01-01", format="%Y-%m-%d")
-
-
-def load_edges(csv_file, hygraph, source_col, target_col, label):
-    """
-    Read a CSV file and add one edge per row.
-
-    Example CSV:
-        source,target
-        1,2
-        1,3
-        2,4
-    """
-
-    with open(csv_file, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-
-        for row in reader:
-            id += 1
-            source_id = row[source_col]
-            target_id = row[target_col]
-
-            hygraph.add_pgedge(
-                oid=id,
-                source=source_id,
-                target=target_id,
-                label=label,
-                start_time=start_time,
-            )
 
 
 def load_nodes(csv_file, hygraph: HyGraph, label_col=":LABEL", id=1, key=[]):
@@ -56,9 +24,10 @@ def load_nodes(csv_file, hygraph: HyGraph, label_col=":LABEL", id=1, key=[]):
         "measurement.small.csv"
     ):
         df = pd.read_csv(csv_file)
-        df.columns = ["id"] + [col.strip() for col in df.columns[1:]]
+        # The names without the types of the import of Neo4j (e.g., value:long)
+        df.columns = ["id"] + [col.strip().split(":")[0] for col in df.columns[1:]]
+        # A time series per person (ts_id) and item
         grouping_cols = [
-            "id",
             "ts_id",
             "category",
             "abbreviation",
@@ -67,7 +36,6 @@ def load_nodes(csv_file, hygraph: HyGraph, label_col=":LABEL", id=1, key=[]):
         grouped = df.groupby(grouping_cols)
         for group_keys, group_df in grouped:
             (
-                node_ref_id,
                 ts_id,
                 category,
                 abbreviation,
@@ -150,26 +118,9 @@ def load_nodes(csv_file, hygraph: HyGraph, label_col=":LABEL", id=1, key=[]):
                 if value is None or value == "":
                     continue
 
+                # The names without the types of the import of Neo4j (e.g., c:long)
                 node.add_static_property(
-                    col if ":ID" not in col else "id", value, hygraph
+                    col.split(":")[0] if ":ID" not in col else "id", value, hygraph
                 )
 
         return hygraph, id
-
-
-def load_data(size):
-    hygraph = HyGraph()
-    id = 0
-    persons, id = load_nodes(
-        f"/home/hygraph/resources/datasets/mimic/{size}/person.csv",
-        hygraph=hygraph,
-        id=id,
-    )
-    ts, id = load_nodes(
-        f"/home/hygraph/resources/datasets/mimic/{size}/measurement.csv",
-        hygraph=hygraph,
-        id=id,
-        label_col="label",
-    )
-
-    return hygraph

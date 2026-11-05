@@ -6,6 +6,8 @@ import it.unibo.tests.systems.neo4jDriver
 import org.neo4j.driver.Driver
 import org.neo4j.driver.Session
 import java.io.File
+import java.io.PrintWriter
+import java.io.Writer
 
 /** Whether MIMIC-IV is loaded into Neo4j from CSV files (neo4j-admin import) rather than one node at a time: above the small sizes */
 fun neo4jCsv(limit: Long): Boolean = limit >= 5_000_000
@@ -46,11 +48,13 @@ class MimicIVNeo4J(
         mkdirs()
     }
 
-    private val tsWriter = File("$baseDir/ts.csv").printWriter()
-    private val hasParamsWriter = File("$baseDir/has_parameters.csv").printWriter()
-    private val measurementWriter = File("$baseDir/measurement.csv").printWriter()
-    private val hasMeasurementWriter = File("$baseDir/has_measurement.csv").printWriter()
-    private val personWriter = File("$baseDir/person.csv").printWriter()
+    // Only with csv: otherwise the CSV files of a previous load (also read by HyGraph) are kept as they are
+    private fun writer(name: String): PrintWriter = if (csv) File("$baseDir/$name").printWriter() else PrintWriter(Writer.nullWriter())
+    private val tsWriter = writer("ts.csv")
+    private val hasParamsWriter = writer("has_parameters.csv")
+    private val measurementWriter = writer("measurement.csv")
+    private val hasMeasurementWriter = writer("has_measurement.csv")
+    private val personWriter = writer("person.csv")
 
     private var tsCounter: Long = 0
     private var measurementCounter: Long = 0

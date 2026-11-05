@@ -16,6 +16,7 @@ import it.unibo.tests.mimic.loaders.pgageCsv
 import it.unibo.tests.mimic.loaders.mimicLimit
 import it.unibo.tests.mimic.loaders.neo4jCsv
 import it.unibo.tests.evaluation.runCommand
+import it.unibo.tests.evaluation.progress
 import it.unibo.graph.utils.getTime
 import it.unibo.tests.systems.neo4jDriver
 import it.unibo.tests.systems.pgAgeConnection
@@ -33,6 +34,8 @@ import java.sql.DriverManager
  *   time on the small sizes, otherwise CSV files imported with neo4j-admin (see [neo4jImport]);
  * - pgage: deployed as for the other datasets (evaluation/architectures/pgage), loaded by MimicIVPGAge: batches of
  *   INSERTs on the small sizes, otherwise a CSV file copied with COPY (see [pgageImport]);
+ * - hygraph: ingestion and queries inside its container (evaluation/architectures/hygraph), on the CSV files of the
+ *   import of Neo4j (datasets/dump/neo4j/mimic/<limit>), written first by MimicIVNeo4J if missing (not timed);
  * - aeong: only the ingestion of TestMimicIngestion (MimicIVAeonG), no queries.
  */
 class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
@@ -55,6 +58,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             "neo4j" -> neo4j()
             "pgage" -> pgage()
             "graphix" -> graphix()
+            "hygraph" -> hygraph()
             "aeong" -> repeat(evaluation.ingestionIterations) { ingest("aeong", it) { MimicIVAeonG(limit, postgres = postgres) } }
             else -> error("$system is not evaluated on $dataset")
         }
@@ -137,6 +141,20 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     private fun sourceReady() {
         DriverManager.getConnection("jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}", postgres.user, postgres.password)
             .use { it.createStatement().use { st -> st.execute("SELECT 1 FROM d_items LIMIT 1") } }
+    }
+
+    /**
+     * HyGraph loads the CSV files of the import of Neo4j (mounted by its compose file): written by MimicIVNeo4J (CSV
+     * mode, no import, not recorded) when missing, e.g. on the small sizes, which Neo4j loads without them
+     */
+    private fun hygraph() {
+        val measurements = File("datasets/dump/neo4j/mimic/$limit/measurement.csv")
+        if (evaluation.ingestionIterations > 0 && (!measurements.exists() || measurements.useLines { it.take(2).count() } < 2)) {
+            progress("hygraph | $dataset $size: writing the CSV files of Neo4j")
+            MimicIVNeo4J(limit, csv = true, postgres = postgres).loadData()
+        }
+        // Recorded in results/dt_graph as the other systems: the model (with the label of the run) and the size
+        selfContained("hygraph", limit.toString(), queryIds, mapOf("MODEL" to evaluation.model("hygraph"), "RESULT_SIZE" to size))
     }
 
     private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }

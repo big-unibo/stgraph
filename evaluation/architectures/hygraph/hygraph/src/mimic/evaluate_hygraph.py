@@ -1,118 +1,116 @@
-from uuid import uuid4
-from hygraph_core import HyGraph
-from data_loader import load_data
-import queries
+"""
+The MIMIC-IV evaluation of HyGraph: ingestion of the CSV files of the import of Neo4j, then Q1-Q3. The statistics are
+appended to the ones of the other systems (results/dt_graph, mounted on /hygraph/results by the compose file), with
+their columns: as it.unibo.stats.loadDataset (ingestion) and it.unibo.stats.runQuery (queries).
+"""
+import csv
 import os
-import utils
-import pandas as pd
+import uuid
 from time import time
-from pathlib import Path
-import sys
-import yaml
-import logging
+
+from hygraph_core import HyGraph
+from data_loader import load_nodes
+import queries
 
 DATASET = "mimic"
-statistics_path = os.path.join(os.sep, "home", "hygraph", "results", "hygraph")
-INGESTION_CSV_HEADER = "test_id,model,startTimestamp,endTimestamp,dataset,datasetSize,threads,graphElapsedTime,tsElapsedTime,elapsedTime,numMachines,storage"
-ingestion_stats_path = os.path.join(
-    statistics_path, "ingestion_time", "ingestion_statistics.csv"
-)
-utils.setup_statistics_file(ingestion_stats_path, INGESTION_CSV_HEADER.split(","))
+RESULTS = os.path.join(os.sep, "hygraph", "results", "dt_graph")
+INGESTION_STATS = os.path.join(RESULTS, "ingestion_time", "ingestion_statistics.csv")
+QUERY_STATS = os.path.join(RESULTS, "query_time", "query_statistics.csv")
+DATA = "/home/hygraph/resources/datasets/mimic"
 
-QUERY_CSV_HEADER = "test_id,model,dataset,datasetSize,threads,queryName,queryType,elapsedTime,numEntities,numMachines"
-query_stats_path = os.path.join(statistics_path, "query_evaluation", "statistics.csv")
-utils.setup_statistics_file(query_stats_path, QUERY_CSV_HEADER.split(","))
-ingestion_stats = pd.DataFrame(columns=INGESTION_CSV_HEADER.split(","))
-query_stats = pd.DataFrame(columns=QUERY_CSV_HEADER.split(","))
-TEST_UUID = uuid4()
-
+# Set by the evaluation (MimicEvaluation): the sizes are the folders of the CSV files of Neo4j (the limits); the model
+# (with the label of the run) and the size as recorded by the other systems
+SIZES = os.environ.get("DATASET_SIZE", "1692200").split(",")
+MODEL = os.environ.get("MODEL", "hygraph")
+RESULT_SIZE = os.environ.get("RESULT_SIZE")
+INGESTION_ITERATIONS = int(os.environ.get("INGESTION_ITERATIONS", "1"))
+QUERY_ITERATIONS = int(os.environ.get("QUERY_ITERATIONS", "1"))
 
 query_map = {
-    "Q1": queries.q1,
-    "Q2": queries.q2,
-    "Q3": queries.q3,
+    "Q1HyGraph": queries.q1,
+    "Q2HyGraph": queries.q2,
+    "Q3HyGraph": queries.q3,
 }
 
 
-def evaluate_ingestion_performance(sizes=["1692200"]):
+def millis():
+    return int(time() * 1000)
+
+
+def append(path, row):
+    """Appends [row] to the CSV file [path], in the order of its header (written if the file is new)"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    header = None
+    if os.path.exists(path):
+        with open(path, newline="") as f:
+            header = next(csv.reader(f), None)
+    with open(path, "a", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")  # as the files written by the other systems
+        if header is None:
+            header = list(row.keys())
+            writer.writerow(header)
+        writer.writerow([row.get(column, "") for column in header])
+
+
+def rows(path):
+    with open(path) as f:
+        return sum(1 for _ in f) - 1
+
+
+def ingest(size):
+    """Loads the persons (graph time) and the measurements as time series (time-series time): times in ms"""
     hygraph = HyGraph()
-    start_time = time()
-    for size in sizes:
-        hygraph = load_data(size)
-    end_time = time()
+    start = millis()
+    hygraph, id = load_nodes(f"{DATA}/{size}/person.csv", hygraph=hygraph, id=0)
+    graph_end = millis()
+    hygraph, _ = load_nodes(f"{DATA}/{size}/measurement.csv", hygraph=hygraph, id=id, label_col="label")
+    end = millis()
+    persons = rows(f"{DATA}/{size}/person.csv")
+    series = len(hygraph.graph.nodes) - persons
+    append(INGESTION_STATS, {
+        "test_id": str(uuid.uuid4()),
+        "model": MODEL,
+        "startTimestamp": start,
+        "endTimestamp": end,
+        "dataset": DATASET,
+        "datasetSize": RESULT_SIZE or size,
+        "threads": 1,
+        "graphElapsedTime": graph_end - start,
+        "tsElapsedTime": end - graph_end,
+        "indexTime": 0,
+        "elapsedTime": end - start,
+        "numMachines": 1,
+        "storage": -2,
+        "tsStorage": -1,
+        "gsStorage": -1,
+        # As the other loaders: the events, and the persons plus their time series (one per person and item)
+        "tsCard": rows(f"{DATA}/{size}/measurement.csv"),
+        "gsCard": persons + series,
+    })
+    return hygraph
 
-    return hygraph, start_time, end_time, end_time - start_time
 
-
-for iteration in range(1):
-    for size in ["1692200"]:
-        print(f"Ingestion iteration {iteration+1}")
-        hygraph, start_time, end_time, elapsed_time = evaluate_ingestion_performance(
-            [size]
-        )
-        ingestion_stats = pd.concat(
-            [
-                ingestion_stats,
-                pd.DataFrame(
-                    [
-                        {
-                            "test_id": TEST_UUID,
-                            "model": "HyGraph",
-                            "startTimestamp": start_time,
-                            "endTimestamp": end_time,
-                            "dataset": DATASET,
-                            "datasetSize": size,
-                            "threads": 1,
-                            "graphElapsedTime": -1,
-                            "tsElapsedTime": -1,
-                            "elapsedTime": elapsed_time,
-                            "numMachines": 1,
-                            "storage": -1,
-                        }
-                    ]
-                ),
-            ],
-            ignore_index=True,
-        )
-        ingestion_stats.to_csv(
-            ingestion_stats_path,
-            mode="a",
-            header=not os.path.exists(ingestion_stats_path),
-            index=False,
-        )
-
-        results = {}
-
-        for query_name, query in query_map.items():
-            result, elapsed_time = query(hygraph)
-            query_stats = pd.concat(
-                [
-                    query_stats,
-                    pd.DataFrame(
-                        [
-                            {
-                                "test_id": TEST_UUID,
-                                "model": "HyGraph",
-                                "dataset": DATASET,
-                                "datasetSize": size,
-                                "threads": 1,
-                                "queryName": query_name,
-                                "queryType": "edgesDirection",
-                                "elapsedTime": round(elapsed_time * 1000, 0),
-                                "numEntities": len(result),
-                                "numMachines": 1,
-                                "querySelectivity": "",
-                                "temporalRangeIndex": "",
-                                "iteration": iteration,
-                            }
-                        ]
-                    ),
-                ],
-                ignore_index=True,
-            )
-        query_stats.to_csv(
-            query_stats_path,
-            mode="a",
-            header=not os.path.exists(ingestion_stats_path),
-            index=False,
-        )
+for size in SIZES:
+    hygraph = None
+    for iteration in range(INGESTION_ITERATIONS):
+        print(f"Ingestion iteration {iteration + 1}")
+        hygraph = ingest(size)
+    for iteration in range(QUERY_ITERATIONS):
+        for query_id, query in query_map.items():
+            result, elapsed = query(hygraph)
+            append(QUERY_STATS, {
+                "test_id": str(uuid.uuid4()),
+                "queryid": query_id,
+                "model": MODEL,
+                "dataset": DATASET,
+                "datasetSize": RESULT_SIZE or size,
+                "threads": 1,
+                "elapsedTime": round(elapsed * 1000),
+                "numMachines": 1,
+                "cardinality": len(result),
+                "queryMode": "OPTIMIZED",
+                "iteration": iteration,
+                "querySelectivity": "increased",
+                "temporalRangeIndex": 0,
+            })
+            print(f"{query_id}, iteration {iteration + 1}: {round(elapsed * 1000)} ms, {len(result)} results")
