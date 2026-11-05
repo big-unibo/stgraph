@@ -18,6 +18,7 @@ import it.unibo.tests.systems.Neo4JQuery
 import it.unibo.tests.systems.PGAgeQuery
 import it.unibo.tests.systems.neo4jDriver
 import it.unibo.tests.systems.pgAgeConnection
+import it.unibo.tests.systems.queryTemplate
 import org.neo4j.driver.Session
 import java.io.File
 import java.sql.Connection
@@ -69,24 +70,27 @@ class TestMimicQuery {
         const val PGAGE_PASSWORD = "password"
     }
 
+    /*
+     * The competitors' queries are templates, src/test/resources/queries/mimic/<system>/<Q1|Q2|Q3>.txt (as the ones of
+     * SmartBench), with {FILTER} replaced by [mimicFilter] and, for PGAge, {GRAPH} by the graph
+     */
+
     /** A query on the Neo4j loaded by MimicIVNeo4J, on an open [session] (runner of it.unibo.tests.systems) */
     abstract class QNeo4J(session: Session) : Neo4JQuery(session) {
         override val queryId = this::class.simpleName.toString()
-        abstract fun query(): String
-        override fun statement() = query()
+        override fun statement() = queryTemplate("mimic", "neo4j", queryId.removeSuffix("Neo4J"), mapOf("FILTER" to mimicFilter))
     }
 
     /** A query on the PostgreSQL loaded by MimicIVPGAge, on an open [connection] (see pgAgeConnection) */
     abstract class QPgAge(val graph: String, connection: Connection) : PGAgeQuery(connection) {
         override val queryId = this::class.simpleName.toString()
-        abstract fun query(): String
-        override fun statement() = query()
+        override fun statement() = queryTemplate("mimic", "pgage", queryId.removeSuffix("PGAge"), mapOf("FILTER" to mimicFilter, "GRAPH" to graph))
     }
 
     /** A query on the graph created by MimicIVGraphix */
     abstract class QGraphix(size: String) : GraphixQuery("mimic_graphix_$size") {
         override val queryId = this::class.simpleName.toString()
-        protected val path = "FROM GRAPH Mimic MATCH (p:`Person`)-[:`hasParameters`]->(t:`TimeSeries`)-[:`hasMeasurement`]->(m:`Measurement`)"
+        override fun statement() = queryTemplate("mimic", "graphix", queryId.removeSuffix("Graphix"), mapOf("FILTER" to mimicFilter))
     }
 
     class Q1(val graph: Graph, pId: Long = Long.MIN_VALUE, c: Long = Long.MIN_VALUE) : Q() {
@@ -107,29 +111,11 @@ class TestMimicQuery {
         }
     }
 
-    class Q1Neo4J(session: Session) : QNeo4J(session) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE p.c > 25000 AND m.value > $mimicFilter RETURN p, t, m"
-    }
+    class Q1Neo4J(session: Session) : QNeo4J(session)
 
-    class Q1PGAge(graph: String, connection: Connection) : QPgAge(graph, connection) {
-        override fun query(): String = """
-            SELECT *
-            FROM (
-                SELECT *
-                FROM cypher('$graph'::name, $$
-                    MATCH (p)--(t)
-                    WHERE p.c > 25000
-                    RETURN DISTINCT p, t, id(t)
-                $$) AS (p agtype, t agtype, tsid bigint)
-            ) t
-            JOIN $graph.measurements m ON m.ts_id = t.tsid
-            WHERE m.value > $mimicFilter;
-        """.trimIndent()
-    }
+    class Q1PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
 
-    class Q1Graphix(size: String) : QGraphix(size) {
-        override fun statement(): String = "$path WHERE p.c > 25000 AND m.`value` > $mimicFilter SELECT p, t, m;"
-    }
+    class Q1Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `get measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
@@ -155,29 +141,11 @@ class TestMimicQuery {
         }
     }
 
-    class Q2Neo4J(session: Session) : QNeo4J(session) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE p.c > 25000 RETURN labels(m), avg(m.value)"
-    }
+    class Q2Neo4J(session: Session) : QNeo4J(session)
 
-    class Q2PGAge(graph: String, connection: Connection) : QPgAge(graph, connection) {
-        override fun query(): String = """
-                SELECT m.label, avg(m.value)
-                FROM (
-                    SELECT *
-                    FROM cypher('$graph'::name, $$
-                        MATCH (p)--(t)
-                        WHERE p.c > 25000
-                        RETURN DISTINCT id(t)
-                    $$) AS (tsid bigint)
-                ) t
-                JOIN $graph.measurements m ON m.ts_id = t.tsid
-                GROUP BY m.label
-        """.trimIndent()
-    }
+    class Q2PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
 
-    class Q2Graphix(size: String) : QGraphix(size) {
-        override fun statement(): String = "$path WHERE p.c > 25000 GROUP BY m.`label` AS lbl SELECT lbl, AVG(m.`value`) AS avgValue;"
-    }
+    class Q2Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `get average measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
@@ -202,30 +170,11 @@ class TestMimicQuery {
         }
     }
 
-    class Q3Neo4J(session: Session) : QNeo4J(session) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE p.c > 25000 AND m.value > $mimicFilter RETURN m.abbreviation, avg(m.value)"
-    }
+    class Q3Neo4J(session: Session) : QNeo4J(session)
 
-    class Q3PGAge(graph: String, connection: Connection) : QPgAge(graph, connection) {
-        override fun query(): String = """
-                SELECT m.label, avg(m.value)
-                FROM (
-                    SELECT *
-                    FROM cypher('$graph'::name, $$
-                        MATCH (p)--(t)
-                        WHERE p.c > 25000
-                        RETURN DISTINCT id(t)
-                    $$) AS (tsid bigint)
-                ) t
-                JOIN $graph.measurements m ON m.ts_id = t.tsid
-                WHERE m.value > $mimicFilter
-                GROUP BY m.label
-        """.trimIndent()
-    }
+    class Q3PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
 
-    class Q3Graphix(size: String) : QGraphix(size) {
-        override fun statement(): String = "$path WHERE p.c > 25000 AND m.`value` > $mimicFilter GROUP BY m.`label` AS lbl SELECT lbl, AVG(m.`value`) AS avgValue;"
-    }
+    class Q3Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `filter and group by measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->

@@ -1,0 +1,1 @@
+FROM GRAPH Mimic MATCH (p:`Person`)-[:`hasParameters`]->(t:`TimeSeries`)-[:`hasMeasurement`]->(m:`Measurement`) WHERE p.c > 25000 AND m.`value` > {FILTER} SELECT p, t, m;

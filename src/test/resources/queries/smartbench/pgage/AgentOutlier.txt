@@ -3,7 +3,7 @@ WITH env_device AS (
     SELECT *
     FROM cypher(
         'smartbench_graph', $$
-            MATCH (environment:Infrastructure)-[:hasInfrastructure]-(device:Sensor)
+            MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor)
             RETURN DISTINCT environment AS environment_node,
                             device AS device_node,
                             device.id AS device_id

@@ -14,5 +14,4 @@ SELECT DISTINCT
     de.environment_node
 FROM device_env de
 JOIN public.measurements m
-    ON m.sensor_id = de.device_id
-WHERE m.val > 0;
+    ON m.sensor_id = de.device_id;

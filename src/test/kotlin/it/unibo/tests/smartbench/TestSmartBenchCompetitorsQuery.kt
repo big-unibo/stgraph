@@ -12,7 +12,7 @@ import java.sql.Connection
  * The SmartBench queries of the competitors (Neo4j, PGAge, Graphix), with the same query ids as STGraph
  * (TestSmartBenchQuery). Not tests, since the CI covers STGraph only: they run in the evaluation (SmartBenchEvaluation).
  *
- * Each query is a template, src/test/resources/smartbench/queries/<system>/<queryId>.txt: as in the Python evaluation,
+ * Each query is a template, src/test/resources/queries/smartbench/<system>/<queryId>.txt: as in the Python evaluation,
  * {TSTAMPFROM_PARAM} and {TSTAMPTO_PARAM} become the time window [rangeIndex] of [selectivity] in time_constraints.yaml.
  * The runners (connections, timing) are the ones of it.unibo.tests.systems, shared with MIMIC-IV.
  */
@@ -23,7 +23,7 @@ class TestSmartBenchCompetitorsQuery {
 
         /** The text of the query [queryId] of [system] on [size], with the time window [rangeIndex] of [selectivity] */
         fun queryText(system: String, queryId: String, size: String, selectivity: String = "increased", rangeIndex: Int = 0): String {
-            val path = "smartbench/queries/$system/$queryId.txt"
+            val path = "queries/smartbench/$system/$queryId.txt"
             val template = TestSmartBenchCompetitorsQuery::class.java.classLoader.getResource(path)?.readText()?.trim()
                 ?: error("Query not found in the classpath: $path")
             if (!template.contains("{TSTAMPFROM_PARAM}") && !template.contains("{TSTAMPTO_PARAM}")) return template
