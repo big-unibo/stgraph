@@ -1,4 +1,5 @@
 import csv
+import gzip
 from hygraph_core import HyGraph, TimeSeriesMetadata
 import pandas as pd
 import os
@@ -20,7 +21,7 @@ def load_nodes(csv_file, hygraph: HyGraph, label_col=":LABEL", id=1, key=[]):
     # ------------------------------------------------------------------
     # SPECIAL HANDLING FOR *_measurement.csv
     # ------------------------------------------------------------------
-    if filename.endswith("measurement.csv") or filename.endswith(
+    if filename.endswith(("measurement.csv", "measurement.csv.gz")) or filename.endswith(
         "measurement.small.csv"
     ):
         df = pd.read_csv(csv_file)
@@ -99,7 +100,7 @@ def load_nodes(csv_file, hygraph: HyGraph, label_col=":LABEL", id=1, key=[]):
     # ------------------------------------------------------------------
     # DEFAULT CSV NODE LOADER
     # ------------------------------------------------------------------
-    with open(csv_file, newline="", encoding="utf-8") as f:
+    with (gzip.open if csv_file.endswith(".gz") else open)(csv_file, "rt", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
 
         for row in reader:

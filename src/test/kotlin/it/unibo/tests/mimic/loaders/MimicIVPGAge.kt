@@ -1,22 +1,25 @@
 package it.unibo.tests.mimic.loaders
 
 import it.unibo.graph.asterixdb.AsterixDBTS
+import it.unibo.graph.utils.getTime
 import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import it.unibo.tests.systems.pgAgeConnection
-import java.io.File
+import org.postgresql.copy.CopyManager
+import org.postgresql.core.BaseConnection
+import java.io.StringReader
 import java.sql.*
 
-/** Whether MIMIC-IV is loaded into PGAge from a CSV file (COPY) rather than with batches of INSERTs: above the small sizes, as [neo4jCsv] */
+/** Whether MIMIC-IV is loaded into PGAge with COPY (CSV from STDIN) rather than with batches of INSERTs: above the small sizes, as [neo4jCsv] */
 fun pgageCsv(limit: Long): Boolean = limit >= 5_000_000
 
 /**
  * Loads MIMIC-IV into PGAge, in two ways that produce the same database: the graph (Person and TimeSeries vertices) is
  * always created through the driver, one Cypher statement each; the measurements go to <graph>.measurements:
  * - without [csv], with batches of [batchSize] INSERTs through the driver;
- * - with [csv], to the CSV file datasets/dump/pgage/mimic/<limit>/ts.csv (text fields quoted, so that COPY reads back
- *   the same strings), then [csvImport] (if any) copies it into the table (e.g., COPY ... FROM ... CSV) and returns the
- *   time of the copy, added to the time-series time.
+ * - with [csv], with the same batches streamed by COPY ... FROM STDIN (CSV, text fields quoted, so that COPY reads back
+ *   the same strings), as SmartBenchPGAge, the primary key dropped before the load and added back after it (index
+ *   time).
  */
 class MimicIVPGAge(
     limit: Long,
@@ -26,17 +29,13 @@ class MimicIVPGAge(
     // The PostgreSQL of MIMIC-IV the data is read from (url, user and password: the one of PGAge)
     postgres: PostgresConfig = PostgresConfig(),
     val csv: Boolean = pgageCsv(limit),
-    private val csvImport: ((File) -> Long)? = null,
     private val batchSize: Int = 20_000
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres)  {
     private val graphName = graphName(limit)
     // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path),
     // applied once: not at every statement, inside the timed ingestion. Without csv, multi-row INSERTs from a batch
     private val conn: Connection = pgAgeConnection(url, user, password, mapOf("reWriteBatchedInserts" to "true"))
-    private val baseDir = File("datasets/dump/pgage/mimic/$limit").apply { mkdirs() }
-    private val csvFile = File("$baseDir/ts.csv")
-    private val tsWriter = if (csv) csvFile.printWriter() else null
-    // Without csv: the measurements not inserted yet
+    // The measurements not loaded yet
     private val pending = mutableListOf<List<Any?>>()
 
     var pId = 0
@@ -102,6 +101,10 @@ class MimicIVPGAge(
                 )
                 """.trimIndent())
 
+            // The primary key: kept during the INSERTs; with csv, dropped before the COPY and added back after it (index
+            // time), as SmartBenchPGAge
+            if (csv) safeExec("ALTER TABLE measurements DROP CONSTRAINT IF EXISTS measurements_pkey")
+
             // Back to AGE for the Cypher statements of the ingestion
             safeExec("SET search_path = ag_catalog, public;")
         }
@@ -152,21 +155,24 @@ class MimicIVPGAge(
         val values = listOf<Any?>(
             (++measurementCounter).toLong(), ts, row.timestamp, row.value as Long, tmp.abbreviation, tmp.itemid.toLong(), tmp.abbreviation, tmp.category, tmp.unitname
         )
-        if (tsWriter != null) {
-            // A null as an unquoted empty field, which COPY reads as NULL
-            tsWriter.write(values.joinToString(",") { if (it is String) quote(it) else it?.toString() ?: "" } + "\n")
-        } else {
-            pending += values
-            if (pending.size >= batchSize || isLast) flush()
-        }
+        pending += values
+        if (pending.size >= batchSize || isLast) flush()
     }
 
     /** A CSV field: quoted, quotes doubled (COPY reads back the same string, also when empty or with commas) */
     private fun quote(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
 
-    /** Without csv: inserts the [pending] measurements */
+    /** Loads the [pending] measurements: with [csv] one COPY, otherwise one batch of INSERTs */
     private fun flush() {
         if (pending.isEmpty()) return
+        if (csv) {
+            // A null as an unquoted empty field, which COPY reads as NULL
+            val rows = pending.joinToString("") { values -> values.joinToString(",") { if (it is String) quote(it) else it?.toString() ?: "" } + "\n" }
+            CopyManager(conn.unwrap(BaseConnection::class.java))
+                .copyIn("COPY $graphName.measurements ($COLUMNS) FROM STDIN WITH (FORMAT csv)", StringReader(rows))
+            pending.clear()
+            return
+        }
         conn.autoCommit = false
         try {
             conn.prepareStatement("INSERT INTO $graphName.measurements ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").use { st ->
@@ -183,18 +189,23 @@ class MimicIVPGAge(
         pending.clear()
     }
 
-    /** As the skeleton; with [csv], the CSV file is then copied by [csvImport], if any (time-series time) */
+    private var indexTime = 0L
+    override fun getIndexTime(): Long = indexTime
+
+    /** As the skeleton; with [csv], the primary key, dropped before the load, is then added back (index time) */
     override fun loadData() {
         addGs()
         addTs()
+        flush()
+        if (csv) indexTime = getTime {
+            conn.createStatement().use { it.execute("ALTER TABLE $graphName.measurements ADD CONSTRAINT measurements_pkey PRIMARY KEY (ts_id, label, timestamp)") }
+        }
         close()
-        if (csv && csvImport != null) tsTime += csvImport.invoke(csvFile)
     }
 
     override fun close() {
         flush()
         conn.close()
-        tsWriter?.close()
     }
 
     companion object {

@@ -1,6 +1,5 @@
 package it.unibo.tests.evaluation
 
-import it.unibo.stats.Config
 import it.unibo.stats.TestConfig
 import it.unibo.tests.mimic.MimicEvaluation
 import it.unibo.tests.smartbench.SmartBenchEvaluation
@@ -15,13 +14,11 @@ import kotlin.system.exitProcess
  * "specificRuns" (./gradlew evaluateSpecificRuns), the runs of the specificRuns section, one after the other. With
  * "ingestion" or "queries" (./gradlew evaluateIngestion, evaluateQueries, evaluateSpecificRunsIngestion,
  * evaluateSpecificRunsQueries), only that phase: the queries run on the data already loaded (see the volumes section).
- * With "fastLoad" and a system (./gradlew fastLoadNeo4j, fastLoadPgAge), the bulk load of SmartBench into it, for each
- * size of the evaluation section (see SmartBenchEvaluation.fastLoad). The results go to results/
+ * The results go to results/
  * (see evaluation/README.md). Run from the repository root. A system that fails is reported at the end, the others go on.
  */
 fun main(args: Array<String>) {
     val config = TestConfig.loadConfig()
-    if ("fastLoad" in args) fastLoad(config, args.getOrNull(args.indexOf("fastLoad") + 1) ?: error("fastLoad needs a system"))
     val byRuns = "specificRuns" in args
     val onlyIngestion = "ingestion" in args
     val onlyQueries = "queries" in args
@@ -71,26 +68,6 @@ fun main(args: Array<String>) {
     // Explicit exit: the JVM would otherwise wait for the threads left alive (e.g., the thread pools of the queries of
     // STGraph, see Query.kt) and ./gradlew would never end
     exitProcess(0)
-}
-
-/**
- * The bulk load of SmartBench into [system] (neo4j or pgage), for each size of the evaluation section (default:
- * datasets.smartbench.sizes), to query it afterwards; then the process ends
- */
-private fun fastLoad(config: Config, system: String): Nothing {
-    val evaluation = EvaluationConfig.load()
-    val sizes = evaluation.sizes ?: config.datasets["smartbench"]?.sizes?.map { TestConfig.normalizeSize(it) }
-        ?: error("No sizes for the dataset smartbench in test_config.yml")
-    progress("fast load | $system | smartbench (sizes: ${sizes.joinToString()}), deploy: ${evaluation.deploy}, data folders: " +
-        evaluation.volumeFolders.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "the Docker volumes" } +
-        ", resources: " + evaluation.resources.entries.joinToString { (k, v) -> "$k=$v" }.ifEmpty { "those of the compose files (no CPU or memory limit, conf/)" })
-    val failures = sizes.filter { size ->
-        runCatching { SmartBenchEvaluation(config, evaluation, size).fastLoad(system) }
-            .onFailure { progress("fast load | $system | smartbench $size: FAILED ($it)"); it.printStackTrace() }
-            .isFailure
-    }
-    progress("fast load done" + if (failures.isEmpty()) "" else ", failed: ${failures.joinToString()}")
-    exitProcess(if (failures.isEmpty()) 0 else 1)
 }
 
 private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<String, List<String>>) {

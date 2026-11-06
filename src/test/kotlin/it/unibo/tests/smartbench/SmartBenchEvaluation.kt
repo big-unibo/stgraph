@@ -5,12 +5,9 @@ import it.unibo.stats.Config
 import it.unibo.stats.SetupConfig
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
-import it.unibo.tests.evaluation.datasetAvailable
 import it.unibo.tests.evaluation.deployed
-import it.unibo.tests.evaluation.downloadDataset
-import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
-import it.unibo.tests.evaluation.seconds
+import it.unibo.graph.utils.getTime
 import it.unibo.tests.systems.neo4jDriver
 import it.unibo.tests.systems.pgAgeConnection
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QGraphix
@@ -19,9 +16,8 @@ import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QPGAge
 import it.unibo.tests.smartbench.loaders.SmartBenchDataLoader
 import it.unibo.tests.smartbench.loaders.SmartBenchGraphix
 import it.unibo.tests.smartbench.loaders.SmartBenchNeo4J
-import it.unibo.tests.smartbench.loaders.SmartBenchNeo4JFast
+import it.unibo.tests.smartbench.loaders.neo4jCsv
 import it.unibo.tests.smartbench.loaders.SmartBenchPGAge
-import it.unibo.tests.smartbench.loaders.SmartBenchPGAgeFast
 import it.unibo.tests.smartbench.loaders.SmartBenchSTGraph
 import it.unibo.tests.smartbench.queries.*
 import java.io.File
@@ -70,86 +66,44 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             }
         }
 
-    /**
-     * Loads SmartBench into [system] (neo4j or pgage) in bulk, to query it afterwards (./gradlew fastLoadNeo4j,
-     * fastLoadPgAge, then e.g. evaluateQueries): the system is left with the data of its ingestion (same nodes, edges,
-     * rows and indexes), in its data folder (volumes section), but the load is not timed and nothing goes to results/.
-     * - pgage: SmartBenchPGAgeFast on the system started as for the evaluation (deploy);
-     * - neo4j: the CSV files of SmartBenchNeo4JFast (datasets/import/neo4j/<size>, removed at the end; from the Cypher
-     *   dump, or from the JSON dataset for a size without one, e.g. extralarge), imported with
-     *   neo4j-admin into an empty database while Neo4j is stopped, then the range index of SmartBenchNeo4J; it starts
-     *   and stops Neo4j itself, so it needs deploy: true.
-     */
-    fun fastLoad(system: String) {
-        val run = "fast load | $system | $dataset $size"
-        val start = System.currentTimeMillis()
-        when (system) {
-            "pgage" -> {
-                download("datasets/original/smartbench/$size", "smartbench", needed = true)
-                deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
-                    progress("$run: started")
-                    val loader = SmartBenchPGAgeFast(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD)
-                    try {
-                        loader.loadData()
-                    } finally {
-                        loader.close()
-                    }
-                    progress("$run: done in ${seconds(System.currentTimeMillis() - start)}; ${loader.getGSCardinality()} graph elements, ${loader.getTSCardinality()} events")
-                }
-            }
-            "neo4j" -> {
-                check(evaluation.deploy) { "The fast load of Neo4j stops and starts Neo4j itself: it needs deploy: true" }
-                downloadNeo4jFast()
-                val importDir = File("datasets/import/neo4j/$size").absoluteFile
-                val loader = SmartBenchNeo4JFast(size)
-                progress("$run: writing the files of the import ($importDir)")
-                val importArgs = loader.writeImportFiles(importDir.toPath())
-                progress("$run: ${loader.graphNodes} graph nodes, ${loader.events} events, ${loader.relationships} relationships; importing")
-                try {
-                    runCommand(listOf("docker", "compose", "-f", NEO4J_COMPOSE, "stop"), environment)
-                    // The database (neo4j) before the options: after them, --relationships (several files) would take it as a file
-                    runCommand(
-                        listOf("docker", "compose", "-f", NEO4J_COMPOSE, "run", "--rm", "--no-deps", "-v", "$importDir:/import:ro", "neo4j",
-                            "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination", "--id-type=integer") + importArgs,
-                        environment
-                    )
-                } finally {
-                    importDir.deleteRecursively()
-                }
-                deployed(true, NEO4J_COMPOSE, env = environment, ready = ::neo4jReady) {
-                    neo4jDriver(NEO4J_URI).use { driver -> driver.session().use { SmartBenchNeo4J.createIndexes(it) } }
-                }
-                progress("$run: done in ${seconds(System.currentTimeMillis() - start)}")
-            }
-            else -> error("No fast load for $system: only neo4j and pgage")
-        }
-    }
-
     private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }
+
+    /**
+     * Imports the CSV files of SmartBenchNeo4J in [dir] ([args]: the files, read in /import) into the database of the
+     * Neo4j of the evaluation (replaced), as MimicEvaluation.neo4jImport: Neo4j stopped, neo4j-admin database import
+     * full, Neo4j started again. Returns the time of the import alone (not of the stop and start)
+     */
+    private fun neo4jImport(dir: File, args: List<String>): Long {
+        val compose = listOf("docker", "compose", "-f", NEO4J_COMPOSE)
+        runCommand(compose + "stop", environment)
+        // The database (neo4j) before the options: after them, --relationships (several files) would take it as a file
+        val time = getTime {
+            runCommand(
+                compose + listOf("run", "--rm", "--no-deps", "-v", "${dir.absolutePath}:/import:ro", "neo4j",
+                    "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination", "--id-type=integer") + args,
+                environment
+            )
+        }
+        runCommand(compose + listOf("start", "neo4j"), environment)
+        val deadline = System.currentTimeMillis() + 15 * 60 * 1000
+        while (runCatching { neo4jReady() }.isFailure) {
+            check(System.currentTimeMillis() < deadline) { "Neo4j not ready after the import" }
+            Thread.sleep(2000)
+        }
+        return time
+    }
 
     // Three successful connections in a row: PostgreSQL restarts once at the end of its initialization
     private fun pgageReady() {
         DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } }
     }
 
-    /**
-     * The data of the fast load of Neo4j: its Cypher dump (smartbench/neo4j <size>) when it is on disk or on the server,
-     * as for the sizes of the paper; otherwise (e.g., extralarge) the JSON dataset of the other systems
-     */
-    private fun downloadNeo4jFast() {
-        if (SmartBenchNeo4JFast.hasCypherDump(size)) return
-        if (evaluation.download && datasetAvailable("smartbench/neo4j", size)) {
-            download("${SmartBenchNeo4JFast.CYPHER_DUMPS}/$size", "smartbench/neo4j", needed = true)
-        } else {
-            progress("fast load | neo4j | $dataset $size: no Cypher dump, the JSON dataset is loaded")
-            download("datasets/original/smartbench/$size", "smartbench", needed = true)
-        }
-    }
-
     private fun neo4j() {
-        download("datasets/original/smartbench/neo4j/$size", "smartbench/neo4j")
+        download("datasets/original/smartbench/$size", "smartbench")
         deployed(evaluation.deploy, NEO4J_COMPOSE, env = environment, ready = ::neo4jReady) {
-            repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI) } }
+            // As MimicEvaluation: from medium on, CSV files imported with neo4j-admin, which stops and starts Neo4j
+            if (neo4jCsv(size) && evaluation.ingestionIterations > 0) check(evaluation.deploy) { "The CSV import of Neo4j ($size) stops and starts Neo4j itself: it needs deploy: true" }
+            repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI, csvImport = ::neo4jImport) } }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
                     queries("neo4j", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QNeo4J(queryId, size, session, selectivity, rangeIndex) }
@@ -178,36 +132,15 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     /**
      * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables.
-     * AeonG up to medium only, with the sizes of the old evaluation (same time windows: medium -> large); HyGraph
-     * with the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems, mounted by its
-     * compose file
+     * AeonG with the sizes of the old evaluation (same time windows: small, medium -> large, large -> big); HyGraph with
+     * the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems, mounted by its compose file
      */
     private fun selfContained(system: String) {
+        val oldSize = if (system == "hygraph") size
+            else mapOf("small" to "small", "medium" to "large", "large" to "big")[size] ?: error("$system runs on small, medium and large only")
+        if (system == "hygraph") download("datasets/original/smartbench/$size", "smartbench")
         // HyGraph records in results/dt_graph as the other systems: the model (with the label of the run) and the size
-        val recorded = mapOf("MODEL" to evaluation.model(system), "RESULT_SIZE" to size)
-        if (system == "hygraph") {
-            download("datasets/original/smartbench/$size", "smartbench")
-            selfContained(system, size, queryIds, recorded)
-            return
-        }
-        val oldSize = mapOf("xsmall" to "xsmall", "small" to "small", "medium" to "large")[size]
-        if (oldSize == null) {
-            progress("$system | $dataset $size: skipped, it runs up to medium only")
-            return
-        }
-        selfContained(system, oldSize, queryIds, recorded + ("AEONG_DATASETS" to aeongDataset(oldSize)), singlePhase = true)
-    }
-
-    /** The folder of the Cypher dump of AeonG, downloaded on the host: its image cannot reach the server (TLS 1.3 only) */
-    private fun aeongDataset(oldSize: String): String {
-        val dump = File("datasets/original/smartbench/aeong/$oldSize.cypher")
-        if (!dump.exists() && evaluation.ingestionIterations > 0) {
-            check(evaluation.download) { "Missing $dump: run ./downloadDataset.sh smartbench/aeong $oldSize.cypher, or set download: true" }
-            progress("download | smartbench/aeong $oldSize: started")
-            downloadDataset("smartbench/aeong", dump.name)
-            progress("download | smartbench/aeong $oldSize: done")
-        }
-        return dump.absoluteFile.parentFile.apply { mkdirs() }.path
+        selfContained(system, oldSize, queryIds, mapOf("MODEL" to evaluation.model(system), "RESULT_SIZE" to size))
     }
 
     companion object {

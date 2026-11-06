@@ -70,6 +70,17 @@ class MimicIVSTGraph(
         }
     }
 
+    private var indexTime = 0L
+    override fun getIndexTime(): Long = indexTime
+
+    /** As the skeleton, with the close of the feeds timed as index time, as SmartBenchDataLoader (no spatial index: no locations) */
+    override fun loadData() {
+        addGs()
+        addTs()
+        indexTime = getTime { t.close() }
+        close()
+    }
+
     override fun awaitLast(tsId: Long, row: TSRecord) {
         while (runCatching { tsMap[tsId]!!.get(row.timestamp) }.isFailure) Thread.sleep(1)
     }

@@ -4,6 +4,7 @@ appended to the ones of the other systems (results/dt_graph, mounted on /hygraph
 their columns: as it.unibo.stats.loadDataset (ingestion) and it.unibo.stats.runQuery (queries).
 """
 import csv
+import gzip
 import os
 import uuid
 from time import time
@@ -53,7 +54,7 @@ def append(path, row):
 
 
 def rows(path):
-    with open(path) as f:
+    with (gzip.open if path.endswith(".gz") else open)(path, "rt") as f:
         return sum(1 for _ in f) - 1
 
 
@@ -61,11 +62,11 @@ def ingest(size):
     """Loads the persons (graph time) and the measurements as time series (time-series time): times in ms"""
     hygraph = HyGraph()
     start = millis()
-    hygraph, id = load_nodes(f"{DATA}/{size}/person.csv", hygraph=hygraph, id=0)
+    hygraph, id = load_nodes(f"{DATA}/{size}/person.csv.gz", hygraph=hygraph, id=0)
     graph_end = millis()
-    hygraph, _ = load_nodes(f"{DATA}/{size}/measurement.csv", hygraph=hygraph, id=id, label_col="label")
+    hygraph, _ = load_nodes(f"{DATA}/{size}/measurement.csv.gz", hygraph=hygraph, id=id, label_col="label")
     end = millis()
-    persons = rows(f"{DATA}/{size}/person.csv")
+    persons = rows(f"{DATA}/{size}/person.csv.gz")
     series = len(hygraph.graph.nodes) - persons
     append(INGESTION_STATS, {
         "test_id": str(uuid.uuid4()),
@@ -84,7 +85,7 @@ def ingest(size):
         "tsStorage": -1,
         "gsStorage": -1,
         # As the other loaders: the events, and the persons plus their time series (one per person and item)
-        "tsCard": rows(f"{DATA}/{size}/measurement.csv"),
+        "tsCard": rows(f"{DATA}/{size}/measurement.csv.gz"),
         "gsCard": persons + series,
     })
     return hygraph

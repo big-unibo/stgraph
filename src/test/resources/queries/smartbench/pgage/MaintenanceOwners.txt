@@ -1,7 +1,7 @@
 WITH device_env_owner AS (
     SELECT *
     FROM cypher(
-        'smartbench_graph', $$
+        '{GRAPH}', $$
             MATCH (device:Sensor)-[:hasOwner]-(owner),
                   (tempe:Temperature)-[:hasTemperature]-(device:Sensor)-[:hasCoverage]-(environment:Infrastructure)
             RETURN DISTINCT device.id AS device_id,
@@ -14,7 +14,7 @@ SELECT
     deo.environment_id,
     deo.owner_id
 FROM device_env_owner deo
-JOIN public.measurements m
+JOIN {GRAPH}.measurements m
     ON m.sensor_id = deo.device_id
 WHERE m.val >= 65
   AND m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)

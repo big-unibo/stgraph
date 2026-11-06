@@ -1,5 +1,6 @@
 package it.unibo.tests.mimic.loaders
 
+import it.unibo.graph.utils.getTime
 import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import it.unibo.tests.systems.neo4jDriver
@@ -8,6 +9,7 @@ import org.neo4j.driver.Session
 import java.io.File
 import java.io.PrintWriter
 import java.io.Writer
+import java.util.zip.GZIPOutputStream
 
 /** Whether MIMIC-IV is loaded into Neo4j from CSV files (neo4j-admin import) rather than one node at a time: above the small sizes */
 fun neo4jCsv(limit: Long): Boolean = limit >= 5_000_000
@@ -18,17 +20,20 @@ fun neo4jCsv(limit: Long): Boolean = limit >= 5_000_000
  * - (:TimeSeries)-[:HAS_EVENT]->(:<abbreviation> {measurement_id, ts_id, category, abbreviation, itemid, timestamp, value,
  *   unitname (if any)});
  * the ids and the numbers are integers (typed columns of the CSV files, imported with --id-type=integer), the rest strings.
- * With [csv], the nodes and relationships are written to CSV files (datasets/dump/neo4j/mimic/<limit>), then
+ * With [csv], the nodes and relationships are written to gzipped CSV files (datasets/dump/neo4j/mimic/<limit>), then
  * [csvImport] (if any) imports them (e.g., neo4j-admin database import full) and returns the time of the import, added
  * to the time-series time. Without [csv], the Person and TimeSeries nodes are created one at a time through [uri], the
  * measurements in batches of [batchSize], as MimicIVPGAge: a batch is sent when full and at the end of each time series,
  * in one transaction (one UNWIND per label, since a label cannot be a parameter).
+ * In both ways, after the load (index time), as SmartBenchNeo4J: a range index on the timestamps of the measurements, one
+ * per label (a range index has one label), awaited until online; with [csv], through a new connection (Neo4j restarted
+ * by the import). The clean-up drops these indexes, so that they are built after the load, not maintained during it.
  */
 class MimicIVNeo4J(
     limit: Long,
-    uri: String = "bolt://localhost:7687",
-    user: String? = "neo4j",
-    password: String? = "password",
+    private val uri: String = "bolt://localhost:7687",
+    private val user: String? = "neo4j",
+    private val password: String? = "password",
     val csv: Boolean,
     postgres: PostgresConfig = PostgresConfig(),
     private val csvImport: ((File) -> Long)? = null,
@@ -48,13 +53,13 @@ class MimicIVNeo4J(
         mkdirs()
     }
 
-    // Only with csv: otherwise the CSV files of a previous load (also read by HyGraph) are kept as they are
-    private fun writer(name: String): PrintWriter = if (csv) File("$baseDir/$name").printWriter() else PrintWriter(Writer.nullWriter())
-    private val tsWriter = writer("ts.csv")
-    private val hasParamsWriter = writer("has_parameters.csv")
-    private val measurementWriter = writer("measurement.csv")
-    private val hasMeasurementWriter = writer("has_measurement.csv")
-    private val personWriter = writer("person.csv")
+    // Only with csv (gzipped, as SmartBenchNeo4J): otherwise the CSV files of a previous load (also read by HyGraph) are kept as they are
+    private fun writer(name: String): PrintWriter = if (csv) PrintWriter(GZIPOutputStream(File("$baseDir/$name").outputStream()).bufferedWriter()) else PrintWriter(Writer.nullWriter())
+    private val tsWriter = writer("ts.csv.gz")
+    private val hasParamsWriter = writer("has_parameters.csv.gz")
+    private val measurementWriter = writer("measurement.csv.gz")
+    private val hasMeasurementWriter = writer("has_measurement.csv.gz")
+    private val personWriter = writer("person.csv.gz")
 
     private var tsCounter: Long = 0
     private var measurementCounter: Long = 0
@@ -77,9 +82,26 @@ class MimicIVNeo4J(
         personWriter.flush()
     }
 
-    /** Deletes all nodes and relationships in the database (in batches: a single transaction may not fit the heap) */
+    /**
+     * Deletes the range indexes on the timestamps (built after the load, see [createIndexes]) and all nodes and
+     * relationships in the database (in batches: a single transaction may not fit the heap)
+     */
     private fun clearGraph() {
-        session?.run("MATCH (n) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS")?.consume()
+        val session = session ?: return
+        session.run("SHOW RANGE INDEXES YIELD name, properties WHERE properties = ['timestamp'] RETURN name").list()
+            .forEach { session.run("DROP INDEX `${it[0].asString()}` IF EXISTS").consume() }
+        session.run("MATCH (n) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS").consume()
+    }
+
+    // The labels of the measurements loaded (their abbreviations), for the indexes
+    private val labels = mutableSetOf<String>()
+    private var indexTime = 0L
+    override fun getIndexTime(): Long = indexTime
+
+    /** A range index on the timestamps of each label of the measurements, awaited until online */
+    private fun createIndexes(session: Session) {
+        labels.forEach { session.run("CREATE RANGE INDEX IF NOT EXISTS FOR (n:${label(it)}) ON (n.timestamp)").consume() }
+        session.run("CALL db.awaitIndexes(3600)").consume()
     }
 
     /**
@@ -151,6 +173,7 @@ class MimicIVNeo4J(
         val ts = tsMap[tsId]!!
         val tmp = tsCache[row.label.toInt()]!!
         val measurementId = ++measurementCounter
+        labels += tmp.abbreviation
         if (!csv) {
             pending += Triple(
                 label(tmp.abbreviation),
@@ -193,12 +216,22 @@ class MimicIVNeo4J(
         pending.clear()
     }
 
-    /** As the skeleton; with [csv], the CSV files are then imported by [csvImport], if any (time-series time) */
+    /**
+     * As the skeleton; with [csv], the CSV files are then imported by [csvImport], if any (time-series time); then the
+     * indexes (index time)
+     */
     override fun loadData() {
         addGs()
         addTs()
+        if (!csv) {
+            flush()
+            indexTime = getTime { createIndexes(session!!) }
+        }
         close()
-        if (csv && csvImport != null) tsTime += csvImport.invoke(baseDir)
+        if (csv && csvImport != null) {
+            tsTime += csvImport.invoke(baseDir)
+            indexTime = getTime { neo4jDriver(uri, user, password).use { d -> d.session().use { createIndexes(it) } } }
+        }
     }
 
     override fun close() {

@@ -2,7 +2,7 @@ WITH env_device AS (
     -- Each environment with the sensors that cover it (and have a time series), as STGraph
     SELECT *
     FROM cypher(
-        'smartbench_graph', $$
+        '{GRAPH}', $$
             MATCH (t:Temperature)<-[:hasTemperature]-(d:Sensor)-[:hasCoverage]-(e:Infrastructure)
             RETURN DISTINCT e AS environment_node,
                             d.id AS device_id
@@ -23,7 +23,7 @@ env_avg AS (
         e.environment_node,
         AVG(m.val) AS avg_temperature
     FROM env_geom e
-    JOIN public.measurements m
+    JOIN {GRAPH}.measurements m
         ON m.sensor_id = e.device_id
     WHERE m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
       AND m.time < to_timestamp({TSTAMPTO_PARAM} / 1000.0)
