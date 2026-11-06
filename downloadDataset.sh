@@ -27,14 +27,14 @@ fi
 
 URL="${BASE_URL}/${DATASET}/${FILENAME}"
 
-wget --no-check-certificate --tries=3 -O "$FILENAME" "$URL"
+curl -k -fL --retry 3 -o "$FILENAME" "$URL"
 
 if [[ ! -f "$FILENAME" ]]; then
     echo "Error: failed to download ${URL}"
     exit 1
 fi
-
 echo "Downloaded: $FILENAME"
+
 
 if [[ "$FILENAME" == *.tar.gz ]]; then
     echo "Extracting..."

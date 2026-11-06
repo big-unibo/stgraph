@@ -1,0 +1,36 @@
+services:
+  hygraph:
+    image: mp4sini/hygraph:latest
+    hostname: hygraph
+    container_name: hygraph
+    # No CPU or memory limit by default (free), as the other systems; HYGRAPH_CPUS, HYGRAPH_CPUSET (the cores) and
+    # HYGRAPH_MEMORY: the resources of a run (set by the evaluation from the resources section of test_config.yml). The
+    # client runs in this container too
+    cpus: ${HYGRAPH_CPUS:-0}
+    cpuset: "${HYGRAPH_CPUSET:-}"
+    mem_limit: ${HYGRAPH_MEMORY:-0}
+    # Set by the evaluation (src/test/kotlin/it/unibo/tests/evaluation, SmartBenchEvaluation)
+    environment:
+      - DATASET
+      - DATASET_SIZE
+      - INGESTION_ITERATIONS
+      - QUERY_ITERATIONS
+      - THREAD
+      - QUERY_SELECTIVITY
+      - QUERIES
+      # The model and the size recorded in results/dt_graph (set by MimicEvaluation and SmartBenchEvaluation)
+      - MODEL
+      - RESULT_SIZE
+    volumes:
+      # The local code (scripts and src/<dataset>), instead of the one copied into the image
+      - "./hygraph:/hygraph"
+      # The results of every system: HyGraph appends to results/dt_graph, as the other systems
+      - "../../../results:/hygraph/results"
+      # The time windows of the other systems (sizes of the evaluation)
+      - "../../../src/main/resources/time_constraints.yaml:/home/hygraph/resources/time_constraints.yaml:ro"
+      # MIMIC-IV: the CSV files of the import of Neo4j (datasets/dump/neo4j/mimic/<size>, written by MimicIVNeo4J)
+      - "../../../datasets/dump/neo4j/mimic:/home/hygraph/resources/datasets/mimic:ro"
+      # SmartBench: the dataset downloaded by the evaluation for the other systems (datasets/original/smartbench/<size>)
+      - "../../../datasets/original/smartbench:/home/hygraph/resources/datasets/smartbench:ro"
+    working_dir: /hygraph
+    command: [ "bash", "scripts/run_evaluation.sh" ]

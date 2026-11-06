@@ -1,0 +1,42 @@
+services:
+  graphix:
+    build:
+      context: .
+      args:
+        JAVA_VERSION: ${JAVA_VERSION:-21}
+        GRAPHIX_VERSION: ${GRAPHIX_VERSION:-0.4.1}
+    image: graphix:${GRAPHIX_VERSION:-0.4.1}
+    hostname: graphix
+    container_name: graphix
+    # No CPU or memory limit by default (free). GRAPHIX_CPUS, GRAPHIX_CPUSET (the cores), GRAPHIX_MEMORY and GRAPHIX_CONF
+    # (the folder of cc.conf): the resources and configuration of a run, e.g. cpus 1 for the single-core comparison of
+    # the paper (set by the evaluation from the resources section of test_config.yml, see evaluation/README.md)
+    cpus: ${GRAPHIX_CPUS:-0}
+    cpuset: "${GRAPHIX_CPUSET:-}"
+    mem_limit: ${GRAPHIX_MEMORY:-0}
+    command:
+      - /bin/bash
+      - -c
+      - |
+        cp /graphixsetup/cc.conf opt/local/conf/cc.conf
+        opt/local/bin/start-sample-cluster.sh
+        tail -f /dev/null
+    volumes:
+      - "${GRAPHIX_CONF:-./conf-free}:/graphixsetup/"
+      # Data of AsterixDB (storage and transaction log), kept when the container is recreated; GRAPHIX_DATA: a host
+      # directory instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml).
+      # Empty it when the partitions of cc.conf change
+      - "${GRAPHIX_DATA:-graphix-data}:/opt/graphix/opt/local/data"
+    # Host ports differ from the AsterixDB of STGraph (19001/19002/19006), so both can run on the same machine
+    ports:
+      - ${GRAPHIX_CC_PORT:-29001}:19001
+      # The web UI of the Graphix package calls the query API on localhost:19002 (hard-coded), so the API is also
+      # published there. When the AsterixDB of STGraph runs at the same time, set GRAPHIX_UI_API_PORT to a free
+      # port: the web UI will not work, the loaders (29002) will.
+      - ${GRAPHIX_UI_API_PORT:-29002}:19002
+      - ${GRAPHIX_UI_PORT:-29006}:19006
+      # Socket data feeds for event ingestion (outside the 10001-11000 range used by the AsterixDB of STGraph)
+      - 11001-11010:11001-11010
+
+volumes:
+  graphix-data:

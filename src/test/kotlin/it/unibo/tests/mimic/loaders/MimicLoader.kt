@@ -2,12 +2,22 @@ package it.unibo.tests.mimic.loaders
 import it.unibo.graph.asterixdb.dateToTimestamp
 import it.unibo.graph.utils.getTime
 import it.unibo.stats.Loader
+import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import java.io.File
 import java.sql.DriverManager
-import java.util.logging.Logger
 import kotlin.math.roundToLong
 import kotlin.random.Random
+
+/**
+ * Maximum number of events loaded for a MIMIC size of test_config.yml: "full" (all the events), a number
+ * (e.g. "1692200"), or "x" followed by a number (e.g. "x1692200") for the reduced dump used by the CI (xsmall),
+ * loaded with the same limit. The size itself, prefix included, names the dump folder and the dataverse.
+ */
+fun mimicLimit(size: String): Long = when {
+    size == "full" -> Long.MAX_VALUE
+    else -> size.replace("x", "").toLong()
+}
 
 interface MimicIVLoader: Loader {
     fun addPerson(subjectId: Int, c: Int): Long
@@ -15,11 +25,11 @@ interface MimicIVLoader: Loader {
     fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean)
 }
 
-abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, host: String = "localhost", port: Int = 5434, user: String = "postgres", pwd: String = "password"): MimicIVLoader {
-    val logger = Logger.getLogger(this.javaClass.name)
-    val url = "jdbc:postgresql://$host:$port/mimic-iv"
-    val user = user
-    val password = pwd
+/** Reads the MIMIC-IV data from the PostgreSQL [postgres] (datasets.mimic of test_config.yml) */
+abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres: PostgresConfig = PostgresConfig()): MimicIVLoader {
+    val url = "jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}"
+    val user = postgres.user
+    val password = postgres.password
     var gsTime: Long = 0
     var tsTime: Long = 0
     var gsCard: Long = 0
@@ -92,8 +102,35 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, host: St
         }
     }
 
+    /**
+     * The events read from PostgreSQL, before they are loaded: one primitive array per field (time series, item,
+     * timestamp, value), about 28 bytes per event instead of the ~150 of a Pair with a TSRecord, so that the large sizes
+     * fit in the heap; the TSRecord of an event is created when it is loaded
+     */
+    private class Events {
+        var size = 0
+            private set
+        private var tsIds = LongArray(1024)
+        private var itemIds = IntArray(1024)
+        private var timestamps = LongArray(1024)
+        private var values = LongArray(1024)
+
+        fun add(tsId: Long, itemId: Int, timestamp: Long, value: Long) {
+            if (size == tsIds.size) {
+                val capacity = tsIds.size * 2
+                tsIds = tsIds.copyOf(capacity); itemIds = itemIds.copyOf(capacity)
+                timestamps = timestamps.copyOf(capacity); values = values.copyOf(capacity)
+            }
+            tsIds[size] = tsId; itemIds[size] = itemId; timestamps[size] = timestamp; values[size] = value
+            size++
+        }
+
+        fun tsId(i: Int) = tsIds[i]
+        fun record(i: Int) = TSRecord(itemIds[i].toString(), timestamp = timestamps[i], location = "", value = values[i])
+    }
+
     fun loadTS(pairs: List<Pair<Int, Int>>): Long {
-        val events = mutableListOf<Pair<Long, TSRecord>>()
+        val events = Events()
         val chunkSize = 100_000
         pairs.chunked(chunkSize).forEach { chunk ->
             val chunk = chunk.toSet()
@@ -107,7 +144,6 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, host: St
                     WHERE c.subject_id IN ($subjectIds) AND c.itemid IN ($itemIds)
                     ORDER BY subject_id, itemid, charttime
                 """.trimIndent()
-                logger.info(sql)
                 conn.prepareStatement(sql).use { stmt ->
                     stmt.fetchSize = 10_000   // smaller is safer
                     val rs = stmt.executeQuery()
@@ -126,22 +162,25 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, host: St
                         val tsId = item2nodeid[subjectId to itemId]
                         val chartTime = rs.getString("charttime")
                         val valueNum = rs.getString("valuenum")
-                        val itemid = rs.getString("itemid")
-                        events.add(tsId!! to TSRecord(itemid, timestamp = dateToTimestamp(chartTime), location = "", value = valueNum.toDouble().roundToLong()))
+                        events.add(tsId!!, itemId.toInt(), dateToTimestamp(chartTime), valueNum.toDouble().roundToLong())
                     }
                 }
             }
         }
         tsCard += events.size
         val time = getTime {
-            events.forEachIndexed { index, pair ->
-                val isFirst = index == 0 || events[index - 1].first != events[index].first
-                val isLast = index + 1 == events.size || events[index].first != events[index + 1].first
-                addMeasurement(pair.first, pair.second, isFirst = isFirst, isLast = isLast)
+            for (index in 0 until events.size) {
+                val isFirst = index == 0 || events.tsId(index - 1) != events.tsId(index)
+                val isLast = index + 1 == events.size || events.tsId(index) != events.tsId(index + 1)
+                addMeasurement(events.tsId(index), events.record(index), isFirst = isFirst, isLast = isLast)
             }
+            if (events.size > 0) awaitLast(events.tsId(events.size - 1), events.record(events.size - 1))
         }
         return time
     }
+
+    /** Waits until the last measurement [row] of the worker is stored (timed as time-series time, as in SmartBench) */
+    open fun awaitLast(tsId: Long, row: TSRecord) {}
 
     fun addTs() {
         val chunkSize = users.size / threads

@@ -1,0 +1,6 @@
+FROM GRAPH SmartBench
+MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(ts:`Temperature`)-[:`hasTS`]->(m:`TemperatureEvent`)
+WHERE m.`_id` >= {TSTAMPFROM_PARAM} AND m.`_id` < {TSTAMPTO_PARAM}
+  AND st_intersects(i.location, m.location)
+GROUP BY i.id AS environment
+SELECT environment, AVG(m.`value`) AS avgValue;

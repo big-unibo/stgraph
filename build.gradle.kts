@@ -54,6 +54,8 @@ dependencies {
     implementation("org.neo4j.driver:neo4j-java-driver-slim:4.4.21")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+    // Extraction of the downloaded datasets in the evaluation
+    testImplementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation(platform("org.junit:junit-bom:6.0.3"))
     testImplementation("org.junit.jupiter:junit-jupiter-api")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -62,6 +64,31 @@ dependencies {
 
 tasks.jar {
     exclude("datasets/**")
+}
+
+// The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
+// test_config.yml (evaluation/README.md), with both phases or only one of them. Not tests: the CI does not run them.
+mapOf(
+    "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to listOf()),
+    "evaluateIngestion" to ("As evaluate, only the ingestion" to listOf("ingestion")),
+    "evaluateQueries" to ("As evaluate, only the queries, on the data already loaded" to listOf("queries")),
+    "evaluateSpecificRuns" to ("Runs the specificRuns.runs of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns")),
+    "evaluateSpecificRunsIngestion" to ("As evaluateSpecificRuns, only the ingestion" to listOf("specificRuns", "ingestion")),
+    "evaluateSpecificRunsQueries" to ("As evaluateSpecificRuns, only the queries, on the data already loaded" to listOf("specificRuns", "queries"))
+).forEach { (name, task) ->
+    tasks.register<JavaExec>(name) {
+        description = task.first
+        group = "evaluation"
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass = "it.unibo.tests.evaluation.EvaluationKt"
+        args(task.second)
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(jVersion)
+        }
+        workingDir = projectDir
+        // The heap of the evaluation, i.e., of STGraph: 64g, or -PevaluationHeap (e.g., 3g, in a memory budget)
+        maxHeapSize = providers.gradleProperty("evaluationHeap").getOrElse("64g")
+    }
 }
 
 defaultTasks("clean", "build", "check")

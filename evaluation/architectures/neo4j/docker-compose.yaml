@@ -1,0 +1,27 @@
+# Neo4j for the SmartBench evaluation. The database only: ingestion and queries run from the evaluation
+# (./gradlew evaluate, see evaluation/README.md), which also starts and stops it.
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: neo4j
+    hostname: neo4j
+    # No CPU or memory limit by default (free). NEO4J_CPUS, NEO4J_CPUSET (the cores), NEO4J_MEMORY and NEO4J_CONF (the
+    # folder of neo4j.conf): the resources and configuration of a run, e.g. cpus 1 for the single-core comparison of the
+    # paper (set by the evaluation from the resources section of test_config.yml, see evaluation/README.md)
+    cpus: ${NEO4J_CPUS:-0}
+    cpuset: "${NEO4J_CPUSET:-}"
+    mem_limit: ${NEO4J_MEMORY:-0}
+    environment:
+      - NEO4J_AUTH=none
+    volumes:
+      # The files in /conf override the configuration of the image
+      - "${NEO4J_CONF:-./conf-free}:/conf"
+      # Data of Neo4j, kept when the container is recreated; NEO4J_DATA: a host directory instead of the Docker volume
+      # (set by the evaluation from the volumes section of test_config.yml)
+      - "${NEO4J_DATA:-neo4j-data}:/data"
+    ports:
+      - 7474:7474
+      - 7687:7687
+
+volumes:
+  neo4j-data:

@@ -15,7 +15,15 @@ interface Querying {
     fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData
 }
 
-fun runQuery(querying: Querying, model: String, threads: Int, numMachines: Int, dataset: String, size: String, mode: QueryMode) {
+/**
+ * Runs [querying] and appends its statistics to the query statistics. [iteration], [querySelectivity] and
+ * [temporalRangeIndex] identify the run within an evaluation: the repetition, and the time window of
+ * time_constraints.yaml (the queries without a window ignore it)
+ */
+fun runQuery(
+    querying: Querying, model: String, threads: Int, numMachines: Int, dataset: String, size: String, mode: QueryMode,
+    iteration: Int = 0, querySelectivity: String = "increased", temporalRangeIndex: Int = 0
+) {
     if (!resultFolder.exists()) resultFolder.mkdirs()
 
     val data: QueryResultData
@@ -33,12 +41,24 @@ fun runQuery(querying: Querying, model: String, threads: Int, numMachines: Int, 
         "elapsedTime" to elapsedTime,
         "numMachines" to numMachines,
         "cardinality" to data.card,
-        "queryMode" to mode
+        "queryMode" to mode,
+        "iteration" to iteration,
+        "querySelectivity" to querySelectivity,
+        "temporalRangeIndex" to temporalRangeIndex
     )
 
+    // A file written before the last columns were added: extend its header (the old rows leave them empty)
+    val header = row.keys.joinToString(",")
+    if (statisticsFile.exists()) {
+        val oldHeader = statisticsFile.bufferedReader().use { it.readLine() }
+        if (oldHeader != null && oldHeader != header && header.startsWith("$oldHeader,")) {
+            val rows = statisticsFile.readLines().drop(1)
+            statisticsFile.writeText((listOf(header) + rows).joinToString("\n", postfix = "\n"))
+        }
+    }
     val writeHeader = !statisticsFile.exists()
     statisticsFile.appendText(buildString {
-        if (writeHeader) append(row.keys.joinToString(",") + "\n")
+        if (writeHeader) append(header + "\n")
         append(row.values.joinToString(",") + "\n")
     })
 }

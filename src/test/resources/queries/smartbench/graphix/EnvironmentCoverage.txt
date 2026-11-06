@@ -1,0 +1,5 @@
+FROM GRAPH SmartBench
+MATCH (i:`Infrastructure`)<-[:`hasCoverage`]-(s:`Sensor`)-[:`hasTemperature`]->(m:`Temperature`)
+WHERE i.id = "3042"
+GROUP BY i.id AS environment, s.id AS device
+SELECT environment, device;
