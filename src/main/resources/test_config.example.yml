@@ -64,7 +64,6 @@ resources:
   graphix:
   neo4j:
   pgage:
-  # AeonG and HyGraph (client included): cpus, cpuset and memory only
   aeong:
   hygraph:
 
@@ -104,5 +103,5 @@ specificRuns:
 # Every combination of its parameters (./gradlew evaluate, see evaluation/README.md); not used by the tests. It sets
 # systems (one at a time, in this order) and datasets, optionally sizes and any key of the defaults
 evaluation:
-  systems: [ "stgraph", "hygraph", "pgage", "graphix", "neo4j" ]
+  systems: [ "stgraph", "pgage", "graphix", "neo4j" ] # "hygraph", "aeong"
   datasets: [ "mimic", "smartbench" ]
