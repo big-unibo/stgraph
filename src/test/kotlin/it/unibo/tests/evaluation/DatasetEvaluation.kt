@@ -170,7 +170,8 @@ abstract class DatasetEvaluation(
 
     /**
      * [system] loads the data and runs the queries inside its container, configured by environment variables, on
-     * [containerSize]; [extraEnv]: further variables of its compose file
+     * [containerSize], with its resources (resources section, e.g., AEONG_CPUS); [extraEnv]: further variables of its
+     * compose file
      */
     protected fun selfContained(system: String, containerSize: String, queryIds: List<String>, extraEnv: Map<String, String> = emptyMap()) {
         if (evaluation.ingestionIterations == 0 || evaluation.queryIterations == 0) {
@@ -178,7 +179,7 @@ abstract class DatasetEvaluation(
             return
         }
         val composeFile = "evaluation/architectures/$system/docker-compose.yaml"
-        val env = mapOf(
+        val env = environment + mapOf(
             "DATASET" to dataset,
             "DATASET_SIZE" to containerSize,
             "INGESTION_ITERATIONS" to evaluation.ingestionIterations.toString(),

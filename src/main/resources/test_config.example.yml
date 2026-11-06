@@ -41,12 +41,12 @@ volumes:
   pgage: datasets/volumes/pgage/{dataset}/{size}
 
 # Resources and configuration of the systems started by the evaluation (deploy: true), for their compose files; what is
-# not set keeps the value of the compose file: no CPU or memory limit (free), the configuration in conf/ of the system
-# (the least parallelism). cpus: the CPU time (e.g., 2); cpuset: the cores (e.g., "0,1"); memory: the limit (e.g.,
-# 12g); shm (pgage only): the shared memory of the parallel workers of PostgreSQL; conf: the folder of the
+# not set keeps the value of the compose file: no CPU or memory limit (free), the configuration in conf-free/ of the
+# system (its defaults). cpus: the CPU time (e.g., 2); cpuset: the cores (e.g., "0,1"); memory: the limit (e.g.,
+# 12g); shm (pgage only): the shared memory of the parallel workers of PostgreSQL (see its compose file); conf: the folder of the
 # configuration (relative paths: from the repository root). They need no reload, as long as the partitions of
-# AsterixDB and Graphix are those of the load. E.g., the single-core comparison of the paper: { cpus: 1 } for each
-# system. The two configurations of each system (see evaluation/README.md), limited (one core, the least parallelism
+# AsterixDB and Graphix are those of the load. E.g., the single-core comparison of the paper: the limited
+# block below. The two configurations of each system (see evaluation/README.md), limited (one core, the least parallelism
 # of conf/):
 #  asterixdb: { cpus: 1, conf: evaluation/architectures/stgraph/conf }
 #  graphix: { cpus: 1, conf: evaluation/architectures/graphix/conf }
@@ -69,6 +69,9 @@ resources:
   graphix:
   neo4j:
   pgage:
+  # AeonG and HyGraph (client included): cpus, cpuset and memory only
+  aeong:
+  hygraph:
 
 # Parameters common to the specific runs and to the evaluation: each run, and the evaluation, can set its own
 defaults:

@@ -3,8 +3,12 @@ services:
     image: mp4sini/aeong:latest
     hostname: aeong
     container_name: aeong
-    # Single-core comparison with the other systems (see evaluation/README.md); the client runs in this container too
-    cpus: 1
+    # No CPU or memory limit by default (free), as the other systems; AEONG_CPUS, AEONG_CPUSET (the cores) and
+    # AEONG_MEMORY: the resources of a run (set by the evaluation from the resources section of test_config.yml). The
+    # client runs in this container too
+    cpus: ${AEONG_CPUS:-0}
+    cpuset: "${AEONG_CPUSET:-}"
+    mem_limit: ${AEONG_MEMORY:-0}
     # Set by the evaluation (src/test/kotlin/it/unibo/tests/evaluation, SmartBenchEvaluation)
     environment:
       - DATASET

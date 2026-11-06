@@ -3,6 +3,12 @@ services:
     image: mp4sini/hygraph:latest
     hostname: hygraph
     container_name: hygraph
+    # No CPU or memory limit by default (free), as the other systems; HYGRAPH_CPUS, HYGRAPH_CPUSET (the cores) and
+    # HYGRAPH_MEMORY: the resources of a run (set by the evaluation from the resources section of test_config.yml). The
+    # client runs in this container too
+    cpus: ${HYGRAPH_CPUS:-0}
+    cpuset: "${HYGRAPH_CPUSET:-}"
+    mem_limit: ${HYGRAPH_MEMORY:-0}
     # Set by the evaluation (src/test/kotlin/it/unibo/tests/evaluation, SmartBenchEvaluation)
     environment:
       - DATASET

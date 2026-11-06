@@ -73,6 +73,12 @@ data class EvaluationConfig(
             "pgage" to "PGAGE_DATA"
         )
 
+        /**
+         * The prefix of the variables of each system of the resources section: the systems of the volumes section, and
+         * AeonG and HyGraph (only cpus, cpuset and memory: they have no conf or shm)
+         */
+        private val resourcePrefixes = volumeVariables.mapValues { it.value.removeSuffix("_DATA") } + mapOf("aeong" to "AEONG", "hygraph" to "HYGRAPH")
+
         /** The suffix of the variable of each key of the resources section, after the prefix of the system (NEO4J_MEMORY) */
         private val resourceVariables = mapOf("cpus" to "CPUS", "cpuset" to "CPUSET", "memory" to "MEMORY", "shm" to "SHM", "conf" to "CONF")
 
@@ -122,13 +128,14 @@ data class EvaluationConfig(
         @Suppress("UNCHECKED_CAST")
         private fun resources(yaml: Map<String, Any?>, path: String): Map<String, String> {
             val section = yaml["resources"] as? Map<String, Any?> ?: return emptyMap()
-            val unknown = section.keys - volumeVariables.keys
-            require(unknown.isEmpty()) { "Unknown systems in the resources section of $path: $unknown (known: ${volumeVariables.keys})" }
+            val unknown = section.keys - resourcePrefixes.keys
+            require(unknown.isEmpty()) { "Unknown systems in the resources section of $path: $unknown (known: ${resourcePrefixes.keys})" }
             return section.flatMap { (system, values) ->
                 val keys = values as? Map<String, Any?> ?: emptyMap()
-                val unknownKeys = keys.keys - resourceVariables.keys
-                require(unknownKeys.isEmpty()) { "Unknown keys of $system in the resources section of $path: $unknownKeys (known: ${resourceVariables.keys})" }
-                val prefix = volumeVariables.getValue(system).removeSuffix("_DATA")
+                val known = if (system in volumeVariables) resourceVariables.keys else setOf("cpus", "cpuset", "memory")
+                val unknownKeys = keys.keys - known
+                require(unknownKeys.isEmpty()) { "Unknown keys of $system in the resources section of $path: $unknownKeys (known: $known)" }
+                val prefix = resourcePrefixes.getValue(system)
                 keys.mapNotNull { (key, value) ->
                     value?.toString()?.takeIf { it.isNotBlank() }?.let {
                         "${prefix}_${resourceVariables.getValue(key)}" to if (key == "conf") File(it).absoluteFile.path else it
