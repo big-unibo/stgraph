@@ -6,7 +6,6 @@ import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
 import java.io.File
 import java.sql.DriverManager
-import java.util.logging.Logger
 import kotlin.math.roundToLong
 import kotlin.random.Random
 
@@ -28,7 +27,6 @@ interface MimicIVLoader: Loader {
 
 /** Reads the MIMIC-IV data from the PostgreSQL [postgres] (datasets.mimic of test_config.yml) */
 abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres: PostgresConfig = PostgresConfig()): MimicIVLoader {
-    val logger = Logger.getLogger(this.javaClass.name)
     val url = "jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}"
     val user = postgres.user
     val password = postgres.password
@@ -119,7 +117,6 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
                     WHERE c.subject_id IN ($subjectIds) AND c.itemid IN ($itemIds)
                     ORDER BY subject_id, itemid, charttime
                 """.trimIndent()
-                logger.info(sql)
                 conn.prepareStatement(sql).use { stmt ->
                     stmt.fetchSize = 10_000   // smaller is safer
                     val rs = stmt.executeQuery()
@@ -151,7 +148,7 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
                 val isLast = index + 1 == events.size || events[index].first != events[index + 1].first
                 addMeasurement(pair.first, pair.second, isFirst = isFirst, isLast = isLast)
             }
-            events.lastOrNull()?.let { (tsId, row) -> println("Awaiting ${tsId}:${row}"); awaitLast(tsId, row) }
+            events.lastOrNull()?.let { (tsId, row) -> awaitLast(tsId, row) }
         }
         return time
     }
