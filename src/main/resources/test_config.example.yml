@@ -59,12 +59,6 @@ volumes:
 #  graphix: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/graphix/conf-free }
 #  neo4j: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/neo4j/conf-free }
 #  pgage: { cpus: 20, cpuset: "0-19", shm: 1g, conf: evaluation/architectures/pgage/conf-free }
-# Or the budget of 3 CPUs and 12 GB of each system (see evaluation/README.md: STGraph has the third core and 3 GB for
-# its JVM, with threads: [ 2 ]):
-#  asterixdb: { cpus: 2, cpuset: "0,1", memory: 9g, conf: evaluation/architectures/stgraph/conf-3cpu-12g }
-#  graphix: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/graphix/conf-3cpu-12g }
-#  neo4j: { cpus: 3, cpuset: "0-2", memory: 12g, conf: evaluation/architectures/neo4j/conf-3cpu-12g }
-#  pgage: { cpus: 3, cpuset: "0-2", memory: 12g, shm: 1g, conf: evaluation/architectures/pgage/conf-3cpu-12g }
 resources:
   asterixdb:
   graphix:
@@ -99,7 +93,7 @@ defaults:
   label:
 
 # Only the listed runs: the tests of STGraph (CI) run the ones with stgraph among the approaches, ./gradlew
-# evaluateSpecificRuns runs all of them. Each run sets approaches (stgraph, stgraph-std, neo4j, pgage, graphix, aeong,
+# evaluateSpecificRuns runs all of them. Each run sets approaches (stgraph, neo4j, pgage, graphix, aeong,
 # hygraph) and datasets, optionally sizes (default: datasets.<dataset>.sizes) and any key of the defaults
 specificRuns:
   runs:

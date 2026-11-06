@@ -20,7 +20,7 @@ import org.locationtech.jts.io.WKTReader
 import org.locationtech.jts.io.WKTWriter
 
 /**
- * Loads SmartBench into Graphix (AsterixDB + graph views), with the time series of [SmartBenchSTGraph]: same events,
+ * Loads SmartBench into Graphix (AsterixDB + graph views), with the time series of STGraph ([SmartBenchDataLoader]): same events,
  * same AsterixDB schema, same measurement.
  *
  * - One dataset per SmartBench collection (`Groups`, `Users`, `Sensors`, ...), holding the JSON objects as they are,
@@ -30,13 +30,13 @@ import org.locationtech.jts.io.WKTWriter
  * - One dataset (`Observations`) for the events, with the type and the primary key (tsid, _id) of the events of
  *   STGraph, ingested through the same socket data feed: every event is the record STGraph sends (nodeToJson).
  * - One graph (`SmartBench`): one vertex label per collection and per event label, one edge label per reference
- *   field. As in [SmartBenchSTGraph], a top-level field `{"id": ...}` (or a list of them) is a reference and becomes
+ *   field. As in [SmartBenchDataLoader], a top-level field `{"id": ...}` (or a list of them) is a reference and becomes
  *   an edge `has<Field>` towards the referenced entity. As in STGraph (hasTemperature, then HasTS), a sensor with a
  *   time series has an edge `has<EventLabel>` towards the series, one vertex labelled as its events (a record of
  *   `TimeSeries`), and the series an edge `hasTS` towards each of its events, vertices `<EventLabel>Event` (the
  *   records of `Observations`, whose tsid is the reference to their series).
  *
- * Timed as [SmartBenchSTGraph] and [SmartBenchDataLoader]: the events sent by each worker (not its flush), then its
+ * Timed as [SmartBenchDataLoader]: the events sent by each worker (not its flush), then its
  * wait until its last event is readable, without the last read (time-series time); the closes of the feeds and the
  * R-tree on the event locations (index time). One difference, forced by the AsterixDB version of Graphix: each worker
  * closes its feed before waiting for its last event, once AsterixDB has read its whole stream (see [awaitLast]).
@@ -145,7 +145,7 @@ class SmartBenchGraphix(
     }
 
     /**
-     * Waits until the last event of the worker is readable, as [SmartBenchSTGraph], with the one difference forced by
+     * Waits until the last event of the worker is readable, as [SmartBenchDataLoader], with the one difference forced by
      * the engine. The AsterixDB of Graphix (0.9.9-SNAPSHOT) stores the last, partial frame of a feed only when the
      * feed stops (the 0.9.9 of STGraph stores it while the feed is open), so the last events are never readable while
      * the feed is open. Hence, before the wait:

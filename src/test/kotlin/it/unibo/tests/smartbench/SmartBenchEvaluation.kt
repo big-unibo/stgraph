@@ -20,15 +20,13 @@ import it.unibo.tests.smartbench.loaders.SmartBenchGraphix
 import it.unibo.tests.smartbench.loaders.SmartBenchNeo4J
 import it.unibo.tests.smartbench.loaders.neo4jCsv
 import it.unibo.tests.smartbench.loaders.SmartBenchPGAge
-import it.unibo.tests.smartbench.loaders.SmartBenchSTGraph
 import it.unibo.tests.smartbench.queries.*
 import java.io.File
 import java.sql.DriverManager
 
 /**
  * The SmartBench evaluation of one [size] (see it.unibo.tests.evaluation.main), for every system. STGraph uses its
- * reference loader (SmartBenchDataLoader) and queries (TestSmartBenchQuery); "stgraph-std" only loads the data, through
- * SmartBenchSTGraph.
+ * reference loader (SmartBenchDataLoader) and queries (TestSmartBenchQuery).
  */
 class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
     DatasetEvaluation(config, evaluation, "smartbench", size) {

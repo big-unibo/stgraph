@@ -63,7 +63,7 @@ data class EvaluationConfig(
     fun model(system: String): String = label?.let { "${system}_$it" } ?: system
 
     companion object {
-        val knownSystems = listOf("stgraph", "stgraph-std", "neo4j", "pgage", "graphix", "aeong", "hygraph")
+        val knownSystems = listOf("stgraph", "neo4j", "pgage", "graphix", "aeong", "hygraph")
 
         /** The variable of the compose file of each system of the volumes section (asterixdb: the AsterixDB of STGraph) */
         private val volumeVariables = mapOf(
