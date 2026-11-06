@@ -27,7 +27,7 @@ fun pgageGraph(size: String) = "smartbench_$size"
  *   entity loaded later is lost, as in the Python code); hasSensor is reversed into hasTemperature;
  * - time series: the first event of each series becomes a vertex (as an entity, so it is linked to its sensor through
  *   hasTemperature); the temperature events go to the hypertable [measurementTable], in batches of [batchSize] INSERTs
- *   or, with [copy] (above the small sizes, as MimicIVPGAge), with one COPY per series, its primary key dropped before
+ *   or, with [copy] (above the small sizes, as MimicIVPGAge), the same batches with COPY, its primary key dropped before
  *   the load and added back after it (index time): the same rows, the same graph.
  * As MimicIVPGAge: a graph and a measurement table per size (graph [graphName], table <graph>.measurements); one
  * statement per vertex, then one per edge, linking the vertices by their AGE ids (no search by property); the edges
@@ -91,7 +91,7 @@ open class SmartBenchPGAge(
         addVertex(first[TYPE] as String, first - "_id")
         // Only the temperatures have a mapping to the measurement table
         val rows = events.filter { it.json[TYPE] == "Temperature" }
-        if (copy) copyMeasurements(rows) else rows.chunked(batchSize).forEach { insertMeasurements(it) }
+        rows.chunked(batchSize).forEach { if (copy) copyMeasurements(it) else insertMeasurements(it) }
         skippedEvents += events.size - rows.size
     }
 
@@ -225,8 +225,8 @@ open class SmartBenchPGAge(
         return WKTWriter(3).write(WKTReader().read(value))
     }
 
-    /** Python's str.capitalize: first character upper case, the others lower case */
-    private fun capitalize(s: String) = s.lowercase().replaceFirstChar { it.titlecase(Locale.getDefault()) }
+    /** Camel case, as the edges of the other systems (e.g., hasInputType): first character upper case, the others as they are */
+    private fun capitalize(s: String) = s.replaceFirstChar { it.titlecase(Locale.getDefault()) }
 
     protected fun execute(sql: String) {
         conn.createStatement().use { it.execute(sql) }

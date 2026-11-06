@@ -6,6 +6,7 @@ import it.unibo.graph.utils.getTime
 import it.unibo.stats.PostgresConfig
 import it.unibo.tests.systems.GraphixClient
 import it.unibo.tests.smartbench.loaders.TSRecord
+import org.json.JSONObject
 
 /**
  * Loads MIMIC-IV into Graphix (AsterixDB + graph views), with the graph of the other loaders:
@@ -13,6 +14,9 @@ import it.unibo.tests.smartbench.loaders.TSRecord
  * - `Persons` and `TimeSeries` hold the master data, inserted in batches (graph-store time);
  * - `Measurements` holds the events, ingested through the same socket data feed used by STGraph (time-series time), with
  *   the primary key of the events of STGraph on MIMIC-IV (multiTs): (tsId, label, timestamp).
+ * The end of the ingestion as SmartBenchGraphix.awaitLast: the wait until AsterixDB has read the whole stream and, once
+ * the feed is closed (index time, as STGraph), until the last measurement is readable, without the last read
+ * (time-series time).
  */
 class MimicIVGraphix(
     size: String,
@@ -21,9 +25,6 @@ class MimicIVGraphix(
     feedPort: Int = 11001,
     // Rows per INSERT statement: one INSERT per row would mostly measure the fixed cost of an AsterixDB job
     private val insertBatchSize: Int = 500,
-    // End of the event ingestion: the count must not change for this long before the feed is stopped
-    private val stableWindowMs: Long = 10_000,
-    private val completionTimeoutMs: Long = 60 * 60 * 1000,
     postgres: PostgresConfig = PostgresConfig()
 ) : AbstractMimicIVLoader(mimicLimit(size), threads = 1, postgres = postgres) {
     private val dataverse = "mimic_graphix_${if (mimicLimit(size) == Long.MAX_VALUE) "full" else size}"
@@ -38,6 +39,10 @@ class MimicIVGraphix(
     private var measurementCounter: Long = 0
     private var pId = 0
     private val feed = graphix.feed(measurements, feedPort)
+    // The key of the last measurement sent: (tsId, label, timestamp)
+    private var last: Triple<Long, String, Long>? = null
+    private var indexTime = 0L
+    override fun getIndexTime(): Long = indexTime
 
     init {
         // Schema (not timed, as the graph/TS clean-up of the STGraph loader)
@@ -84,6 +89,7 @@ class MimicIVGraphix(
         )
         if (tmp.unitname != null) measurement["unitname"] = tmp.unitname
         feed.writeToFeed(mapper.writeValueAsString(measurement), flush = false)
+        last = Triple(tsMap[tsId]!!, tmp.abbreviation, row.timestamp)
         if (isLast) feed.flush()
     }
 
@@ -113,8 +119,30 @@ class MimicIVGraphix(
             )
         }
         addTs() // sends the measurements to the feed
-        if (tsCard > 0) tsTime += graphix.completeFeeds(listOf(feed), measurements, tsCard, stableWindowMs, completionTimeoutMs)
+        last?.let { (tsId, label, timestamp) ->
+            tsTime += getTime { feed.awaitDataFeedRead() }
+            indexTime = getTime { feed.closeDataFeedConnection(closeRemote = true) }
+            val start = System.currentTimeMillis()
+            while (true) {
+                val startRead = System.currentTimeMillis()
+                if (isStored(tsId, label, timestamp)) { tsTime += startRead - start; break }
+                Thread.sleep(1)
+            }
+            // Not timed: every measurement sent is stored
+            val stored = graphix.count(measurements)
+            check(stored == tsCard) { "Stored $stored measurements, sent $tsCard" }
+        }
         close()
+    }
+
+    /** Whether the measurement ([tsId], [label], [timestamp]) is readable */
+    private fun isStored(tsId: Long, label: String, timestamp: Long): Boolean = try {
+        JSONObject(graphix.exec(
+            "USE $dataverse; SELECT VALUE 1 FROM `$measurements` WHERE tsId = $tsId AND label = \$label AND `timestamp` = $timestamp;",
+            mapOf("\$label" to mapper.writeValueAsString(label))
+        )).getJSONArray("results").length() > 0
+    } catch (_: Exception) {
+        false
     }
 
     override fun close() {}

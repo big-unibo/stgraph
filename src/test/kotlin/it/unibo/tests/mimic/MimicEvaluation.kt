@@ -21,6 +21,7 @@ import it.unibo.graph.utils.getTime
 import it.unibo.tests.systems.neo4jDriver
 import it.unibo.tests.systems.pgAgeConnection
 import java.io.File
+import java.util.zip.GZIPInputStream
 import java.sql.DriverManager
 
 /**
@@ -148,8 +149,9 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
      * mode, no import, not recorded) when missing, e.g. on the small sizes, which Neo4j loads without them
      */
     private fun hygraph() {
-        val measurements = File("datasets/dump/neo4j/mimic/$limit/measurement.csv")
-        if (evaluation.ingestionIterations > 0 && (!measurements.exists() || measurements.useLines { it.take(2).count() } < 2)) {
+        val measurements = File("datasets/dump/neo4j/mimic/$limit/measurement.csv.gz")
+        if (evaluation.ingestionIterations > 0 && (!measurements.exists() ||
+                runCatching { GZIPInputStream(measurements.inputStream()).bufferedReader().useLines { it.take(2).count() } }.getOrDefault(0) < 2)) {
             progress("hygraph | $dataset $size: writing the CSV files of Neo4j")
             MimicIVNeo4J(limit, csv = true, postgres = postgres).loadData()
         }
@@ -171,8 +173,8 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             runCommand(
                 compose + listOf("run", "--rm", "--no-deps", "-v", "${csvDir.absolutePath}:/csv:ro", "neo4j",
                     "neo4j-admin", "database", "import", "full", "neo4j", "--overwrite-destination", "--id-type=integer",
-                    "--nodes=/csv/person.csv", "--nodes=/csv/ts.csv", "--nodes=/csv/measurement.csv",
-                    "--relationships=/csv/has_parameters.csv", "--relationships=/csv/has_measurement.csv"),
+                    "--nodes=/csv/person.csv.gz", "--nodes=/csv/ts.csv.gz", "--nodes=/csv/measurement.csv.gz",
+                    "--relationships=/csv/has_parameters.csv.gz", "--relationships=/csv/has_measurement.csv.gz"),
                 environment
             )
         }
