@@ -18,8 +18,8 @@ import kotlin.io.path.name
  * files for neo4j-admin database import (offline, into an empty database), with the same rules:
  * - graph.cypher: one node per CREATE; a MATCH ... CREATE relationship only between the nodes that exist at that
  *   point of the file, for every pair of matching nodes (as the statement);
- * - events: on "small", the nodes of ts.cypher (location as a string); otherwise the events of timeseries/<sensor>.json
- *   (location as a cartesian 3D point), as the UNWIND of SmartBenchNeo4J; in both cases a hasTemperature relationship
+ * - events: on "small", the nodes of ts.cypher; otherwise the events of timeseries/<sensor>.json, as the UNWIND of
+ *   SmartBenchNeo4J; in both cases with the location as a WKT string (as the entities); in both cases a hasTemperature relationship
  *   from every Sensor node with the id of the series, and no event for a series without one;
  * - the timestamps as datetime, the numbers as integers or floats as in the dumps (one file per property types).
  * A size without a Cypher dump (e.g., extralarge) is read [fromJson]: the JSON dataset of the other systems
@@ -175,29 +175,24 @@ class SmartBenchNeo4JFast(val size: String, private val fromJson: Boolean = !has
                     if (line.isBlank()) continue
                     val obj: Map<String, Any> = mapper.readValue(line)
                     val sensors = nodesById[(obj["sensor"] as Map<*, *>)["id"] as String].orEmpty().filter { it.label == "Sensor" }
-                    val (x, y, z) = (obj["location"] as String).replace("POINT(", "").replace(")", "").trim().split(Regex("\\s+")).map { it.toDouble() }
                     val properties = mapOf(
                         "id" to obj["id"],
                         "timestamp" to DateTime(obj["timestamp"] as String),
                         "temperature" to (obj["payload"] as Map<*, *>)["temperature"]
                     )
-                    for (sensor in sensors) writeEvent(properties, location = Point(x, y, z), sensor, rels, writer)
+                    for (sensor in sensors) writeEvent(properties, location = obj["location"], sensor, rels, writer)
                 }
             }
         }
     }
 
-    private data class Point(val x: Double, val y: Double, val z: Double)
-
     /** One Temperature node (id, timestamp, temperature, location) and its hasTemperature relationship from [sensor] */
     private fun writeEvent(properties: Map<String, Any?>, location: Any?, sensor: Node, rels: BufferedWriter, writer: (String) -> BufferedWriter) {
         val temperature = properties["temperature"]
         val temperatureType = if (temperature is Double || temperature is Float) "double" else "long"
-        val locationType = if (location is Point) "point{crs:cartesian-3d}" else "string"
-        val out = writer(":ID,id:string,timestamp:datetime,temperature:$temperatureType,location:$locationType")
+        val out = writer(":ID,id:string,timestamp:datetime,temperature:$temperatureType,location:string")
         val id = nextId++
         val locationValue = when (location) {
-            is Point -> quote("{x:${location.x}, y:${location.y}, z:${location.z}}")
             null -> ""
             else -> quote(location.toString())
         }

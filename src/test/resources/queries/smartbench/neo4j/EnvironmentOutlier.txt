@@ -3,10 +3,8 @@ WHERE temp.timestamp >= datetime({epochMillis: {TSTAMPFROM_PARAM}}) AND temp.tim
 WITH environment, temp,
      // The WKT line of the environment (e.g., LINESTRING(34 0 0, 63 20 0)) as a list of [x, y]
      [c IN split(replace(replace(environment.location, 'LINESTRING(', ''), ')', ''), ',') | [v IN split(trim(c), ' ') WHERE v <> '' | toFloat(v)][0..2]] AS line,
-     // The location of the event as [x, y]: a point, or a WKT string (POINT(x y z), the events of ts.cypher on small)
-     CASE WHEN valueType(temp.location) STARTS WITH 'POINT' THEN [temp.location.x, temp.location.y]
-          ELSE [v IN split(trim(replace(replace(temp.location, 'POINT(', ''), ')', '')), ' ') WHERE v <> '' | toFloat(v)][0..2]
-     END AS p
+     // The WKT point of the event (e.g., POINT(76 17 0), as loaded by SmartBenchNeo4J) as [x, y]
+     [v IN split(trim(replace(replace(temp.location, 'POINT(', ''), ')', '')), ' ') WHERE v <> '' | toFloat(v)][0..2] AS p
 // As ST_INTERSECTS of STGraph, PGAge and Graphix (2D): the event lies on a segment of the line of the environment
 WHERE any(i IN range(0, size(line) - 2) WHERE
           (line[i + 1][0] - line[i][0]) * (p[1] - line[i][1]) - (line[i + 1][1] - line[i][1]) * (p[0] - line[i][0]) = 0

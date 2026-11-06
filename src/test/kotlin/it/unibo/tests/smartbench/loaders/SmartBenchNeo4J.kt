@@ -80,14 +80,12 @@ class SmartBenchNeo4J(
             lines.filter { it.isNotBlank() }.map { line ->
                 val obj: Map<String, Any> = mapper.readValue(line)
                 if (sensorId == null) sensorId = (obj["sensor"] as Map<*, *>)["id"] as String
-                val (x, y, z) = (obj["location"] as String).replace("POINT(", "").replace(")", "").trim().split(Regex("\\s+")).map { it.toDouble() }
                 mapOf(
                     "id" to obj["id"]!!,
                     "timestamp" to obj["timestamp"]!!,
                     "temperature" to (obj["payload"] as Map<*, *>)["temperature"]!!,
-                    "x" to x,
-                    "y" to y,
-                    "z" to z
+                    // The WKT of the file (e.g., POINT(76 17 0)), as the locations of the entities and of ts.cypher
+                    "location" to obj["location"]!!
                 )
             }.toList()
         }
@@ -111,11 +109,7 @@ class SmartBenchNeo4J(
                     id: row.id,
                     timestamp: datetime(row.timestamp),
                     temperature: row.temperature,
-                    location: point({
-                        x: row.x,
-                        y: row.y,
-                        z: row.z
-                    })
+                    location: row.location
                 }
             )
         """.trimIndent()
