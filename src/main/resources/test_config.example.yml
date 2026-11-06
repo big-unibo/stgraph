@@ -39,6 +39,7 @@ volumes:
   graphix:
   neo4j: datasets/volumes/neo4j/{dataset}/{size}
   pgage: datasets/volumes/pgage/{dataset}/{size}
+  aeong: datasets/volumes/aeong/{dataset}/{size}
 
 # Resources and configuration of the systems started by the evaluation (deploy: true), for their compose files; what is
 # not set keeps the value of the compose file: no CPU or memory limit (free), the configuration in conf/ of the system

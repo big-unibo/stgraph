@@ -112,7 +112,7 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 | Section | Content |
 |---------|---------|
 | `datasets`, `setups` | the sizes of each dataset (for MIMIC-IV, also the PostgreSQL the data is read from: `postgres_endpoint`, `port`, `database`, `user`, `password`); the AsterixDB setups of STGraph |
-| `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
+| `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`, `aeong`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
 | `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., no CPU or memory limit and the configuration in `conf/` (see below) |
 | `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
 | `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
@@ -130,12 +130,13 @@ The sizes default to `datasets.<dataset>.sizes`, the time windows are the ones o
 | `./gradlew fastLoadNeo4j`, `fastLoadPgAge` | `evaluation` (sizes, `deploy`) | the bulk load of SmartBench into Neo4j or PGAge, to query it afterwards (see below) |
 
 The queries of `evaluateQueries` and `evaluateSpecificRunsQueries` run on the data already loaded (kept in the data
-folders of the systems, see below), without downloading the datasets; AeonG and HyGraph, which load and query in the
-same container, are skipped by the tasks of a single phase.
+folders of the systems, see below), without downloading the datasets. AeonG keeps its database between the two phases:
+`evaluateQueries` stops if the database is not the one of that dataset and size. HyGraph, which loads and queries in the
+same container, is skipped by the tasks of a single phase.
 
-On MIMIC-IV, `./gradlew evaluate` runs AeonG only. Its query files `q0.txt`-`q3.txt` go in
-`evaluation/architectures/aeong/queries/mimic/`, mounted on its container as the SmartBench ones; the sizes of
-`datasets.mimic.sizes` are the names of its datasets (`<size>.cypher`, e.g. `1692200`).
+On MIMIC-IV, AeonG loads the Cypher dump of `datasets/dump/aeong/mimic/<limit>/`, written by MimicIVAeonG when missing.
+Its query files `q0.txt`-`q3.txt` go in `evaluation/architectures/aeong/queries/mimic/`, mounted on its container as the
+SmartBench ones: until all of them are there, its container only runs the ingestion.
 
 The fast loads leave Neo4j and PGAge with the data of their ingestion (same nodes, edges, rows and indexes), in bulk and
 much faster, but they are not ingestions of the evaluation: they are not timed nor recorded in `results/`.
@@ -157,7 +158,7 @@ The data of the AsterixDB of STGraph, Graphix, Neo4j and PGAge are in a Docker v
 kept also when the container is recreated (e.g., `docker compose down`, or a change of its compose file). The
 `volumes` section of `test_config.yml` sets a folder on the host for each system instead (e.g., a disk with room for
 the large sizes): the evaluation passes them to the compose files (`ASTERIXDB_DATA`, `GRAPHIX_DATA`, `NEO4J_DATA`,
-`PGAGE_DATA`; to start a system by hand on the same folder, set the same variable). Every ingestion drops and
+`PGAGE_DATA`, `AEONG_DATA`; to start a system by hand on the same folder, set the same variable). Every ingestion drops and
 reloads its data: with `ingestion.iterations: 0`, a run only queries the data already loaded (STGraph also needs its
 graph, dumped by its loader in `datasets/dump/smartbench/<size>`). The AsterixDB of STGraph and Graphix keep a
 dataverse per size, Neo4j and PGAge a single database (the last size loaded): with `{size}` in their folders
