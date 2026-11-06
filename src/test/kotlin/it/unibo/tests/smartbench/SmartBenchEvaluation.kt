@@ -6,6 +6,8 @@ import it.unibo.stats.SetupConfig
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
+import it.unibo.tests.evaluation.downloadDataset
+import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
 import it.unibo.graph.utils.getTime
 import it.unibo.tests.systems.neo4jDriver
@@ -132,15 +134,36 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     /**
      * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables.
-     * AeonG with the sizes of the old evaluation (same time windows: small, medium -> large, large -> big); HyGraph with
-     * the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems, mounted by its compose file
+     * AeonG up to medium only, with the sizes of the old evaluation (same time windows: medium -> large); HyGraph
+     * with the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems, mounted by its
+     * compose file
      */
     private fun selfContained(system: String) {
-        val oldSize = if (system == "hygraph") size
-            else mapOf("small" to "small", "medium" to "large", "large" to "big")[size] ?: error("$system runs on small, medium and large only")
-        if (system == "hygraph") download("datasets/original/smartbench/$size", "smartbench")
         // HyGraph records in results/dt_graph as the other systems: the model (with the label of the run) and the size
-        selfContained(system, oldSize, queryIds, mapOf("MODEL" to evaluation.model(system), "RESULT_SIZE" to size))
+        val recorded = mapOf("MODEL" to evaluation.model(system), "RESULT_SIZE" to size)
+        if (system == "hygraph") {
+            download("datasets/original/smartbench/$size", "smartbench")
+            selfContained(system, size, queryIds, recorded)
+            return
+        }
+        val oldSize = mapOf("xsmall" to "xsmall", "small" to "small", "medium" to "large")[size]
+        if (oldSize == null) {
+            progress("$system | $dataset $size: skipped, it runs up to medium only")
+            return
+        }
+        selfContained(system, oldSize, queryIds, recorded + ("AEONG_DATASETS" to aeongDataset(oldSize)), singlePhase = true)
+    }
+
+    /** The folder of the Cypher dump of AeonG, downloaded on the host: its image cannot reach the server (TLS 1.3 only) */
+    private fun aeongDataset(oldSize: String): String {
+        val dump = File("datasets/original/smartbench/aeong/$oldSize.cypher")
+        if (!dump.exists() && evaluation.ingestionIterations > 0) {
+            check(evaluation.download) { "Missing $dump: run ./downloadDataset.sh smartbench/aeong $oldSize.cypher, or set download: true" }
+            progress("download | smartbench/aeong $oldSize: started")
+            downloadDataset("smartbench/aeong", dump.name)
+            progress("download | smartbench/aeong $oldSize: done")
+        }
+        return dump.absoluteFile.parentFile.apply { mkdirs() }.path
     }
 
     companion object {
