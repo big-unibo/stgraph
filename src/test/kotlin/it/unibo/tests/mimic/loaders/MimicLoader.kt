@@ -102,8 +102,35 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
         }
     }
 
+    /**
+     * The events read from PostgreSQL, before they are loaded: one primitive array per field (time series, item,
+     * timestamp, value), about 28 bytes per event instead of the ~150 of a Pair with a TSRecord, so that the large sizes
+     * fit in the heap; the TSRecord of an event is created when it is loaded
+     */
+    private class Events {
+        var size = 0
+            private set
+        private var tsIds = LongArray(1024)
+        private var itemIds = IntArray(1024)
+        private var timestamps = LongArray(1024)
+        private var values = LongArray(1024)
+
+        fun add(tsId: Long, itemId: Int, timestamp: Long, value: Long) {
+            if (size == tsIds.size) {
+                val capacity = tsIds.size * 2
+                tsIds = tsIds.copyOf(capacity); itemIds = itemIds.copyOf(capacity)
+                timestamps = timestamps.copyOf(capacity); values = values.copyOf(capacity)
+            }
+            tsIds[size] = tsId; itemIds[size] = itemId; timestamps[size] = timestamp; values[size] = value
+            size++
+        }
+
+        fun tsId(i: Int) = tsIds[i]
+        fun record(i: Int) = TSRecord(itemIds[i].toString(), timestamp = timestamps[i], location = "", value = values[i])
+    }
+
     fun loadTS(pairs: List<Pair<Int, Int>>): Long {
-        val events = mutableListOf<Pair<Long, TSRecord>>()
+        val events = Events()
         val chunkSize = 100_000
         pairs.chunked(chunkSize).forEach { chunk ->
             val chunk = chunk.toSet()
@@ -135,20 +162,19 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
                         val tsId = item2nodeid[subjectId to itemId]
                         val chartTime = rs.getString("charttime")
                         val valueNum = rs.getString("valuenum")
-                        val itemid = rs.getString("itemid")
-                        events.add(tsId!! to TSRecord(itemid, timestamp = dateToTimestamp(chartTime), location = "", value = valueNum.toDouble().roundToLong()))
+                        events.add(tsId!!, itemId.toInt(), dateToTimestamp(chartTime), valueNum.toDouble().roundToLong())
                     }
                 }
             }
         }
         tsCard += events.size
         val time = getTime {
-            events.forEachIndexed { index, pair ->
-                val isFirst = index == 0 || events[index - 1].first != events[index].first
-                val isLast = index + 1 == events.size || events[index].first != events[index + 1].first
-                addMeasurement(pair.first, pair.second, isFirst = isFirst, isLast = isLast)
+            for (index in 0 until events.size) {
+                val isFirst = index == 0 || events.tsId(index - 1) != events.tsId(index)
+                val isLast = index + 1 == events.size || events.tsId(index) != events.tsId(index + 1)
+                addMeasurement(events.tsId(index), events.record(index), isFirst = isFirst, isLast = isLast)
             }
-            events.lastOrNull()?.let { (tsId, row) -> awaitLast(tsId, row) }
+            if (events.size > 0) awaitLast(events.tsId(events.size - 1), events.record(events.size - 1))
         }
         return time
     }
