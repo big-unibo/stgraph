@@ -70,7 +70,8 @@ data class EvaluationConfig(
             "asterixdb" to "ASTERIXDB_DATA",
             "graphix" to "GRAPHIX_DATA",
             "neo4j" to "NEO4J_DATA",
-            "pgage" to "PGAGE_DATA"
+            "pgage" to "PGAGE_DATA",
+            "aeong" to "AEONG_DATA"
         )
 
         /**

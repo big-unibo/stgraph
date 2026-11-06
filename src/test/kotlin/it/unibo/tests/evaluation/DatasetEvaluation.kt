@@ -170,16 +170,22 @@ abstract class DatasetEvaluation(
 
     /**
      * [system] loads the data and runs the queries inside its container, configured by environment variables, on
-     * [containerSize], with its resources (resources section, e.g., AEONG_CPUS); [extraEnv]: further variables of its
-     * compose file
+     * [containerSize]; [extraEnv]: further variables of its compose file; [singlePhase]: its container keeps the data
+     * between two runs, so it can run only the ingestion or only the queries
      */
-    protected fun selfContained(system: String, containerSize: String, queryIds: List<String>, extraEnv: Map<String, String> = emptyMap()) {
-        if (evaluation.ingestionIterations == 0 || evaluation.queryIterations == 0) {
+    protected fun selfContained(
+        system: String,
+        containerSize: String,
+        queryIds: List<String>,
+        extraEnv: Map<String, String> = emptyMap(),
+        singlePhase: Boolean = false
+    ) {
+        if (!singlePhase && (evaluation.ingestionIterations == 0 || evaluation.queryIterations == 0)) {
             progress("$system | $dataset $size: skipped, its container runs the ingestion and the queries together (no single phase)")
             return
         }
         val composeFile = "evaluation/architectures/$system/docker-compose.yaml"
-        val env = environment + mapOf(
+        val env = mapOf(
             "DATASET" to dataset,
             "DATASET_SIZE" to containerSize,
             "INGESTION_ITERATIONS" to evaluation.ingestionIterations.toString(),
@@ -187,9 +193,9 @@ abstract class DatasetEvaluation(
             "THREAD" to "1",
             "QUERY_SELECTIVITY" to evaluation.selectivities.joinToString(","),
             "QUERIES" to queryIds.joinToString(",")
-        ) + extraEnv
+        ) + environment + extraEnv
         val run = "$system | $dataset $size (size $containerSize in its container)"
-        progress("$run: ingestion and queries inside its container, started")
+        progress("$run: inside its container, started")
         try {
             runCommand(listOf("docker", "compose", "-f", composeFile, "up", "--abort-on-container-exit", "--exit-code-from", system), env)
         } finally {

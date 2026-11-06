@@ -33,36 +33,48 @@ temporalConstraints:
 
   increased:
     EnvironmentCoverage:
+      xsmall:
+        0: [0, 120200] # the whole dataset: 60078 statements, 2 units of commit time each
       small:
         0: [0, 596370]  # 2017-11-15 - 2017-11-25 - 2880
       large:
         0: [0, 2340948] # 5760
 
     EnvironmentAggregate:
+      xsmall:
+        0: [0, 120200] # the whole dataset: 60078 statements, 2 units of commit time each
       small:
         0: [0, 596370]  # 2017-11-15 - 2017-11-25 - 2880
       large:
         0: [0, 2340948] # 5760
 
     MaintenanceOwners:
+      xsmall:
+        0: [0, 120200] # the whole dataset: 60078 statements, 2 units of commit time each
       small:
         0: [0, 1517970]  # 2017-11-15 - 2017-12-11 - 7488
       large:
         0: [0, 6027350] # 14976
 
     EnvironmentOutlier:
+      xsmall:
+        0: [0, 120200] # the whole dataset: 60078 statements, 2 units of commit time each
       small:
         0: [0, 941970]  # 2017-11-15 - 2017-11-30 - 4608
       large:
         0: [0, 3723350] #  9216
 
     AgentOutlier:
+      xsmall:
+        0: [0, 120200] # the whole dataset: 60078 statements, 2 units of commit time each
       small:
         0: [0, 1517970]  # 2017-11-08 - 2017-12-11 - 9504
       large:
         0: [0, 7640156] # 19008
 
     AgentHistory:
+      xsmall:
+        0: [0, 120200] # the whole dataset: 60078 statements, 2 units of commit time each
       small:
         0: [0, 4167572] # 2017-11-08 - 2018-01-19 - 20736
       large:

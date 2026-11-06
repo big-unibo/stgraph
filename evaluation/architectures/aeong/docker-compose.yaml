@@ -21,12 +21,41 @@ services:
     volumes:
       - ../../../results/aeong:/home/AeonG/tests/results/aeong/
       - ./time_constraints_commit.yaml:/vol/time_constraints.yaml
-      # AEONG_QUERIES: the query files of the dataset (./queries/mimic for MIMIC-IV, set by the evaluation)
-      - ${AEONG_QUERIES:-./queries}:/home/AeonG/tests/results/temporal_query
-      - ./datasets:/home/AeonG/tests/datasets/T-mgBench/
+      # AEONG_QUERIES: the query files of the dataset (./queries/mimic for MIMIC-IV, set by the evaluation). Read-only and
+      # copied by the command, as the scripts of the image rewrite them for each time window
+      - ${AEONG_QUERIES:-./queries}:/vol/queries:ro
+      # AEONG_DATASETS: the folder of the dataset on the host (set by the evaluation). Only this folder, not T-mgBench,
+      # where the image keeps cypher_index.cypher
+      - ${AEONG_DATASETS:-./datasets/${DATASET:-smartbench}}:/home/AeonG/tests/datasets/T-mgBench/${DATASET:-smartbench}
+      # The database, kept between the ingestion and the queries of two runs; AEONG_DATA: a host directory instead of the
+      # Docker volume (set by the evaluation from the volumes section of test_config.yml)
+      - ${AEONG_DATA:-aeong-data}:/home/AeonG/tests/results/database
     command:
       - /bin/bash
       - -c
       - |
         cp /vol/time_constraints.yaml /home/AeonG/tests/experiments/
+        mkdir -p /home/AeonG/tests/results/temporal_query
+        cp /vol/queries/*.txt /home/AeonG/tests/results/temporal_query/
+        # For the queries without a time window (EnvironmentCoverage, AgentHistory) replace_timestamp.sh of the image
+        # writes on the file it reads, which empties it: through a temporary file
+        sed -i 's|> "$$OUTPUT_FILE"|> "$$OUTPUT_FILE.tmp" \&\& mv "$$OUTPUT_FILE.tmp" "$$OUTPUT_FILE"|' replace_timestamp.sh
+        # postprocess_results.py appends every JSON of query_results to the statistics: only the ones of this run
+        STATS=/home/AeonG/tests/results/aeong/query_results/$$DATASET
+        [ ! -d "$$STATS" ] || mv "$$STATS" "$$STATS.$$(date +%s)"
+        # The database is the one of the last load: a run of the queries only stops if it is not of this dataset and size
+        LOADED=/home/AeonG/tests/results/database/loaded
+        if [ "$$INGESTION_ITERATIONS" -eq 0 ]; then
+          if [ "$$(cat $$LOADED 2>/dev/null)" != "$$DATASET $$DATASET_SIZE" ]; then
+            echo "The database holds [$$(cat $$LOADED 2>/dev/null)], not [$$DATASET $$DATASET_SIZE]: run the ingestion first"
+            exit 1
+          fi
+          sed -i '/download_datasets.sh/d' t_smarbench_test.sh
+        else
+          echo > $$LOADED
+        fi
         ./t_smarbench_test.sh
+        [ "$$INGESTION_ITERATIONS" -eq 0 ] || echo "$$DATASET $$DATASET_SIZE" > $$LOADED
+
+volumes:
+  aeong-data:
