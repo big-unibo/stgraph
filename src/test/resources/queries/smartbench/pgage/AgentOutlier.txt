@@ -2,7 +2,7 @@ WITH env_device AS (
     -- Associa environment e device dal grafo, mantenendo i nodi come agtype
     SELECT *
     FROM cypher(
-        'smartbench_graph', $$
+        '{GRAPH}', $$
             MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor)
             RETURN DISTINCT environment AS environment_node,
                             device AS device_node,
@@ -14,7 +14,7 @@ SELECT
     env_device.environment_node,
     MAX(m.val) AS max_temperature
 FROM env_device
-JOIN public.measurements m
+JOIN {GRAPH}.measurements m
     ON m.sensor_id = env_device.device_id
 WHERE m.time >= to_timestamp({TSTAMPFROM_PARAM} / 1000.0)
   AND m.time < to_timestamp({TSTAMPTO_PARAM} / 1000.0)

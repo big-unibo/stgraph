@@ -20,7 +20,6 @@ import it.unibo.tests.smartbench.loaders.SmartBenchGraphix
 import it.unibo.tests.smartbench.loaders.SmartBenchNeo4J
 import it.unibo.tests.smartbench.loaders.SmartBenchNeo4JFast
 import it.unibo.tests.smartbench.loaders.SmartBenchPGAge
-import it.unibo.tests.smartbench.loaders.SmartBenchPGAgeFast
 import it.unibo.tests.smartbench.loaders.SmartBenchSTGraph
 import it.unibo.tests.smartbench.queries.*
 import java.io.File
@@ -73,7 +72,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
      * Loads SmartBench into [system] (neo4j or pgage) in bulk, to query it afterwards (./gradlew fastLoadNeo4j,
      * fastLoadPgAge, then e.g. evaluateQueries): the system is left with the data of its ingestion (same nodes, edges,
      * rows and indexes), in its data folder (volumes section), but the load is not timed and nothing goes to results/.
-     * - pgage: SmartBenchPGAgeFast on the system started as for the evaluation (deploy);
+     * - pgage: SmartBenchPGAge (with COPY from medium on, see pgageCopy) on the system started as for the evaluation (deploy);
      * - neo4j: the CSV files of SmartBenchNeo4JFast (datasets/import/neo4j/<size>, removed at the end; from the Cypher
      *   dump, or from the JSON dataset for a size without one, e.g. extralarge), imported with
      *   neo4j-admin into an empty database while Neo4j is stopped, then the range index of SmartBenchNeo4J; it starts
@@ -87,7 +86,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
                 download("datasets/original/smartbench/$size", "smartbench", needed = true)
                 deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
                     progress("$run: started")
-                    val loader = SmartBenchPGAgeFast(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD)
+                    val loader = SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD)
                     try {
                         loader.loadData()
                     } finally {

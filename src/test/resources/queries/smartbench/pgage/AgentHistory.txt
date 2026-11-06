@@ -2,7 +2,7 @@ WITH device_env AS (
     -- Estrae il device e l'environment dal grafo come nodi agtype
     SELECT *
     FROM cypher(
-        'smartbench_graph', $$
+        '{GRAPH}', $$
             MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor {id: "thermometer3"})-[:hasTemperature]-(temp:Temperature)
             RETURN DISTINCT device AS device_node,
                             environment AS environment_node,
@@ -13,5 +13,5 @@ SELECT DISTINCT
     de.device_node,
     de.environment_node
 FROM device_env de
-JOIN public.measurements m
+JOIN {GRAPH}.measurements m
     ON m.sensor_id = de.device_id;

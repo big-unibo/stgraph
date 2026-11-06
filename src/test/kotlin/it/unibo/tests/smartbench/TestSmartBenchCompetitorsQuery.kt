@@ -1,5 +1,6 @@
 package it.unibo.tests.smartbench
 
+import it.unibo.tests.smartbench.loaders.pgageGraph
 import it.unibo.stats.TestConfig
 import it.unibo.tests.systems.GraphixQuery
 import it.unibo.tests.systems.Neo4JQuery
@@ -54,7 +55,8 @@ class TestSmartBenchCompetitorsQuery {
         selectivity: String = "increased",
         rangeIndex: Int = 0
     ) : PGAgeQuery(connection) {
-        private val text = queryText("pgage", queryId, size, selectivity, rangeIndex)
+        // {GRAPH}: the graph of the size, whose schema holds the table measurements (see SmartBenchPGAge)
+        private val text = queryText("pgage", queryId, size, selectivity, rangeIndex).replace("{GRAPH}", pgageGraph(size))
 
         override fun statement() = text
     }
