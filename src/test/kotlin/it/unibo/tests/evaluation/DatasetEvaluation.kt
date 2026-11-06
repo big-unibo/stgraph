@@ -40,8 +40,8 @@ abstract class DatasetEvaluation(
 
     /**
      * STGraph on each setup (on a local setup, the AsterixDB of the root docker-compose.yaml), recorded as [model]:
-     * the ingestion with the loader of [loader] (threads, setup) for every number of threads, then [queries] (setup,
-     * numMachines), if any
+     * the ingestion with the loader of [loader] (threads, setup), single-threaded, then [queries] (setup, numMachines),
+     * if any, with the threads of the configuration (see EvaluationConfig.threads)
      */
     protected fun stgraph(
         model: String,
@@ -51,11 +51,10 @@ abstract class DatasetEvaluation(
         for (setup in setups) {
             val local = setup.host == "localhost"
             deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = environment, ready = { asterixDBReady(setup.host, setup.port) }) {
-                for (threads in evaluation.threads) {
-                    repeat(evaluation.ingestionIterations) { iteration ->
-                        resetPort()
-                        ingest(model, iteration, threads, numMachines = setup.controllerIPs.toSet().size) { loader(threads, setup) }
-                    }
+                // One thread: the threads of the configuration are those of the Kotlin queries only
+                repeat(evaluation.ingestionIterations) { iteration ->
+                    resetPort()
+                    ingest(model, iteration, 1, numMachines = setup.controllerIPs.toSet().size) { loader(1, setup) }
                 }
                 // numMachines: the number of node controllers, as for the ingestion (1 on a local setup)
                 if (evaluation.queryIterations > 0) queries?.invoke(setup, setup.controllerIPs.toSet().size)

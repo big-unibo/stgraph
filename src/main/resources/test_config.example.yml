@@ -69,7 +69,10 @@ resources:
 
 # Parameters common to the specific runs and to the evaluation: each run, and the evaluation, can set its own
 defaults:
-  # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode.
+  # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode. The threads
+  # here are only those of the tests (CI): in the evaluation, the ingestion of STGraph is single-threaded and its Kotlin
+  # queries run with 16 threads with conf-free/ of AsterixDB (resources.asterixdb.conf, the default) and 1 with conf/,
+  # unless the evaluation section or the run sets threads
   # A local setup (host: localhost) runs on the AsterixDB of docker-compose.yaml; a cluster must be already running
   modes: [ "OPTIMIZED" ]
   setups: [ "c0" ]

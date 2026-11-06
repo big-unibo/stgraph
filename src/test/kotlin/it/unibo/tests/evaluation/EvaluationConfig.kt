@@ -20,7 +20,11 @@ data class EvaluationConfig(
     val sizes: List<String>?,
     /** Setups (AsterixDB) of STGraph */
     val setups: List<String>,
-    /** Threads of STGraph; the competitors run single-threaded */
+    /**
+     * Threads of the Kotlin queries of STGraph (its ingestion and the competitors run single-threaded): those of the
+     * evaluation section or of the run, otherwise 16 with conf-free/ of its AsterixDB (the default) and 1 with conf/
+     * (see withThreads)
+     */
     val threads: List<Int>,
     /** Query modes of STGraph */
     val modes: List<QueryMode>,
@@ -89,7 +93,8 @@ data class EvaluationConfig(
             val yaml = yaml(path)
             val section = yaml["evaluation"] as? Map<String, Any?>
                 ?: error("No evaluation section in $path: copy it from test_config.example.yml")
-            return parse(section, defaults(yaml), path).copy(volumeFolders = volumes(yaml, path), resources = resources(yaml, path))
+            val resources = resources(yaml, path)
+            return parse(section, defaults(yaml), path).copy(volumeFolders = volumes(yaml, path), resources = resources).withThreads()
         }
 
         /** The runs of the specificRuns section of [path] */
@@ -100,8 +105,13 @@ data class EvaluationConfig(
             require(!runs.isNullOrEmpty()) { "No specificRuns.runs in $path: copy them from test_config.example.yml" }
             val volumes = volumes(yaml, path)
             val resources = resources(yaml, path)
-            return runs.map { parse(it, defaults(yaml), path).copy(volumeFolders = volumes, resources = resources) }
+            return runs.map { parse(it, defaults(yaml), path).copy(volumeFolders = volumes, resources = resources).withThreads() }
         }
+
+        /** The query threads of STGraph not set by the run: 1 with the least parallelism of conf/, 16 with conf-free/ (the default) */
+        private fun EvaluationConfig.withThreads(): EvaluationConfig =
+            if (threads.isNotEmpty()) this
+            else copy(threads = if (resources["ASTERIXDB_CONF"]?.let { File(it).name } == "conf") listOf(1) else listOf(16))
 
         private fun yaml(path: String): Map<String, Any?> = Yaml().load(File(path).inputStream())
 
@@ -160,7 +170,9 @@ data class EvaluationConfig(
                 datasets = strings(map, "datasets") ?: emptyList(),
                 sizes = strings(map, "sizes"),
                 setups = strings("setups") ?: listOf("c0"),
-                threads = strings("threads")?.map { it.toInt() } ?: listOf(1),
+                // Only those of the evaluation section or of the run: defaults.threads is the one of the tests (CI);
+                // empty: from the configuration of AsterixDB (see withThreads)
+                threads = strings(map, "threads")?.map { it.toInt() } ?: emptyList(),
                 modes = strings("modes")?.map { QueryMode.valueOf(it) } ?: listOf(QueryMode.OPTIMIZED),
                 ingestionIterations = int("ingestion", "iterations") ?: 1,
                 queryIterations = int("queries", "iterations") ?: 1,
