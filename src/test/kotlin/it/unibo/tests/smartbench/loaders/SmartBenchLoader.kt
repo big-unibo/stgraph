@@ -16,7 +16,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.*
-import java.util.logging.Logger
 
 /** A time series of SmartBench: the events of [file], produced by the entity [sensorId] labelled [sensorLabel] */
 data class SmartBenchTimeSeries(val sensorId: String, val sensorLabel: String, val eventLabel: String, val file: Path)
@@ -36,7 +35,6 @@ data class SmartBenchEvent(
  * Each phase accumulates its own time (graph-store, time-series and index time) and cardinality.
  */
 abstract class AbstractSmartBenchLoader(val size: String, val threads: Int = 1) : Loader {
-    protected val logger: Logger = Logger.getLogger(this.javaClass.name)
     protected val projectRoot: Path = Paths.get("").toAbsolutePath().normalize()
     protected var gsTime: Long = 0
     protected var tsTime: Long = 0
@@ -119,7 +117,6 @@ abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSm
         for (collection in collections) {
             val file = dataPath.resolve("$collection.json")
             require(Files.exists(file)) { "File not found: $file" }
-            logger.info { "Loading $file..." }
             for (entity in readEntities(file)) {
                 val label = label(entity[TYPE] as? String ?: error("Missing \"$TYPE\" in $file"))
                 val ts = if (label == Sensor || label == VirtualSensor) findTimeSeries(entity, label) else null

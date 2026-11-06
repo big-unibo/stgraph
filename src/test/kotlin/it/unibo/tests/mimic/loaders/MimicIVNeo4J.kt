@@ -32,15 +32,15 @@ fun neo4jCsv(limit: Long): Boolean = limit >= 5_000_000
 class MimicIVNeo4J(
     limit: Long,
     private val uri: String = "bolt://localhost:7687",
-    private val user: String? = "neo4j",
-    private val password: String? = "password",
+    private val userNeo4j: String? = "neo4j",
+    private val passwordNeo4j: String? = "password",
     val csv: Boolean,
     postgres: PostgresConfig = PostgresConfig(),
     private val csvImport: ((File) -> Long)? = null,
     private val batchSize: Int = 20_000
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
 
-    private val driver: Driver? = if (csv) null else neo4jDriver(uri, user, password)
+    private val driver: Driver? = if (csv) null else neo4jDriver(uri, userNeo4j, passwordNeo4j)
     private val session: Session? = driver?.session()
     val tsMap = mutableMapOf<Long, Long>()
     // Without csv: the element ids of the Person and TimeSeries nodes, by their person_id and ts_id
@@ -230,7 +230,7 @@ class MimicIVNeo4J(
         close()
         if (csv && csvImport != null) {
             tsTime += csvImport.invoke(baseDir)
-            indexTime = getTime { neo4jDriver(uri, user, password).use { d -> d.session().use { createIndexes(it) } } }
+            indexTime = getTime { neo4jDriver(uri, userNeo4j, passwordNeo4j).use { d -> d.session().use { createIndexes(it) } } }
         }
     }
 

@@ -16,7 +16,7 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 | `src/test/kotlin/it/unibo/tests/systems/` | Connections and timed queries of Neo4j, PGAge and Graphix, shared by SmartBench and MIMIC-IV |
 | `src/test/kotlin/it/unibo/tests/smartbench/SmartBenchEvaluation.kt`, `src/test/kotlin/it/unibo/tests/synth/SynthEvaluation.kt` | Ingestion and queries of each system on SmartBench, and of STGraph on the synthetic dataset (on `DatasetEvaluation.kt`) |
 | `src/test/kotlin/it/unibo/tests/smartbench/loaders/` | One loader per system on a shared skeleton (`SmartBenchLoader.kt`) |
-| `src/test/resources/smartbench/queries/<system>/` | The queries of the competitors, as templates; `INCONSISTENCIES.txt`: their differences from STGraph and the differences of the loaders from the original Python code |
+| `src/test/resources/queries/<dataset>/<system>/` | The queries of the competitors, as templates; `INCONSISTENCIES.txt`: their differences from STGraph and the differences of the loaders from the original Python code |
 | `results/` | The results: `dt_graph/` (Kotlin runs), `aeong/`, `hygraph/`; the archives, not updated by the runs: `paper/` (the data of the article) and `rebuttal/` (the data of the article and the runs of the rebuttal, from the repository STGraph-evaluation) |
 | `evaluation/postprocessing/STGraph.ipynb` | The figures and tables, of the archive set by `archive` (default: `rebuttal`; `None` for the current runs), in `evaluation/figures/<archive>/` (`current/` for the current runs) |
 | `evaluation/stats.ipynb` | Exploration of the MIMIC-IV subjects and time series |
@@ -50,8 +50,8 @@ replication.
 |--------|-------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | STGraph | in-memory graph store: one node per entity and per time series | AsterixDB dataset of the events | primary key `(tsid, _id)` of the events; R-tree on the event location, built after the ingestion                                                                                    |
 | Graphix | one dataset per collection (the WKT locations stored as 2D geometries, while STGraph keeps them as strings, see `INCONSISTENCIES.txt`), and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them and over `Observations`, with the model of STGraph: sensor `-[hasTemperature]->` series (`Temperature`) `-[hasTS]->` events (`TemperatureEvent`) | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the vertices `TemperatureEvent` and the edges `hasTS` | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph, used by the joins between vertices and edges (`graphix.evaluation.prefer-indexnl`, see Query planning below); R-tree on `Observations.location`, built after the ingestion |
-| Neo4j | the statements of the Cypher dump (`graph.cypher`) | one `Temperature` node per event, linked to its sensor | range index on `Temperature.timestamp`, built after the ingestion; the label and relationship-type lookup indexes that Neo4j creates by itself |
-| PGAge | AGE graph `smartbench_graph`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `public.measurements` | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph                                         |
+| Neo4j | the JSON dataset of the other systems: one node per entity, one relationship `has<Field>` per reference (through the driver on xsmall and small, CSV files imported with `neo4j-admin` from medium on) | one `Temperature` node per event, linked to its sensor | range index on `Temperature.timestamp`, built after the ingestion; the label and relationship-type lookup indexes that Neo4j creates by itself |
+| PGAge | AGE graph `smartbench_<size>`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `smartbench_<size>.measurements` (in the schema of the graph) | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph                                         |
 | AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation                                                                                                                                                           |
 
 The indexes built after the ingestion are timed as index time.
@@ -94,7 +94,7 @@ Every Kotlin loader shares these boundaries (`SmartBenchLoader.kt`). One differe
 its AsterixDB stores the last, partial frame of a data feed only when the feed stops (the AsterixDB of STGraph stores
 it with the feed open), so each Graphix worker closes its feed before waiting for its last event, once AsterixDB has
 read its whole stream; the close is still index time. The differences of the queries and of the loaders from STGraph
-and from the original Python code are listed in `src/test/resources/smartbench/queries/INCONSISTENCIES.txt`.
+and from the original Python code are listed in `src/test/resources/queries/smartbench/INCONSISTENCIES.txt`.
 
 ### Endpoints
 
@@ -103,7 +103,7 @@ and from the original Python code are listed in `src/test/resources/smartbench/q
 | STGraph | the setups of `test_config.yml` (AsterixDB query API on `localhost:19002`, data feeds on 10001-11000) |
 | Graphix | query API on `localhost:29002`, data feeds on 11001-11010 (host ports in `evaluation/architectures/graphix/.env`, from its `.env.example`) |
 | Neo4j | `bolt://localhost:7687`, no authentication |
-| PGAge | `localhost:5432`, database `smartbench_eval`, graph `smartbench_graph` |
+| PGAge | `localhost:5432`, database `smartbench_eval`, graph `smartbench_<size>` |
 
 ## Reproducing the results
 
@@ -127,7 +127,6 @@ The sizes default to `datasets.<dataset>.sizes`, the time windows are the ones o
 | `./gradlew evaluateIngestion`, `evaluateQueries` | `evaluation` | the same, only the ingestion or only the queries |
 | `./gradlew evaluateSpecificRuns` | `specificRuns` | its runs, one after the other |
 | `./gradlew evaluateSpecificRunsIngestion`, `evaluateSpecificRunsQueries` | `specificRuns` | the same, only the ingestion or only the queries |
-| `./gradlew fastLoadNeo4j`, `fastLoadPgAge` | `evaluation` (sizes, `deploy`) | the bulk load of SmartBench into Neo4j or PGAge, to query it afterwards (see below) |
 
 The queries of `evaluateQueries` and `evaluateSpecificRunsQueries` run on the data already loaded (kept in the data
 folders of the systems, see below), without downloading the datasets. AeonG keeps its database between the two phases:
@@ -138,17 +137,9 @@ On MIMIC-IV, AeonG loads the Cypher dump of `datasets/dump/aeong/mimic/<limit>/`
 Its query files `q0.txt`-`q3.txt` go in `evaluation/architectures/aeong/queries/mimic/`, mounted on its container as the
 SmartBench ones: until all of them are there, its container only runs the ingestion.
 
-The fast loads leave Neo4j and PGAge with the data of their ingestion (same nodes, edges, rows and indexes), in bulk and
-much faster, but they are not ingestions of the evaluation: they are not timed nor recorded in `results/`.
-`fastLoadPgAge` (`SmartBenchPGAgeFast`) creates the vertices in batches, decides the edges in memory (same rules as the
-ingestion) and copies the events with `COPY`, adding the primary key after them. `fastLoadNeo4j` (`SmartBenchNeo4JFast`)
-writes the nodes and relationships of the Cypher dumps as CSV files (`datasets/import/neo4j/<size>`, removed at the
-end) and imports them with `neo4j-admin database import`, into an empty database while Neo4j is stopped, then builds
-its range index: it starts and stops Neo4j itself, so it needs `deploy: true`.
-
 For each dataset, size and system, one system at a time, a run:
-1. downloads the missing data (`smartbench <size>`: JSON dataset of STGraph, PGAge and Graphix; `smartbench/neo4j <size>`:
-   Cypher dumps of Neo4j), from the same URLs as `downloadDataset.sh`;
+1. downloads the missing data (`smartbench <size>`: the JSON dataset of every system), from the same URLs as
+   `downloadDataset.sh`;
 2. starts the system (`docker compose up -d`) and waits until it answers;
 3. loads the data (`ingestion.iterations` times) and runs every query `queries.iterations` times on every time window of
    each selectivity;

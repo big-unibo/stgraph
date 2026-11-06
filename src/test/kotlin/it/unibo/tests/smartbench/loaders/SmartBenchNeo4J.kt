@@ -122,7 +122,6 @@ class SmartBenchNeo4J(
                     }
                 }
             }
-            logger.info { "Processed ${file.name}" }
         }
         tsCard = count("MATCH (n:Temperature) RETURN count(n)")
     }

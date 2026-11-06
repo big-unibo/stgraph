@@ -23,7 +23,7 @@ for DSET in "${DSETS[@]}"; do
         if [[ "$DATASET" == "mimic" ]]; then
             # The CSV files of the import of Neo4j, mounted by the compose file (datasets/dump/neo4j/mimic)
             DATA="/home/hygraph/resources/datasets/mimic/$DATASET_SIZE"
-            [[ -f "$DATA/person.csv" && -f "$DATA/measurement.csv" ]] || { echo "Missing the CSV files of Neo4j in $DATA"; exit 1; }
+            [[ -f "$DATA/person.csv.gz" && -f "$DATA/measurement.csv.gz" ]] || { echo "Missing the CSV files of Neo4j in $DATA"; exit 1; }
         else
             # The dataset downloaded by the evaluation, mounted by the compose file: the folder of the size of the
             # evaluation (RESULT_SIZE)

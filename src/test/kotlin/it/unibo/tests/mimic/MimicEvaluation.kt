@@ -86,7 +86,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             val csv = neo4jCsv(limit)
             if (csv && evaluation.ingestionIterations > 0) check(evaluation.deploy) { "The CSV import of Neo4j ($size) stops and starts Neo4j itself: it needs deploy: true" }
             repeat(evaluation.ingestionIterations) {
-                ingest("neo4j", it) { MimicIVNeo4J(limit, NEO4J_URI, user = null, password = null, csv = csv, postgres = postgres, csvImport = ::neo4jImport) }
+                ingest("neo4j", it) { MimicIVNeo4J(limit, NEO4J_URI, userNeo4j = null, passwordNeo4j = null, csv = csv, postgres = postgres, csvImport = ::neo4jImport) }
             }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
