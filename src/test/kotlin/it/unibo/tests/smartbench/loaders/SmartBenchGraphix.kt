@@ -123,7 +123,6 @@ class SmartBenchGraphix(
         insert(timeSeriesDataset, timeSeries)
         pendingReferences.forEach { ref -> labelOf[ref.targetId]?.let { references += Reference(ref.source, ref.field, ref.isList, it) } }
         val graphDefinition = createGraph()
-        logger.info { graphDefinition }
         graphix.exec(graphDefinition)
     }
 
