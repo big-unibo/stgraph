@@ -137,8 +137,8 @@ class SmartBenchNeo4J(
     private fun jsonEntities(): List<Pair<Path, Map<String, Any?>>> =
         SmartBenchJsonLoader.collections.flatMap { collection ->
             val file = jsonPath.resolve("$collection.json")
-            require(Files.exists(file)) { "File not found: $file" }
-            mapper.readValue<List<Map<String, Any?>>>(file.toFile()).map { file to it }
+            require(smartBenchExists(file)) { "File not found: $file" }
+            smartBenchReader(file).use { mapper.readValue<List<Map<String, Any?>>>(it) }.map { file to it }
         }
 
     private fun timeSeriesFiles(): List<Path> = Files.list(jsonPath.resolve("timeseries")).use { it.sorted().toList() }
@@ -146,7 +146,7 @@ class SmartBenchNeo4J(
     /** The sensor and the rows of a time-series file (one JSON object per line) */
     private fun readTimeSeries(file: Path): Pair<String?, List<Map<String, Any>>> {
         var sensorId: String? = null
-        val rows = Files.newBufferedReader(file).useLines { lines ->
+        val rows = smartBenchReader(file).useLines { lines ->
             lines.filter { it.isNotBlank() }.map { line ->
                 val obj: Map<String, Any> = mapper.readValue(line)
                 if (sensorId == null) sensorId = (obj["sensor"] as Map<*, *>)["id"] as String
@@ -206,7 +206,7 @@ class SmartBenchNeo4J(
             gzipWriter(dir.resolve("events.csv.gz")).use { events ->
                 events.write(":ID,id:string,timestamp:datetime,temperature:double,location:string\n")
                 for (file in timeSeriesFiles()) {
-                    Files.newBufferedReader(file).useLines { lines ->
+                    smartBenchReader(file).useLines { lines ->
                         for (line in lines) {
                             if (line.isBlank()) continue
                             val obj: Map<String, Any> = mapper.readValue(line)

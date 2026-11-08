@@ -2,6 +2,7 @@ from hygraph_core import HyGraph, TimeSeriesMetadata
 import pandas as pd
 import ijson
 import uuid
+import gzip
 import json
 import os
 from datetime import datetime
@@ -81,6 +82,13 @@ def parseEdgesAndProperties(document, node, hygraph: HyGraph):
     return hygraph
 
 
+def open_dataset(path):
+    """A file of the dataset, gzipped by the download (<path>.gz) or not"""
+    if os.path.exists(path + ".gz"):
+        return gzip.open(path + ".gz", "rt", encoding="utf-8")
+    return open(path, "r", encoding="utf-8")
+
+
 def load_json(file, limit=0):
     """The documents of [file] (one per line): at most the first [limit], if positive"""
     documents = []
@@ -92,7 +100,7 @@ def load_json(file, limit=0):
 
 
 def loadObservations(file_path, sensor_id, hygraph: HyGraph, default_path: str, limit: int = MEASUREMENT_LIMIT):
-    with open(file_path, "r", encoding="utf-8") as file:
+    with open_dataset(file_path) as file:
         documents = load_json(file, limit)
         hygraph, node = loadNode(
             documents[0], default_path, sensor_id, hygraph
@@ -134,7 +142,7 @@ def loadNode(
     hygraph = parseEdgesAndProperties(document, node, hygraph)
     tsFilePath = os.path.join(default_path, "timeseries", f"{document['id']}.json")
     # If it has a TimeSeries
-    if filename == "sensor.json" and os.path.exists(tsFilePath):
+    if filename == "sensor.json" and (os.path.exists(tsFilePath) or os.path.exists(tsFilePath + ".gz")):
         hygraph = loadObservations(
             tsFilePath,
             document["id"],
@@ -147,7 +155,7 @@ def loadNode(
 
 def loadData(filename: str, hygraph: HyGraph, default_path):
     """Load data from a CSV file into the HyGraph instance."""
-    with open(os.path.join(default_path, filename), "r", encoding="utf-8") as f:
+    with open_dataset(os.path.join(default_path, filename)) as f:
         for document in ijson.items(f, "item"):
             hygraph, _ = loadNode(document, default_path, filename, hygraph)
     return hygraph

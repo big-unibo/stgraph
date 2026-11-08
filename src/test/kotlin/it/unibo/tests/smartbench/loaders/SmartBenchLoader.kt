@@ -12,10 +12,29 @@ import it.unibo.graph.utils.TYPE
 import it.unibo.graph.utils.VirtualSensor
 import it.unibo.graph.utils.getTime
 import it.unibo.stats.Loader
+import java.io.BufferedReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.*
+import java.util.zip.GZIPInputStream
+
+/**
+ * A file of the SmartBench dataset (e.g., sensor.json, timeseries/<sensor>.json): the download keeps it gzipped
+ * (<name>.gz, see downloadDataset), an older extraction as it is. The gzipped one, if it exists
+ */
+fun smartBenchFile(file: Path): Path =
+    if (file.toString().endsWith(".gz")) file else file.resolveSibling("${file.fileName}.gz").takeIf { Files.exists(it) } ?: file
+
+/** Whether the SmartBench [file] exists, gzipped or not */
+fun smartBenchExists(file: Path): Boolean = Files.exists(smartBenchFile(file))
+
+/** A reader of the SmartBench [file], gzipped or not */
+fun smartBenchReader(file: Path): BufferedReader {
+    val actual = smartBenchFile(file)
+    val input = Files.newInputStream(actual)
+    return (if (actual.toString().endsWith(".gz")) GZIPInputStream(input, 1 shl 16) else input).bufferedReader()
+}
 
 /** A time series of SmartBench: the events of [file], produced by the entity [sensorId] labelled [sensorLabel] */
 data class SmartBenchTimeSeries(val sensorId: String, val sensorLabel: String, val eventLabel: String, val file: Path)
@@ -116,7 +135,7 @@ abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSm
     override fun loadGraph() {
         for (collection in collections) {
             val file = dataPath.resolve("$collection.json")
-            require(Files.exists(file)) { "File not found: $file" }
+            require(smartBenchExists(file)) { "File not found: $file" }
             for (entity in readEntities(file)) {
                 val label = label(entity[TYPE] as? String ?: error("Missing \"$TYPE\" in $file"))
                 val ts = if (label == Sensor || label == VirtualSensor) findTimeSeries(entity, label) else null
@@ -162,8 +181,8 @@ abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSm
     private fun findTimeSeries(entity: Map<String, Any>, sensorLabel: String): SmartBenchTimeSeries? {
         val sensorId = entity["id"] as? String ?: error("Missing \"id\" in $entity")
         val file = dataPath.resolve("timeseries/$sensorId.json")
-        if (!Files.exists(file)) return null
-        val firstType = Files.newBufferedReader(file).use { it.readLine() }
+        if (!smartBenchExists(file)) return null
+        val firstType = smartBenchReader(file).use { it.readLine() }
             ?.let { mapper.readTree(it).get(TYPE)?.textValue() }
         val eventLabel = firstType ?: if (sensorLabel == Sensor) "Temperature" else "Presence"
         return SmartBenchTimeSeries(sensorId, sensorLabel, eventLabel, file)
@@ -171,7 +190,7 @@ abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSm
 
     /** The entities of a collection file (a JSON array), parsed one at a time */
     private fun readEntities(file: Path): Sequence<Map<String, Any>> = sequence {
-        JsonFactory().createParser(file.toFile()).use { parser ->
+        JsonFactory().createParser(smartBenchReader(file)).use { parser ->
             parser.codec = mapper
             check(parser.nextToken() == JsonToken.START_ARRAY) { "Expected a JSON array in $file" }
             while (parser.nextToken() == JsonToken.START_OBJECT) {
@@ -183,7 +202,7 @@ abstract class SmartBenchJsonLoader(size: String, threads: Int = 1) : AbstractSm
 
     /** The events of a time-series file (one JSON object per line) */
     private fun readEvents(ts: SmartBenchTimeSeries): List<SmartBenchEvent> =
-        Files.newBufferedReader(ts.file).useLines { lines ->
+        smartBenchReader(ts.file).useLines { lines ->
             lines.filter { it.isNotBlank() }.map { line ->
                 val json: Map<String, Any> = mapper.readValue(line)
                 val type = json[TYPE] as String
