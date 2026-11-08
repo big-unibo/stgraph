@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+set -ex
 
 cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
 # The subjects and time series of MIMIC-IV to load: ./run.sh, the short local list (CI); ./run.sh <any argument>, the

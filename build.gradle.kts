@@ -23,11 +23,11 @@ tasks.withType<Test>().configureEach {
          languageVersion = JavaLanguageVersion.of(jVersion)
      }
     jvmArgs(
-        "-Dcom.sun.management.jmxremote",
-        "-Dcom.sun.management.jmxremote.port=9010",
-        "-Dcom.sun.management.jmxremote.rmi.port=9010",
-        "-Dcom.sun.management.jmxremote.authenticate=false",
-        "-Dcom.sun.management.jmxremote.ssl=false",
+        // "-Dcom.sun.management.jmxremote",
+        // "-Dcom.sun.management.jmxremote.port=9010",
+        // "-Dcom.sun.management.jmxremote.rmi.port=9010",
+        // "-Dcom.sun.management.jmxremote.authenticate=false",
+        // "-Dcom.sun.management.jmxremote.ssl=false",
         // "-Djava.rmi.server.hostname=172.27.236.32"
         // "-XX:-Inline"
     )
@@ -64,6 +64,18 @@ dependencies {
 
 tasks.jar {
     exclude("datasets/**")
+}
+
+// The downloader of the datasets, of the evaluation and of downloadDataset.sh (src/test/kotlin/.../evaluation/Download.kt)
+tasks.register<JavaExec>("downloadDataset") {
+    description = "Downloads a dataset into datasets/original: --args=\"<dataset> <size or file>\" (e.g., smartbench small)"
+    group = "evaluation"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "it.unibo.tests.evaluation.DownloadKt"
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(jVersion)
+    }
+    workingDir = projectDir
 }
 
 // The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
