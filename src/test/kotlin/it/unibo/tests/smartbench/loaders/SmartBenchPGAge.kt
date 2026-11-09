@@ -13,8 +13,8 @@ import java.util.*
 /** Whether SmartBench is loaded into PGAge with COPY rather than batches of INSERTs: from medium on */
 fun pgageCopy(size: String): Boolean = size !in listOf("xsmall", "small")
 
-/** The primary key of the measurement table (<graph>.measurements, as PostgreSQL names it by default) */
-private const val PRIMARY_KEY = "measurements_pkey"
+/** The time index of the measurement table: the default index of TimescaleDB on time, with its name */
+private const val TIME_INDEX = "measurements_time_idx"
 
 /** The AGE graph of [size], whose schema holds the table measurements: smartbench_<size>, as mimic_<size> of MIMIC-IV */
 fun pgageGraph(size: String) = "smartbench_$size"
@@ -27,8 +27,9 @@ fun pgageGraph(size: String) = "smartbench_$size"
  *   entity loaded later is lost, as in the Python code); hasSensor is reversed into hasTemperature;
  * - time series: the first event of each series becomes a vertex (as an entity, so it is linked to its sensor through
  *   hasTemperature); the temperature events go to the hypertable [measurementTable], in batches of [batchSize] INSERTs
- *   or, with [copy] (above the small sizes, as MimicIVPGAge), the same batches with COPY, its primary key dropped before
- *   the load and added back after it (index time): the same rows, the same graph.
+ *   or, with [copy] (above the small sizes, as MimicIVPGAge), the same batches with COPY: the same rows, the same graph.
+ *   No primary key: the only index of the events is the time index of TimescaleDB, built after the load (index time),
+ *   as the range index on the timestamps of SmartBenchNeo4J, then the GiST index on the locations.
  * As MimicIVPGAge: a graph and a measurement table per size (graph [graphName], table <graph>.measurements); one
  * statement per vertex, then one per edge, linking the vertices by their AGE ids (no search by property); the edges
  * follow the rules of the Python code (an edge only between vertices that exist when its source is loaded, at most one
@@ -70,15 +71,13 @@ open class SmartBenchPGAge(
                 sensor_id text NOT NULL,
                 type text,
                 val double precision,
-                location geometry(PointZ),
-                PRIMARY KEY(time, sensor_id, type)
+                location geometry(PointZ)
             );
             """.trimIndent()
         )
-        // Chunks of 7 days, as the hypertable of MimicIVPGAge (604800000 ms there, on its epoch milliseconds)
-        safeExec("SELECT create_hypertable('$measurementTable', 'time', chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE);")
-        // The primary key: kept during the INSERTs; with COPY, dropped before the load and added back after it
-        if (copy) safeExec("ALTER TABLE $measurementTable DROP CONSTRAINT IF EXISTS $PRIMARY_KEY;")
+        // Chunks of 7 days, as the hypertable of MimicIVPGAge (604800000 ms there, on its epoch milliseconds). Its
+        // default index on time is created after the load (see createIndexes), not maintained during it
+        safeExec("SELECT create_hypertable('$measurementTable', 'time', chunk_time_interval => INTERVAL '7 days', if_not_exists => TRUE, create_default_indexes => FALSE);")
     }
 
     override fun addEntity(label: String, entity: Map<String, Any>) = addVertex(entity[TYPE] as String, entity - "_id")
@@ -101,7 +100,8 @@ open class SmartBenchPGAge(
     }
 
     override fun createIndexes() {
-        if (copy) addPrimaryKey()
+        // The default index of TimescaleDB on time (same name and definition), as the range index of SmartBenchNeo4J
+        execute("CREATE INDEX $TIME_INDEX ON $measurementTable (time DESC);")
         execute("ALTER TABLE $measurementTable ALTER COLUMN location TYPE geometry(PointZ, 4326) USING ST_Force3D(location);")
         execute("DROP INDEX IF EXISTS $graphName.measurements_location_gist;")
         execute("CREATE INDEX measurements_location_gist ON $measurementTable USING GIST (location);")
@@ -110,8 +110,6 @@ open class SmartBenchPGAge(
     override fun close() {
         conn.close()
     }
-
-    private fun addPrimaryKey() = execute("ALTER TABLE $measurementTable ADD CONSTRAINT $PRIMARY_KEY PRIMARY KEY (time, sensor_id, type);")
 
     /**
      * Creates the vertex (one statement, as MimicIVPGAge), then the edges of its references (hasSensor reversed into

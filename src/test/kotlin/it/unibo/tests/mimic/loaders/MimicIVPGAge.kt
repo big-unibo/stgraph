@@ -18,8 +18,9 @@ fun pgageCsv(limit: Long): Boolean = limit >= 5_000_000
  * always created through the driver, one Cypher statement each; the measurements go to <graph>.measurements:
  * - without [csv], with batches of [batchSize] INSERTs through the driver;
  * - with [csv], with the same batches streamed by COPY ... FROM STDIN (CSV, text fields quoted, so that COPY reads back
- *   the same strings), as SmartBenchPGAge, the primary key dropped before the load and added back after it (index
- *   time).
+ *   the same strings), as SmartBenchPGAge.
+ * No primary key: in both ways, the only index of the measurements is the time index of TimescaleDB on timestamp,
+ * built after the load (index time), as SmartBenchPGAge and the range indexes on the timestamps of MimicIVNeo4J.
  */
 class MimicIVPGAge(
     limit: Long,
@@ -83,8 +84,7 @@ class MimicIVPGAge(
                     itemid BIGINT,
                     abbreviation text,
                     category text,
-                    unitname text,
-                    primary key (ts_id, label, timestamp)
+                    unitname text
                 )""".trimIndent())
 
             safeExec("TRUNCATE TABLE Measurements")
@@ -97,13 +97,12 @@ class MimicIVPGAge(
                     'measurements',
                     'timestamp',
                     chunk_time_interval => 604800000,
-                    if_not_exists => TRUE
+                    if_not_exists => TRUE,
+                    create_default_indexes => FALSE
                 )
                 """.trimIndent())
 
-            // The primary key: kept during the INSERTs; with csv, dropped before the COPY and added back after it (index
-            // time), as SmartBenchPGAge
-            if (csv) safeExec("ALTER TABLE measurements DROP CONSTRAINT IF EXISTS measurements_pkey")
+            // Its default index on timestamp is created after the load (see loadData), not maintained during it
 
             // Back to AGE for the Cypher statements of the ingestion
             safeExec("SET search_path = ag_catalog, public;")
@@ -192,13 +191,13 @@ class MimicIVPGAge(
     private var indexTime = 0L
     override fun getIndexTime(): Long = indexTime
 
-    /** As the skeleton; with [csv], the primary key, dropped before the load, is then added back (index time) */
+    /** As the skeleton, then the default index of TimescaleDB on timestamp, same name and definition (index time) */
     override fun loadData() {
         addGs()
         addTs()
         flush()
-        if (csv) indexTime = getTime {
-            conn.createStatement().use { it.execute("ALTER TABLE $graphName.measurements ADD CONSTRAINT measurements_pkey PRIMARY KEY (ts_id, label, timestamp)") }
+        indexTime = getTime {
+            conn.createStatement().use { it.execute("CREATE INDEX measurements_timestamp_idx ON $graphName.measurements (\"timestamp\" DESC)") }
         }
         close()
     }
