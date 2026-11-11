@@ -122,33 +122,46 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
     }
 
     /**
-     * The events of the time series [pairs] (subject, item) in the local copy, read from PostgreSQL if missing: one
-     * query for all of them, ordered by subject, item and time; one line per event (subject, item, timestamp in ms, value
-     * rounded as the loaders load it)
+     * The events of the time series [pairs] (subject, item) in the local copy, read from PostgreSQL if missing, with the
+     * queries of the loaders before the copy (one per chunk of 100,000 time series, the rows of the other time series of
+     * the chunk skipped): one line per event (subject, item, timestamp in ms, value rounded as the loaders load it), in
+     * the order of the queries
      */
     private fun ensureEvents(pairs: List<Pair<Int, Int>>): File {
         val file = File(cacheDir, "events.csv.gz")
         if (file.exists()) return file
-        val distinct = pairs.distinct()
         writeGzipped(file) { out ->
-            DriverManager.getConnection(url, user, password).use { conn ->
-                conn.autoCommit = false // with fetchSize: the rows are streamed, not all in memory
-                val sql = """
-                    SELECT c.subject_id, c.itemid, c.charttime, c.valuenum
-                    FROM chartevents_unique c
-                    JOIN unnest(?::int4[], ?::int4[]) AS p(subject_id, itemid)
-                      ON c.subject_id = p.subject_id AND c.itemid = p.itemid
-                    ORDER BY c.subject_id, c.itemid, c.charttime
-                """.trimIndent()
-                conn.prepareStatement(sql).use { stmt ->
-                    stmt.setArray(1, conn.createArrayOf("int4", distinct.map { it.first as Any }.toTypedArray()))
-                    stmt.setArray(2, conn.createArrayOf("int4", distinct.map { it.second as Any }.toTypedArray()))
-                    stmt.fetchSize = 10_000
-                    val rs = stmt.executeQuery()
-                    while (rs.next()) {
-                        val timestamp = dateToTimestamp(rs.getString("charttime"))
-                        val value = rs.getString("valuenum").toDouble().roundToLong()
-                        out.write("${rs.getInt("subject_id")},${rs.getInt("itemid")},$timestamp,$value\n")
+            pairs.chunked(100_000).forEach { chunk ->
+                val chunk = chunk.toSet()
+                val subjectIds = chunk.map { (subjectId, _) -> subjectId }.toSet().joinToString { "'$it'" }
+                val itemIds = chunk.map { (_, itemId) -> itemId }.toSet().joinToString { "'$it'" }
+                DriverManager.getConnection(url, user, password).use { conn ->
+                    conn.autoCommit = false
+                    val sql = """
+                        SELECT subject_id, itemid, charttime, valuenum
+                        FROM chartevents_unique c
+                        WHERE c.subject_id IN ($subjectIds) AND c.itemid IN ($itemIds)
+                        ORDER BY subject_id, itemid, charttime
+                    """.trimIndent()
+                    conn.prepareStatement(sql).use { stmt ->
+                        stmt.fetchSize = 10_000
+                        val rs = stmt.executeQuery()
+                        var prevItemId = -1L
+                        var prevSubjectId = -1L
+                        var skip = false
+                        while (rs.next()) {
+                            val subjectId = rs.getLong("subject_id")
+                            val itemId = rs.getLong("itemid")
+                            if (subjectId != prevSubjectId || itemId != prevItemId) {
+                                skip = !chunk.contains(subjectId.toInt() to itemId.toInt())
+                                prevItemId = itemId
+                                prevSubjectId = subjectId
+                            }
+                            if (skip) continue
+                            val timestamp = dateToTimestamp(rs.getString("charttime"))
+                            val value = rs.getString("valuenum").toDouble().roundToLong()
+                            out.write("$subjectId,$itemId,$timestamp,$value\n")
+                        }
                     }
                 }
             }
@@ -261,7 +274,7 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
     private fun pairKey(subjectId: Int, itemId: Int): Long = (subjectId.toLong() shl 32) or (itemId.toLong() and 0xffffffffL)
 
     fun addTs() {
-        // The events of all the time series in the local copy (one query to PostgreSQL if missing), before the workers
+        // The events of all the time series in the local copy (read from PostgreSQL if missing), before the workers
         ensureEvents(users)
         val chunkSize = users.size / threads
         val results = LongArray(threads)
