@@ -66,6 +66,16 @@ data class EvaluationConfig(
     /** [system] as the model of the results: with the [label] of the run, if any */
     fun model(system: String): String = label?.let { "${system}_$it" } ?: system
 
+    /**
+     * The configuration of [system] recorded in the results: the name of its folder in the resources section (conf,
+     * conf-free...), otherwise conf-free, the default of the compose files; empty for the systems without one (AeonG,
+     * HyGraph)
+     */
+    fun configuration(system: String): String {
+        val prefix = mapOf("stgraph" to "ASTERIXDB", "graphix" to "GRAPHIX", "neo4j" to "NEO4J", "pgage" to "PGAGE")[system] ?: return ""
+        return resources["${prefix}_CONF"]?.let { File(it).name } ?: "conf-free"
+    }
+
     companion object {
         val knownSystems = listOf("stgraph", "neo4j", "pgage", "graphix", "aeong", "hygraph")
 

@@ -18,11 +18,12 @@ interface Querying {
 /**
  * Runs [querying] and appends its statistics to the query statistics. [iteration], [querySelectivity] and
  * [temporalRangeIndex] identify the run within an evaluation: the repetition, and the time window of
- * time_constraints.yaml (the queries without a window ignore it)
+ * time_constraints.yaml (the queries without a window ignore it); [configuration]: the configuration of the system (conf
+ * or conf-free, see evaluation/README.md), empty when not known (e.g., the tests)
  */
 fun runQuery(
     querying: Querying, model: String, threads: Int, numMachines: Int, dataset: String, size: String, mode: QueryMode,
-    iteration: Int = 0, querySelectivity: String = "increased", temporalRangeIndex: Int = 0
+    iteration: Int = 0, querySelectivity: String = "increased", temporalRangeIndex: Int = 0, configuration: String = ""
 ) {
     if (!resultFolder.exists()) resultFolder.mkdirs()
 
@@ -44,7 +45,8 @@ fun runQuery(
         "queryMode" to mode,
         "iteration" to iteration,
         "querySelectivity" to querySelectivity,
-        "temporalRangeIndex" to temporalRangeIndex
+        "temporalRangeIndex" to temporalRangeIndex,
+        "configuration" to configuration
     )
 
     // A file written before the last columns were added: extend its header (the old rows leave them empty)

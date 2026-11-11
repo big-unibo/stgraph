@@ -26,9 +26,11 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 
 Every system runs in a container: the database of STGraph, Graphix, Neo4j and PGAge, whose client (the evaluation)
 runs outside, without CPU or memory limits unless the `resources` section of `test_config.yml` sets them (the
-single-core comparison of the paper: `cpus: 1` for each; see below); the whole evaluation of AeonG and HyGraph, client
-included, limited to one core (`cpus: 1` in their compose files). The JVMs see one processor and use a single-threaded
-garbage collector. Each system is configured to use as little parallelism as it allows.
+single-core comparison of the paper: `cpus: 1` and `conf/` for each; see below); the whole evaluation of AeonG and
+HyGraph, client included, in their container, with no CPU or memory limit either (unless the `resources` section sets
+them). By default each system runs with its free configuration (`conf-free/`, its defaults); with `conf/`, it uses as
+little parallelism as it allows. The two configurations of a system differ only in parallelism (and in the partitions
+of AsterixDB and Graphix); the JVMs see the CPUs of their container, with no cap of their own.
 
 | System | Version | Deploy | Configuration |
 |--------|---------|--------|---------------|
@@ -51,7 +53,7 @@ replication.
 | STGraph | in-memory graph store: one node per entity and per time series | AsterixDB dataset of the events | primary key `(tsid, _id)` of the events; R-tree on the event location, built after the ingestion                                                                                    |
 | Graphix | one dataset per collection (the WKT locations stored as 2D geometries, while STGraph keeps them as strings, see `INCONSISTENCIES.txt`), and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them and over `Observations`, with the model of STGraph: sensor `-[hasTemperature]->` series (`Temperature`) `-[hasTS]->` events (`TemperatureEvent`) | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the vertices `TemperatureEvent` and the edges `hasTS` | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph, used by the joins between vertices and edges (`graphix.evaluation.prefer-indexnl`, see Query planning below); R-tree on `Observations.location`, built after the ingestion |
 | Neo4j | the JSON dataset of the other systems: one node per entity, one relationship `has<Field>` per reference (through the driver on xsmall and small, CSV files imported with `neo4j-admin` from medium on) | one `Temperature` node per event, linked to its sensor | range index on `Temperature.timestamp`, built after the ingestion; the label and relationship-type lookup indexes that Neo4j creates by itself |
-| PGAge | AGE graph `smartbench_<size>`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `smartbench_<size>.measurements` (in the schema of the graph) | primary key `(time, sensor_id, type)` and the TimescaleDB index on `time`; GiST on `location`, built after the ingestion; none on the graph                                         |
+| PGAge | AGE graph `smartbench_<size>`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `smartbench_<size>.measurements` (in the schema of the graph) | the TimescaleDB index on `time` (no primary key, as the range index of Neo4j) and GiST on `location`, both built after the ingestion; none on the graph                                         |
 | AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation                                                                                                                                                           |
 
 The indexes built after the ingestion are timed as index time.
@@ -62,14 +64,14 @@ The indexes built after the ingestion are timed as index time.
 |--------|----------------|
 | STGraph | one node controller with one I/O device, i.e., one data partition; `compiler.parallelism=1`, `compiler.sort.parallel=false`; one I/O worker per partition (`io.workers.per.partition=1`); one flush and one merge at a time per partition (`storage.max.concurrent.flushes.per.partition=1`, `storage.max.concurrent.merges.per.partition=1`); the query engine on the threads of the configuration (1) |
 | Graphix | the AsterixDB configuration of STGraph (same keys in its `cc.conf`, plus the Graphix extension, see below); one data feed and one query at a time |
-| Neo4j | Community edition: each query runs on one thread (no parallel runtime); `server.cypher.parallel.worker_limit=1`; one Bolt thread (`server.bolt.thread_pool_min_size=1`, `server.bolt.thread_pool_max_size=1`) and one HTTP worker thread (`server.threads.worker_count=1`); no page-cache prefetchers (`server.memory.pagecache.scan.prefetchers=0`); JVM with `-XX:ActiveProcessorCount=1`, `-XX:ParallelGCThreads=1`, `-XX:ConcGCThreads=1`; one session at a time |
+| Neo4j | Community edition: each query runs on one thread (no parallel runtime); `server.cypher.parallel.worker_limit=1`; one Bolt thread (`server.bolt.thread_pool_min_size=1`, `server.bolt.thread_pool_max_size=1`) and one HTTP worker thread (`server.threads.worker_count=1`); no page-cache prefetchers (`server.memory.pagecache.scan.prefetchers=0`); one session at a time |
 | PGAge | no parallel workers (`max_parallel_workers_per_gather=0`, `max_parallel_workers=0`, `max_parallel_maintenance_workers=0`); `max_worker_processes=2` (TimescaleDB launcher and one background worker), `timescaledb.max_background_workers=1`, `autovacuum_max_workers=1`; no prefetching (`effective_io_concurrency=0`, `maintenance_io_concurrency=0`); one connection at a time |
-| AeonG, HyGraph | the container limited to one core, shared with their client; the other settings of their original evaluation scripts |
+| AeonG, HyGraph | the container shared with their client, with no CPU or memory limit by default; the other settings of their original evaluation scripts |
 
 Memory: the defaults of each system, except the page cache of Neo4j (512 MB) and the `work_mem` and
 `maintenance_work_mem` of PostgreSQL, from the original evaluation.
 
-Query planning: the defaults of each system, except Graphix. Its `cc.conf` has the AsterixDB configuration of STGraph
+Query planning: the defaults of each system, except Graphix. Its `cc.conf` (in `conf/` and in `conf-free/`) has the AsterixDB configuration of STGraph
 plus the settings of the Graphix extension: the pattern semantics of its original configuration
 (`graphix.semantics.pattern=isomorphism`, `graphix.semantics.navigation=no-repeat-anything`) and
 two evaluation settings of Graphix, both default `false`, which the AsterixDB of STGraph does not have:
@@ -114,7 +116,7 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 | `datasets`, `setups` | the sizes of each dataset (for MIMIC-IV, also the PostgreSQL the data is read from: `postgres_endpoint`, `port`, `database`, `user`, `password`); the AsterixDB setups of STGraph |
 | `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`, `aeong`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
 | `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., no CPU or memory limit and the configuration in `conf/` (see below) |
-| `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph, `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
+| `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph (only for the tests: in the evaluation its ingestion is single-threaded, and its Kotlin queries run with 16 threads with `conf-free/` of AsterixDB, the default, and 1 with `conf/`, unless the `evaluation` section or the run sets `threads`), `ingestion.iterations`, `queries` (`iterations`, `selectivities`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
 | `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
 
@@ -156,6 +158,11 @@ dataverse per size, Neo4j and PGAge a single database (the last size loaded): wi
 (e.g., `neo4j: /data/neo4j/{size}`), each size has its own and stays queryable. After a change of the partitions in a
 `cc.conf`, the data of that AsterixDB must be emptied (or kept in another folder).
 
+To keep the data folders small, both configurations of Neo4j keep only the latest transaction log
+(`db.tx_log.rotation.retention_policy=keep_none`, in files of 64 MB) and both configurations of PGAge let the WAL
+shrink to its minimum after a checkpoint (`min_wal_size = 32MB`): these settings change no measured operation, and
+the logs of a folder loaded before them are pruned at its next checkpoint (e.g., at the end of its next run).
+
 To compare configurations of the systems on the same data (CPU and memory limits in the compose files, the settings
 of their configuration files, the threads of STGraph), load each size once, then for each configuration change the
 files, set its `label` and run `./gradlew evaluateQueries` (or `evaluateSpecificRunsQueries`): each system is started
@@ -180,7 +187,7 @@ The free configuration of each system:
 | System | `conf-free` |
 |--------|-------------|
 | STGraph | the `cc.conf` of the image as one node with two data partitions (`iodevices=data/io0,data/io1`) instead of its two nodes with one partition each: the same parallelism (one per partition) in one JVM, without exchanges between nodes on localhost, with one heap (60% of the memory it sees) instead of two |
-| Graphix | the same, with the Graphix extension and the semantics of the patterns; `minimize-joins` and `prefer-indexnl` at their defaults (off) |
+| Graphix | the same, with the Graphix extension and the semantics of the patterns; `minimize-joins` and `prefer-indexnl` on, as in `conf/` (without them Graphix scans all the events at every query) |
 | Neo4j | `conf/` without its least parallelism and its page cache: the configuration of the distribution, on which the image sets a 512 MB page cache (its default whatever the memory) |
 | PGAge | the `postgresql.conf.sample` of PostgreSQL 16 in the image (with its TimescaleDB library and listen address) and the settings of initdb: 128 MB of shared buffers, two parallel workers per query; the locks, the memory per operation and the WAL sizes of `conf/` (`max_locks_per_transaction = 1024`, `work_mem = 32944kB`, `maintenance_work_mem = 2047MB`, `wal_buffers = 16MB`, `min_wal_size = 512MB`, `max_wal_size = 1GB`), so that it is never more limited than `conf/`; `shm: 1g` removes the 64 MB limit of Docker on the shared memory of the parallel workers |
 

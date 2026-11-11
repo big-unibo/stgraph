@@ -85,7 +85,7 @@ abstract class DatasetEvaluation(
         progress("$run: started")
         val start = System.currentTimeMillis()
         val loader = create()
-        loadDataset(loader, recorded, threads = threads, numMachines = numMachines, dataset, size)
+        loadDataset(loader, recorded, threads = threads, numMachines = numMachines, dataset, size, configuration = evaluation.configuration(model))
         progress(
             "$run: done in ${seconds(System.currentTimeMillis() - start)} (timed: graph ${seconds(loader.getGSTime())}, " +
                 "time series ${seconds(loader.getTSTime())}, index ${seconds(loader.getIndexTime())}); " +
@@ -130,7 +130,7 @@ abstract class DatasetEvaluation(
                                 }
                             }
                             resetPort()
-                            runQuery(timed, recorded, thread, numMachines, dataset, size, mode, iteration, selectivity, rangeIndex)
+                            runQuery(timed, recorded, thread, numMachines, dataset, size, mode, iteration, selectivity, rangeIndex, configuration = evaluation.configuration(model))
                             progress("$run: $elapsed ms, $cardinality results")
                         }
                     }
