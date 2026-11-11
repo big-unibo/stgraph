@@ -11,6 +11,9 @@ services:
     cpus: ${NEO4J_CPUS:-0}
     cpuset: "${NEO4J_CPUSET:-}"
     mem_limit: ${NEO4J_MEMORY:-0}
+    # Up to 5 minutes for a clean shutdown on docker stop (checkpoint), instead of the 10 s of Docker: e.g., after a
+    # large ingestion, no recovery at the next start
+    stop_grace_period: 5m
     environment:
       - NEO4J_AUTH=none
     volumes:

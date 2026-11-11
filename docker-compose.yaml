@@ -10,13 +10,17 @@ services:
     cpus: ${ASTERIXDB_CPUS:-0}
     cpuset: "${ASTERIXDB_CPUSET:-}"
     mem_limit: ${ASTERIXDB_MEMORY:-0}
+    # A clean shutdown on docker stop (data flushed, no recovery of the transaction log at the next start): bash, as
+    # PID 1, would ignore the SIGTERM of docker stop, and AsterixDB would be killed at the end of the grace period
+    stop_grace_period: 5m
     command:
       - /bin/bash
       - -c
       - |
         cp /asterixsetup/cc.conf opt/local/conf/cc.conf
         opt/local/bin/start-sample-cluster.sh
-        tail -f /dev/null
+        trap 'opt/local/bin/stop-sample-cluster.sh || true; exit 0' TERM INT
+        tail -f /dev/null & wait $$!
     volumes:
       - "${ASTERIXDB_CONF:-./evaluation/architectures/stgraph/conf-free}:/asterixsetup/"
       # Data of AsterixDB (storage and transaction log), kept when the container is recreated; ASTERIXDB_DATA: a host
@@ -36,6 +40,10 @@ services:
     image: postgres:18
     hostname: postgres
     container_name: mimic-postgres
+    # Up to 5 minutes for a clean shutdown on docker stop (checkpoint), instead of the 10 s of Docker: e.g., after a
+    # large ingestion, no recovery at the next start
+    stop_grace_period: 5m
+    stop_signal: SIGINT
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password

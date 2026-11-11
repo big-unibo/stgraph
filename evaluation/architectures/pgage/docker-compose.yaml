@@ -42,6 +42,11 @@ services:
     depends_on:
       pgage-init:
         condition: service_completed_successfully
+    # Up to 5 minutes for a clean shutdown on docker stop (checkpoint), instead of the 10 s of Docker: e.g., after a
+    # large ingestion, no recovery at the next start
+    stop_grace_period: 5m
+    # Fast shutdown of PostgreSQL (clients disconnected, then checkpoint), as the official image
+    stop_signal: SIGINT
     command: [ "-c", "config_file=/pgconf/postgresql.conf" ]
     ports:
       - ${POSTGRES_PORT_EXT:-5432}:5432
