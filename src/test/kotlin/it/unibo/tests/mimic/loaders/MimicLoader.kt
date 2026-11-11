@@ -11,7 +11,6 @@ import java.io.BufferedWriter
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 import java.sql.DriverManager
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
@@ -37,9 +36,9 @@ interface MimicIVLoader: Loader {
 /**
  * Reads the MIMIC-IV data from the PostgreSQL [postgres] (datasets.mimic of test_config.yml), once: what it reads (the
  * items, d_items, and the events of the selected time series, chartevents_unique) is saved, gzipped, in a local copy
- * ([cacheDir]: datasets/original/mimic/cache/<limit>-<hash>), which the next loads read instead of PostgreSQL. A copy is
- * identified by the PostgreSQL (url), the limit and the content of the list of subjects and time series, so a change
- * of any of them reads PostgreSQL again; it is written in full before it is used (an interrupted read leaves none).
+ * ([cacheDir]: datasets/original/mimic/cache/<limit>), which the next loads read instead of PostgreSQL; it is written
+ * in full before it is used (an interrupted read leaves none). Delete the folder to read PostgreSQL again (e.g., after
+ * changing the list of subjects and time series or the PostgreSQL).
  * The copy can be copied to the other machines (same folder): then no machine queries PostgreSQL. Reading the data,
  * from PostgreSQL or from the copy, is not timed.
  */
@@ -72,24 +71,8 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
     private val subjectsFile = File("src/main/resources/mimic-iv_subjectids_tsids.csv")
     private val mapper = jacksonObjectMapper()
 
-    /**
-     * The local copy of the data read from PostgreSQL: its name is the limit and a hash of the PostgreSQL ([url]), of the
-     * limit and of the list of subjects and time series
-     */
-    val cacheDir: File by lazy {
-        val digest = MessageDigest.getInstance("SHA-256")
-        digest.update("$url|$limit|".toByteArray())
-        subjectsFile.inputStream().use { input ->
-            val buffer = ByteArray(1 shl 16)
-            while (true) {
-                val n = input.read(buffer)
-                if (n < 0) break
-                digest.update(buffer, 0, n)
-            }
-        }
-        val hash = digest.digest().joinToString("") { "%02x".format(it) }.take(16)
-        File("datasets/original/mimic/cache/${if (limit == Long.MAX_VALUE) "full" else limit}-$hash")
-    }
+    /** The local copy of the data read from PostgreSQL, one folder per limit */
+    val cacheDir = File("datasets/original/mimic/cache/${if (limit == Long.MAX_VALUE) "full" else limit}")
 
     /** Writes [file] through a gzipped [write], in a temporary file renamed at the end: no partial copy */
     private fun writeGzipped(file: File, write: (BufferedWriter) -> Unit) {

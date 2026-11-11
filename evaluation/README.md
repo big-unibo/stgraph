@@ -136,10 +136,9 @@ folders of the systems, see below), without downloading the datasets. AeonG keep
 same container, is skipped by the tasks of a single phase.
 
 On MIMIC-IV, the loaders read PostgreSQL once per size: the items and the events of the selected time series are saved,
-gzipped, in `datasets/original/mimic/cache/<limit>-<hash>/` (`items.jsonl.gz`, `events.csv.gz`), and the next loads of
-every system read that copy instead of PostgreSQL (not timed, as the reads from PostgreSQL). The hash covers the
-PostgreSQL (endpoint, port, database), the limit and the list of subjects and time series
-(`mimic-iv_subjectids_tsids.csv`): a change of any of them reads PostgreSQL again. To read PostgreSQL without loading any
+gzipped, in `datasets/original/mimic/cache/<limit>/` (`items.jsonl.gz`, `events.csv.gz`), and the next loads of every
+system read that copy instead of PostgreSQL (not timed, as the reads from PostgreSQL). Delete the folder to read
+PostgreSQL again (e.g., after changing `mimic-iv_subjectids_tsids.csv` or the PostgreSQL). To read PostgreSQL without loading any
 system, `./gradlew mimicCache` writes the copies of the sizes of `datasets.mimic.sizes` (or of `--args="<size> ..."`).
 To spare the other machines the query, copy the folder to the same path on them (`evaluation/push_datasets.sh`).
 
