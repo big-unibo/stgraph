@@ -1,0 +1,884 @@
+<?xml version='1.0' encoding='utf-8' ?>
+
+<!-- build 20252.25.0514.2217                               -->
+<workbook original-version='18.1' source-build='2025.2.0 (20252.25.0514.2217)' source-platform='win' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <document-format-change-manifest>
+    <AnimationOnByDefault />
+    <MarkAnimation />
+    <ObjectModelEncapsulateLegacy />
+    <ObjectModelExtractV2 />
+    <ObjectModelTableType />
+    <SchemaViewerObjectModel />
+    <SheetIdentifierTracking />
+    <SortTagCleanup />
+    <_.fcp.VConnDownstreamExtractsWithWarnings.true...VConnDownstreamExtractsWithWarnings />
+    <WindowsPersistSimpleIdentifiers />
+  </document-format-change-manifest>
+  <preferences>
+    <preference name='ui.encoding.shelf.height' value='24' />
+    <preference name='ui.shelf.height' value='26' />
+  </preferences>
+  <datasources>
+    <datasource caption='ingestion_statistics' inline='true' name='federated.196mh1q0w06pxh1ecfzik1u5r11a' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='ingestion_statistics' name='textscan.079ddfy1ki74271dphly81ho18o8'>
+            <connection class='textscan' directory='E:/repos/stgraph/results/merged' filename='ingestion_statistics.csv' password='' server='' />
+          </named-connection>
+        </named-connections>
+        <relation connection='textscan.079ddfy1ki74271dphly81ho18o8' name='ingestion_statistics.csv' table='[ingestion_statistics#csv]' type='table'>
+          <columns character-set='UTF-8' header='yes' locale='en_US' separator=','>
+            <column datatype='string' name='test_id' ordinal='0' />
+            <column datatype='string' name='model' ordinal='1' />
+            <column datatype='integer' name='startTimestamp' ordinal='2' />
+            <column datatype='integer' name='endTimestamp' ordinal='3' />
+            <column datatype='string' name='dataset' ordinal='4' />
+            <column datatype='string' name='datasetSize' ordinal='5' />
+            <column datatype='integer' name='threads' ordinal='6' />
+            <column datatype='integer' name='graphElapsedTime' ordinal='7' />
+            <column datatype='integer' name='tsElapsedTime' ordinal='8' />
+            <column datatype='integer' name='indexTime' ordinal='9' />
+            <column datatype='integer' name='elapsedTime' ordinal='10' />
+            <column datatype='integer' name='numMachines' ordinal='11' />
+            <column datatype='integer' name='storage' ordinal='12' />
+            <column datatype='integer' name='tsStorage' ordinal='13' />
+            <column datatype='integer' name='gsStorage' ordinal='14' />
+            <column datatype='integer' name='tsCard' ordinal='15' />
+            <column datatype='integer' name='gsCard' ordinal='16' />
+            <column datatype='string' name='configuration' ordinal='17' />
+            <column datatype='string' name='machine' ordinal='18' />
+          </columns>
+        </relation>
+        <metadata-records>
+          <metadata-record class='capability'>
+            <remote-name />
+            <remote-type>0</remote-type>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias />
+            <aggregation>Count</aggregation>
+            <contains-null>true</contains-null>
+            <attributes>
+              <attribute datatype='string' name='character-set'>&quot;UTF-8&quot;</attribute>
+              <attribute datatype='string' name='collation'>&quot;en_US&quot;</attribute>
+              <attribute datatype='string' name='field-delimiter'>&quot;,&quot;</attribute>
+              <attribute datatype='string' name='header-row'>&quot;true&quot;</attribute>
+              <attribute datatype='string' name='locale'>&quot;en_US&quot;</attribute>
+              <attribute datatype='string' name='single-char'>&quot;&quot;</attribute>
+            </attributes>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>test_id</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[test_id]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>test_id</remote-alias>
+            <ordinal>0</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <scale>1</scale>
+            <width>1073741823</width>
+            <contains-null>true</contains-null>
+            <collation flag='0' name='LEN_RUS' />
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>model</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[model]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>model</remote-alias>
+            <ordinal>1</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <scale>1</scale>
+            <width>1073741823</width>
+            <contains-null>true</contains-null>
+            <collation flag='0' name='LEN_RUS' />
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>startTimestamp</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[startTimestamp]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>startTimestamp</remote-alias>
+            <ordinal>2</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>endTimestamp</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[endTimestamp]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>endTimestamp</remote-alias>
+            <ordinal>3</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>dataset</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[dataset]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>dataset</remote-alias>
+            <ordinal>4</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <scale>1</scale>
+            <width>1073741823</width>
+            <contains-null>true</contains-null>
+            <collation flag='0' name='LEN_RUS' />
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>datasetSize</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[datasetSize]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>datasetSize</remote-alias>
+            <ordinal>5</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <scale>1</scale>
+            <width>1073741823</width>
+            <contains-null>true</contains-null>
+            <collation flag='0' name='LEN_RUS' />
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>threads</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[threads]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>threads</remote-alias>
+            <ordinal>6</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>graphElapsedTime</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[graphElapsedTime]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>graphElapsedTime</remote-alias>
+            <ordinal>7</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tsElapsedTime</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[tsElapsedTime]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>tsElapsedTime</remote-alias>
+            <ordinal>8</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>indexTime</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[indexTime]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>indexTime</remote-alias>
+            <ordinal>9</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>elapsedTime</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[elapsedTime]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>elapsedTime</remote-alias>
+            <ordinal>10</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>numMachines</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[numMachines]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>numMachines</remote-alias>
+            <ordinal>11</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>storage</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[storage]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>storage</remote-alias>
+            <ordinal>12</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tsStorage</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[tsStorage]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>tsStorage</remote-alias>
+            <ordinal>13</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gsStorage</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[gsStorage]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>gsStorage</remote-alias>
+            <ordinal>14</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>tsCard</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[tsCard]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>tsCard</remote-alias>
+            <ordinal>15</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>gsCard</remote-name>
+            <remote-type>20</remote-type>
+            <local-name>[gsCard]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>gsCard</remote-alias>
+            <ordinal>16</ordinal>
+            <local-type>integer</local-type>
+            <aggregation>Sum</aggregation>
+            <contains-null>true</contains-null>
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>configuration</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[configuration]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>configuration</remote-alias>
+            <ordinal>17</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <scale>1</scale>
+            <width>1073741823</width>
+            <contains-null>true</contains-null>
+            <collation flag='0' name='LEN_RUS' />
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>machine</remote-name>
+            <remote-type>129</remote-type>
+            <local-name>[machine]</local-name>
+            <parent-name>[ingestion_statistics.csv]</parent-name>
+            <remote-alias>machine</remote-alias>
+            <ordinal>18</ordinal>
+            <local-type>string</local-type>
+            <aggregation>Count</aggregation>
+            <scale>1</scale>
+            <width>1073741823</width>
+            <contains-null>true</contains-null>
+            <collation flag='0' name='LEN_RUS' />
+            <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <aliases enabled='yes' />
+      <column caption='ingestion_statistics.csv' datatype='table' name='[__tableau_internal_object_id__].[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]' role='measure' type='quantitative' />
+      <column caption='Configuration' datatype='string' name='[configuration]' role='dimension' type='nominal' />
+      <column caption='Dataset Size' datatype='string' name='[datasetSize]' role='dimension' type='nominal' />
+      <column caption='Dataset' datatype='string' name='[dataset]' role='dimension' type='nominal' />
+      <column caption='Elapsed Time' datatype='integer' name='[elapsedTime]' role='measure' type='quantitative' />
+      <column caption='End Timestamp' datatype='integer' name='[endTimestamp]' role='measure' type='quantitative' />
+      <column caption='Graph Elapsed Time' datatype='integer' name='[graphElapsedTime]' role='measure' type='quantitative' />
+      <column aggregation='Sum' caption='Gs Card' datatype='integer' name='[gsCard]' role='dimension' type='ordinal' />
+      <column caption='Gs Storage' datatype='integer' name='[gsStorage]' role='measure' type='quantitative' />
+      <column caption='Index Time' datatype='integer' name='[indexTime]' role='measure' type='quantitative' />
+      <column caption='Machine' datatype='string' name='[machine]' role='dimension' type='nominal' />
+      <column caption='Model' datatype='string' name='[model]' role='dimension' type='nominal' />
+      <column aggregation='Sum' caption='Num Machines' datatype='integer' name='[numMachines]' role='dimension' type='ordinal' />
+      <column caption='Start Timestamp' datatype='integer' name='[startTimestamp]' role='measure' type='quantitative' />
+      <column caption='Storage' datatype='integer' name='[storage]' role='measure' type='quantitative' />
+      <column caption='Test Id' datatype='string' name='[test_id]' role='dimension' type='nominal' />
+      <column aggregation='Sum' caption='Threads' datatype='integer' name='[threads]' role='dimension' type='ordinal' />
+      <column caption='Ts Card' datatype='integer' name='[tsCard]' role='measure' type='quantitative' />
+      <column caption='Ts Elapsed Time' datatype='integer' name='[tsElapsedTime]' role='measure' type='quantitative' />
+      <column caption='Ts Storage' datatype='integer' name='[tsStorage]' role='measure' type='quantitative' />
+      <extract _.fcp.VConnDownstreamExtractsWithWarnings.true...user-specific='false' count='-1' enabled='true' object-id='' units='records'>
+        <connection access_mode='readonly' authentication='auth-none' author-locale='it_IT' class='hyper' dbname='C:/Users/MATTEO~1.FRA/AppData/Local/Temp/TableauTemp/#TableauTemp_1m9dk9o05bph1y14frwcd0vs4t4b.hyper' default-settings='yes' schema='Extract' sslmode='' update-time='11/11/2026 02:28:00 PM' username='tableau_internal_user'>
+          <relation name='Extract' table='[Extract].[Extract]' type='table' />
+          <refresh>
+            <refresh-event add-from-file-path='ingestion_statistics' increment-value='%null%' refresh-type='create' rows-inserted='79' timestamp-start='2026-11-11 14:28:00.641' />
+          </refresh>
+          <metadata-records>
+            <metadata-record class='column'>
+              <remote-name>test_id</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[test_id]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>test_id</remote-alias>
+              <ordinal>0</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>79</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LEN_RUS' />
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>model</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[model]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>model</remote-alias>
+              <ordinal>1</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>5</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LEN_RUS' />
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>startTimestamp</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[startTimestamp]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>startTimestamp</remote-alias>
+              <ordinal>2</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>79</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>endTimestamp</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[endTimestamp]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>endTimestamp</remote-alias>
+              <ordinal>3</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>79</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>dataset</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[dataset]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>dataset</remote-alias>
+              <ordinal>4</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>2</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LEN_RUS' />
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>datasetSize</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[datasetSize]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>datasetSize</remote-alias>
+              <ordinal>5</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>9</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LEN_RUS' />
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>threads</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[threads]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>threads</remote-alias>
+              <ordinal>6</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>graphElapsedTime</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[graphElapsedTime]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>graphElapsedTime</remote-alias>
+              <ordinal>7</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>76</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>tsElapsedTime</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[tsElapsedTime]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tsElapsedTime</remote-alias>
+              <ordinal>8</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>73</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>indexTime</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[indexTime]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>indexTime</remote-alias>
+              <ordinal>9</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>39</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>elapsedTime</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[elapsedTime]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>elapsedTime</remote-alias>
+              <ordinal>10</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>79</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>numMachines</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[numMachines]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>numMachines</remote-alias>
+              <ordinal>11</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>storage</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[storage]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>storage</remote-alias>
+              <ordinal>12</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>tsStorage</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[tsStorage]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tsStorage</remote-alias>
+              <ordinal>13</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gsStorage</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[gsStorage]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gsStorage</remote-alias>
+              <ordinal>14</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>1</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>tsCard</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[tsCard]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>tsCard</remote-alias>
+              <ordinal>15</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>10</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>gsCard</remote-name>
+              <remote-type>20</remote-type>
+              <local-name>[gsCard]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>gsCard</remote-alias>
+              <ordinal>16</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>integer</local-type>
+              <aggregation>Sum</aggregation>
+              <approx-count>12</approx-count>
+              <contains-null>true</contains-null>
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>configuration</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[configuration]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>configuration</remote-alias>
+              <ordinal>17</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>3</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LEN_RUS' />
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+            <metadata-record class='column'>
+              <remote-name>machine</remote-name>
+              <remote-type>129</remote-type>
+              <local-name>[machine]</local-name>
+              <parent-name>[Extract]</parent-name>
+              <remote-alias>machine</remote-alias>
+              <ordinal>18</ordinal>
+              <family>ingestion_statistics.csv</family>
+              <local-type>string</local-type>
+              <aggregation>Count</aggregation>
+              <approx-count>8</approx-count>
+              <contains-null>true</contains-null>
+              <collation flag='0' name='LEN_RUS' />
+              <object-id>[ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44]</object-id>
+            </metadata-record>
+          </metadata-records>
+        </connection>
+      </extract>
+      <layout dim-ordering='alphabetic' measure-ordering='alphabetic' show-structure='true' />
+      <semantic-values>
+        <semantic-value key='[Country].[Name]' value='&quot;USA&quot;' />
+      </semantic-values>
+      <object-graph>
+        <objects>
+          <object caption='ingestion_statistics.csv' id='ingestion_statistics.csv_FEDA5F234719400EA3C9ACDC09E56B44'>
+            <properties context=''>
+              <relation connection='textscan.079ddfy1ki74271dphly81ho18o8' name='ingestion_statistics.csv' table='[ingestion_statistics#csv]' type='table'>
+                <columns character-set='UTF-8' header='yes' locale='en_US' separator=','>
+                  <column datatype='string' name='test_id' ordinal='0' />
+                  <column datatype='string' name='model' ordinal='1' />
+                  <column datatype='integer' name='startTimestamp' ordinal='2' />
+                  <column datatype='integer' name='endTimestamp' ordinal='3' />
+                  <column datatype='string' name='dataset' ordinal='4' />
+                  <column datatype='string' name='datasetSize' ordinal='5' />
+                  <column datatype='integer' name='threads' ordinal='6' />
+                  <column datatype='integer' name='graphElapsedTime' ordinal='7' />
+                  <column datatype='integer' name='tsElapsedTime' ordinal='8' />
+                  <column datatype='integer' name='indexTime' ordinal='9' />
+                  <column datatype='integer' name='elapsedTime' ordinal='10' />
+                  <column datatype='integer' name='numMachines' ordinal='11' />
+                  <column datatype='integer' name='storage' ordinal='12' />
+                  <column datatype='integer' name='tsStorage' ordinal='13' />
+                  <column datatype='integer' name='gsStorage' ordinal='14' />
+                  <column datatype='integer' name='tsCard' ordinal='15' />
+                  <column datatype='integer' name='gsCard' ordinal='16' />
+                  <column datatype='string' name='configuration' ordinal='17' />
+                  <column datatype='string' name='machine' ordinal='18' />
+                </columns>
+              </relation>
+            </properties>
+            <properties context='extract'>
+              <relation name='Extract' table='[Extract].[Extract]' type='table' />
+            </properties>
+          </object>
+        </objects>
+      </object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Foglio 1'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='ingestion_statistics' name='federated.196mh1q0w06pxh1ecfzik1u5r11a' />
+          </datasources>
+          <datasource-dependencies datasource='federated.196mh1q0w06pxh1ecfzik1u5r11a'>
+            <column-instance column='[elapsedTime]' derivation='Avg' name='[avg:elapsedTime:qk]' pivot='key' type='quantitative' />
+            <column caption='Configuration' datatype='string' name='[configuration]' role='dimension' type='nominal' />
+            <column caption='Dataset Size' datatype='string' name='[datasetSize]' role='dimension' type='nominal' />
+            <column caption='Dataset' datatype='string' name='[dataset]' role='dimension' type='nominal' />
+            <column caption='Elapsed Time' datatype='integer' name='[elapsedTime]' role='measure' type='quantitative' />
+            <column caption='Model' datatype='string' name='[model]' role='dimension' type='nominal' />
+            <column-instance column='[configuration]' derivation='None' name='[none:configuration:nk]' pivot='key' type='nominal' />
+            <column-instance column='[dataset]' derivation='None' name='[none:dataset:nk]' pivot='key' type='nominal' />
+            <column-instance column='[datasetSize]' derivation='None' name='[none:datasetSize:nk]' pivot='key' type='nominal' />
+            <column-instance column='[model]' derivation='None' name='[none:model:nk]' pivot='key' type='nominal' />
+          </datasource-dependencies>
+          <filter class='categorical' column='[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:configuration:nk]'>
+            <groupfilter function='union' user:ui-domain='database' user:ui-enumeration='inclusive' user:ui-marker='enumerate'>
+              <groupfilter function='member' level='[none:configuration:nk]' member='&quot;conf&quot;' />
+              <groupfilter function='member' level='[none:configuration:nk]' member='&quot;conf-free&quot;' />
+            </groupfilter>
+          </filter>
+          <natural-sort column='[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:datasetSize:nk]' direction='DESC' />
+          <slices>
+            <column>[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:configuration:nk]</column>
+          </slices>
+          <aggregation value='true' />
+        </view>
+        <style />
+        <panes>
+          <pane selection-relaxation-option='selection-relaxation-allow'>
+            <view>
+              <breakdown value='auto' />
+            </view>
+            <mark class='Line' />
+            <encodings>
+              <color column='[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:model:nk]' />
+            </encodings>
+          </pane>
+        </panes>
+        <rows>([federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:configuration:nk] * [federated.196mh1q0w06pxh1ecfzik1u5r11a].[avg:elapsedTime:qk])</rows>
+        <cols>([federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:dataset:nk] / [federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:datasetSize:nk])</cols>
+      </table>
+      <simple-id uuid='{821B7923-D113-4295-B7E6-FD035E470FE5}' />
+    </worksheet>
+  </worksheets>
+  <windows saved-dpi-scale-factor='1.25' source-height='37'>
+    <window class='worksheet' maximized='true' name='Foglio 1'>
+      <cards>
+        <edge name='left'>
+          <strip size='160'>
+            <card type='pages' />
+            <card type='filters' />
+            <card type='marks' />
+          </strip>
+        </edge>
+        <edge name='top'>
+          <strip size='2147483647'>
+            <card type='columns' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='rows' />
+          </strip>
+          <strip size='2147483647'>
+            <card type='title' />
+          </strip>
+        </edge>
+        <edge name='right'>
+          <strip size='169'>
+            <card pane-specification-id='0' param='[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:model:nk]' type='color' />
+          </strip>
+        </edge>
+      </cards>
+      <viewpoint>
+        <highlight>
+          <color-one-way>
+            <field>[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:configuration:nk]</field>
+            <field>[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:dataset:nk]</field>
+            <field>[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:datasetSize:nk]</field>
+            <field>[federated.196mh1q0w06pxh1ecfzik1u5r11a].[none:model:nk]</field>
+          </color-one-way>
+        </highlight>
+      </viewpoint>
+      <simple-id uuid='{1982744B-D300-4601-9D46-485F5953CB5B}' />
+    </window>
+  </windows>
+  <thumbnails>
+    <thumbnail height='192' name='Foglio 1' width='192'>
+      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
+      eDhh3og8jgAAAABJRU5ErkJggg==
+    </thumbnail>
+  </thumbnails>
+</workbook>

@@ -34,6 +34,6 @@ for host in "$@"; do
     scp -q -r "$dest:$REMOTE_DIR/results/." "$MACHINES/$name/" || { echo "WARNING: $dest not collected"; failed+=("$host"); }
 done
 
-python3 "$REPO/evaluation/merge_results.py" "$MACHINES" "$REPO/results/merged"
+python "$REPO/evaluation/merge_results.py" "$MACHINES" "$REPO/results/merged"
 
 [[ ${#failed[@]} -eq 0 ]] || { echo "Not collected: ${failed[*]}"; exit 1; }
