@@ -135,6 +135,14 @@ folders of the systems, see below), without downloading the datasets. AeonG keep
 `evaluateQueries` stops if the database is not the one of that dataset and size. HyGraph, which loads and queries in the
 same container, is skipped by the tasks of a single phase.
 
+On MIMIC-IV, the loaders read PostgreSQL once per size: the items and the events of the selected time series are saved,
+gzipped, in `datasets/original/mimic/cache/<limit>-<hash>/` (`items.jsonl.gz`, `events.csv.gz`), and the next loads of
+every system read that copy instead of PostgreSQL (not timed, as the reads from PostgreSQL). The hash covers the
+PostgreSQL (endpoint, port, database), the limit and the list of subjects and time series
+(`mimic-iv_subjectids_tsids.csv`): a change of any of them reads PostgreSQL again. To read PostgreSQL without loading any
+system, `./gradlew mimicCache` writes the copies of the sizes of `datasets.mimic.sizes` (or of `--args="<size> ..."`).
+To spare the other machines the query, copy the folder to the same path on them (`evaluation/push_datasets.sh`).
+
 On MIMIC-IV, AeonG loads the Cypher dump of `datasets/dump/aeong/mimic/<limit>/`, written by MimicIVAeonG when missing.
 Its query files `q0.txt`-`q3.txt` go in `evaluation/architectures/aeong/queries/mimic/`, mounted on its container as the
 SmartBench ones: until all of them are there, its container only runs the ingestion.

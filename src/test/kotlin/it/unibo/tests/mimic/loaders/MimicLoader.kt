@@ -1,11 +1,20 @@
 package it.unibo.tests.mimic.loaders
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import it.unibo.graph.asterixdb.dateToTimestamp
 import it.unibo.graph.utils.getTime
 import it.unibo.stats.Loader
 import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
+import java.io.BufferedReader
+import java.io.BufferedWriter
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.sql.DriverManager
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import kotlin.math.roundToLong
 import kotlin.random.Random
 
@@ -25,7 +34,15 @@ interface MimicIVLoader: Loader {
     fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean)
 }
 
-/** Reads the MIMIC-IV data from the PostgreSQL [postgres] (datasets.mimic of test_config.yml) */
+/**
+ * Reads the MIMIC-IV data from the PostgreSQL [postgres] (datasets.mimic of test_config.yml), once: what it reads (the
+ * items, d_items, and the events of the selected time series, chartevents_unique) is saved, gzipped, in a local copy
+ * ([cacheDir]: datasets/original/mimic/cache/<limit>-<hash>), which the next loads read instead of PostgreSQL. A copy is
+ * identified by the PostgreSQL (url), the limit and the content of the list of subjects and time series, so a change
+ * of any of them reads PostgreSQL again; it is written in full before it is used (an interrupted read leaves none).
+ * The copy can be copied to the other machines (same folder): then no machine queries PostgreSQL. Reading the data,
+ * from PostgreSQL or from the copy, is not timed.
+ */
 abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres: PostgresConfig = PostgresConfig()): MimicIVLoader {
     val url = "jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}"
     val user = postgres.user
@@ -52,10 +69,106 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
     )
     val tsCache = mutableMapOf<Int, MIMICTS>()
 
+    private val subjectsFile = File("src/main/resources/mimic-iv_subjectids_tsids.csv")
+    private val mapper = jacksonObjectMapper()
+
+    /**
+     * The local copy of the data read from PostgreSQL: its name is the limit and a hash of the PostgreSQL ([url]), of the
+     * limit and of the list of subjects and time series
+     */
+    val cacheDir: File by lazy {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update("$url|$limit|".toByteArray())
+        subjectsFile.inputStream().use { input ->
+            val buffer = ByteArray(1 shl 16)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        val hash = digest.digest().joinToString("") { "%02x".format(it) }.take(16)
+        File("datasets/original/mimic/cache/${if (limit == Long.MAX_VALUE) "full" else limit}-$hash")
+    }
+
+    /** Writes [file] through a gzipped [write], in a temporary file renamed at the end: no partial copy */
+    private fun writeGzipped(file: File, write: (BufferedWriter) -> Unit) {
+        file.parentFile.mkdirs()
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        GZIPOutputStream(tmp.outputStream(), 1 shl 16).bufferedWriter().use(write)
+        Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    }
+
+    private fun gzippedReader(file: File): BufferedReader = GZIPInputStream(file.inputStream(), 1 shl 16).bufferedReader()
+
+    /** The items (d_items): from the local copy, otherwise from PostgreSQL, then saved in the copy */
+    private fun loadItems(): List<MIMICTS> {
+        val file = File(cacheDir, "items.jsonl.gz")
+        if (!file.exists()) {
+            writeGzipped(file) { out ->
+                DriverManager.getConnection(url, user, password).use { conn ->
+                    conn.prepareStatement("SELECT itemid, unitname, category, label, abbreviation FROM d_items").use { stmt ->
+                        val rs = stmt.executeQuery()
+                        while (rs.next()) {
+                            val ts = MIMICTS(rs.getString("abbreviation"), rs.getString("unitname"), rs.getString("category"), rs.getString("label"), rs.getInt("itemid"))
+                            out.write(mapper.writeValueAsString(ts))
+                            out.write("\n")
+                        }
+                    }
+                }
+            }
+        }
+        return gzippedReader(file).useLines { lines -> lines.filter { it.isNotBlank() }.map { mapper.readValue<MIMICTS>(it) }.toList() }
+    }
+
+    /**
+     * The events of the time series [pairs] (subject, item) in the local copy, read from PostgreSQL if missing: one
+     * query for all of them, ordered by subject, item and time; one line per event (subject, item, timestamp in ms, value
+     * rounded as the loaders load it)
+     */
+    private fun ensureEvents(pairs: List<Pair<Int, Int>>): File {
+        val file = File(cacheDir, "events.csv.gz")
+        if (file.exists()) return file
+        val distinct = pairs.distinct()
+        writeGzipped(file) { out ->
+            DriverManager.getConnection(url, user, password).use { conn ->
+                conn.autoCommit = false // with fetchSize: the rows are streamed, not all in memory
+                val sql = """
+                    SELECT c.subject_id, c.itemid, c.charttime, c.valuenum
+                    FROM chartevents_unique c
+                    JOIN unnest(?::int4[], ?::int4[]) AS p(subject_id, itemid)
+                      ON c.subject_id = p.subject_id AND c.itemid = p.itemid
+                    ORDER BY c.subject_id, c.itemid, c.charttime
+                """.trimIndent()
+                conn.prepareStatement(sql).use { stmt ->
+                    stmt.setArray(1, conn.createArrayOf("int4", distinct.map { it.first as Any }.toTypedArray()))
+                    stmt.setArray(2, conn.createArrayOf("int4", distinct.map { it.second as Any }.toTypedArray()))
+                    stmt.fetchSize = 10_000
+                    val rs = stmt.executeQuery()
+                    while (rs.next()) {
+                        val timestamp = dateToTimestamp(rs.getString("charttime"))
+                        val value = rs.getString("valuenum").toDouble().roundToLong()
+                        out.write("${rs.getInt("subject_id")},${rs.getInt("itemid")},$timestamp,$value\n")
+                    }
+                }
+            }
+        }
+        return file
+    }
+
+    /**
+     * Only the reads from PostgreSQL, without loading any system: the selection of the subjects and time series, then the
+     * local copy of the items and of their events (see [cacheDir]), if missing. Returns the folder of the copy
+     */
+    fun prepareCache(): File {
+        addGs()
+        ensureEvents(users)
+        return cacheDir
+    }
+
     fun addGs() {
-        DriverManager.getConnection(url, user, password).use { conn ->
-            conn.autoCommit = false
-            val rows = File("src/main/resources/mimic-iv_subjectids_tsids.csv")
+        run {
+            val rows = subjectsFile
                 .useLines { lines ->
                     lines
                         // .drop(1) // uncomment if header exists
@@ -65,20 +178,7 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
                         }
                         .toList()
                 }
-            val sql = """SELECT itemid, unitname, category, label, abbreviation FROM d_items""".trimIndent()
-            conn.prepareStatement(sql).use { stmt ->
-                val rs = stmt.executeQuery()
-                while (rs.next()) {
-                    val ts = MIMICTS(
-                        rs.getString("abbreviation"),
-                        rs.getString("unitname"),
-                        rs.getString("category"),
-                        rs.getString("label"),
-                        rs.getInt("itemid")
-                    )
-                    tsCache[ts.itemid] = ts
-                }
-            }
+            loadItems().forEach { tsCache[it.itemid] = it }
             val grouped: Map<Int, List<Pair<MIMICTS, Int>>> = rows.groupBy({ it.first }) { row ->
                 val ts = tsCache[row.second] ?: error("Missing TS for itemId ${row.second}")
                 Pair(ts, row.third)
@@ -129,42 +229,18 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
         fun record(i: Int) = TSRecord(itemIds[i].toString(), timestamp = timestamps[i], location = "", value = values[i])
     }
 
+    /** Loads the events of the time series [pairs] (subject, item) of a worker, read from the local copy */
     fun loadTS(pairs: List<Pair<Int, Int>>): Long {
         val events = Events()
-        val chunkSize = 100_000
-        pairs.chunked(chunkSize).forEach { chunk ->
-            val chunk = chunk.toSet()
-            val subjectIds = chunk.map { (subjectId, _) -> subjectId }.toSet().joinToString { "'$it'" }
-            val itemIds = chunk.map { (_, itemId) -> itemId }.toSet().joinToString { "'$it'" }
-            DriverManager.getConnection(url, user, password).use { conn ->
-                conn.autoCommit = false
-                val sql = """
-                    SELECT subject_id, itemid, charttime, valuenum
-                    FROM chartevents_unique c 
-                    WHERE c.subject_id IN ($subjectIds) AND c.itemid IN ($itemIds)
-                    ORDER BY subject_id, itemid, charttime
-                """.trimIndent()
-                conn.prepareStatement(sql).use { stmt ->
-                    stmt.fetchSize = 10_000   // smaller is safer
-                    val rs = stmt.executeQuery()
-                    var prevItemId = -1L
-                    var prevSubjectId = -1L
-                    var skip = false
-                    while (rs.next()) {
-                        val subjectId = rs.getLong("subject_id")
-                        val itemId = rs.getLong("itemid")
-                        if (subjectId != prevSubjectId || itemId != prevItemId) {
-                            skip = !chunk.contains(subjectId.toInt() to itemId.toInt())
-                            prevItemId = itemId
-                            prevSubjectId = subjectId
-                        }
-                        if (skip) continue
-                        val tsId = item2nodeid[subjectId to itemId]
-                        val chartTime = rs.getString("charttime")
-                        val valueNum = rs.getString("valuenum")
-                        events.add(tsId!!, itemId.toInt(), dateToTimestamp(chartTime), valueNum.toDouble().roundToLong())
-                    }
-                }
+        val wanted = HashSet<Long>(pairs.size * 2).apply { pairs.forEach { (subjectId, itemId) -> add(pairKey(subjectId, itemId)) } }
+        gzippedReader(File(cacheDir, "events.csv.gz")).useLines { lines ->
+            for (line in lines) {
+                if (line.isEmpty()) continue
+                val (subjectId, itemId, timestamp, value) = line.split(",")
+                val s = subjectId.toInt()
+                val i = itemId.toInt()
+                if (pairKey(s, i) !in wanted) continue
+                events.add(item2nodeid.getValue(s.toLong() to i.toLong()), i, timestamp.toLong(), value.toLong())
             }
         }
         tsCard += events.size
@@ -182,7 +258,11 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
     /** Waits until the last measurement [row] of the worker is stored (timed as time-series time, as in SmartBench) */
     open fun awaitLast(tsId: Long, row: TSRecord) {}
 
+    private fun pairKey(subjectId: Int, itemId: Int): Long = (subjectId.toLong() shl 32) or (itemId.toLong() and 0xffffffffL)
+
     fun addTs() {
+        // The events of all the time series in the local copy (one query to PostgreSQL if missing), before the workers
+        ensureEvents(users)
         val chunkSize = users.size / threads
         val results = LongArray(threads)
         val workers = mutableListOf<Thread>()

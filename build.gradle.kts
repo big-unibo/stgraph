@@ -78,6 +78,18 @@ tasks.register<JavaExec>("downloadDataset") {
     workingDir = projectDir
 }
 
+// Only the reads of MIMIC-IV from PostgreSQL, into the local copies the ingestions read (src/test/kotlin/.../mimic/MimicCache.kt)
+tasks.register<JavaExec>("mimicCache") {
+    description = "Reads MIMIC-IV from PostgreSQL into datasets/original/mimic/cache, without loading any system: --args=\"<size> ...\" (default: datasets.mimic.sizes)"
+    group = "evaluation"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "it.unibo.tests.mimic.MimicCacheKt"
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(jVersion)
+    }
+    workingDir = projectDir
+}
+
 // The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
 // test_config.yml (evaluation/README.md), with both phases or only one of them. Not tests: the CI does not run them.
 mapOf(
