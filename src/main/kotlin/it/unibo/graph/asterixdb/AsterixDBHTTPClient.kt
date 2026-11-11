@@ -52,7 +52,9 @@ class AsterixDBHTTPClient(
 
     private fun write(data: String, flush: Boolean) {
         openDataFeedConnection()
-        writer.write(data + "\n")
+        // The record and its line break, without building a new string for each event
+        writer.write(data)
+        writer.write('\n'.code)
     }
 
     fun writeToFeed(data: String, flush: Boolean) {

@@ -29,7 +29,7 @@ fun main() {
     TestConfig.loadConfig().datasets["mimic"]!!.sizes.forEach { size ->
         println(size)
         loadDataset(MimicIVAeonG(mimicLimit(size.toString()), postgres = postgres), "aeong", 1, 1,"mimic", size.toString())
-        loadDataset(MimicIVPGAge(mimicLimit(size.toString()), postgres = postgres), "pgage", 1, 1,"mimic", size.toString())
+        loadDataset(MimicIVPGAge(mimicLimit(size.toString()), postgres = postgres, csv = true), "pgage", 1, 1,"mimic", size.toString())
         loadDataset(MimicIVNeo4J(mimicLimit(size.toString()), csv = true, postgres = postgres), "neo4j", 1, 1,"mimic", size.toString())
         loadDataset(MimicIVGraphix(size.toString(), postgres = postgres), "graphix", 1, 1, "mimic", size.toString())
     }

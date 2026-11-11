@@ -10,14 +10,14 @@ import org.postgresql.core.BaseConnection
 import java.io.StringReader
 import java.sql.*
 
-/** Whether MIMIC-IV is loaded into PGAge with COPY (CSV from STDIN) rather than with batches of INSERTs: above the small sizes, as [neo4jCsv] */
-fun pgageCsv(limit: Long): Boolean = limit >= 5_000_000
+/** Whether MIMIC-IV is loaded into PGAge with COPY (CSV from STDIN) rather than with batches of INSERTs: above the small sizes, and always in the CI (CI=true), as [neo4jCsv] */
+fun pgageCsv(limit: Long): Boolean = System.getenv("CI") == "true" || limit >= 5_000_000
 
 /**
  * Loads MIMIC-IV into PGAge, in two ways that produce the same database: the graph (Person and TimeSeries vertices) is
  * always created through the driver, one Cypher statement each; the measurements go to <graph>.measurements:
  * - without [csv], with batches of [batchSize] INSERTs through the driver;
- * - with [csv], with the same batches streamed by COPY ... FROM STDIN (CSV, text fields quoted, so that COPY reads back
+ * - with [csv], with batches of [copyBatchSize] streamed by COPY ... FROM STDIN (CSV, text fields quoted, so that COPY reads back
  *   the same strings), as SmartBenchPGAge.
  * No primary key: in both ways, the only index of the measurements is the time index of TimescaleDB on timestamp,
  * built after the load (index time), as SmartBenchPGAge and the range indexes on the timestamps of MimicIVNeo4J.
@@ -30,7 +30,9 @@ class MimicIVPGAge(
     // The PostgreSQL of MIMIC-IV the data is read from (url, user and password: the one of PGAge)
     postgres: PostgresConfig = PostgresConfig(),
     val csv: Boolean = pgageCsv(limit),
-    private val batchSize: Int = 20_000
+    private val batchSize: Int = 10,
+    // Rows per COPY (with csv, above the small sizes)
+    private val copyBatchSize: Int = 20_000
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres)  {
     private val graphName = graphName(limit)
     // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path),
@@ -155,7 +157,7 @@ class MimicIVPGAge(
             (++measurementCounter).toLong(), ts, row.timestamp, row.value as Long, tmp.abbreviation, tmp.itemid.toLong(), tmp.abbreviation, tmp.category, tmp.unitname
         )
         pending += values
-        if (pending.size >= batchSize || isLast) flush()
+        if (pending.size >= (if (csv) copyBatchSize else batchSize) || isLast) flush()
     }
 
     /** A CSV field: quoted, quotes doubled (COPY reads back the same string, also when empty or with commas) */

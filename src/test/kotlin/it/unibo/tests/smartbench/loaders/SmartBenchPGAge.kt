@@ -10,8 +10,8 @@ import java.io.StringReader
 import java.sql.Connection
 import java.util.*
 
-/** Whether SmartBench is loaded into PGAge with COPY rather than batches of INSERTs: from medium on */
-fun pgageCopy(size: String): Boolean = size !in listOf("xsmall", "small")
+/** Whether SmartBench is loaded into PGAge with COPY rather than batches of INSERTs: from medium on, and always in the CI (CI=true) */
+fun pgageCopy(size: String): Boolean = System.getenv("CI") == "true" || size !in listOf("xsmall", "small")
 
 /** The time index of the measurement table: the default index of TimescaleDB on time, with its name */
 private const val TIME_INDEX = "measurements_time_idx"
@@ -27,7 +27,7 @@ fun pgageGraph(size: String) = "smartbench_$size"
  *   entity loaded later is lost, as in the Python code); hasSensor is reversed into hasTemperature;
  * - time series: the first event of each series becomes a vertex (as an entity, so it is linked to its sensor through
  *   hasTemperature); the temperature events go to the hypertable [measurementTable], in batches of [batchSize] INSERTs
- *   or, with [copy] (above the small sizes, as MimicIVPGAge), the same batches with COPY: the same rows, the same graph.
+ *   or, with [copy] (above the small sizes, as MimicIVPGAge), with COPY in batches of [copyBatchSize]: the same rows, the same graph.
  *   No primary key: the only index of the events is the time index of TimescaleDB, built after the load (index time),
  *   as the range index on the timestamps of SmartBenchNeo4J, then the GiST index on the locations.
  * As MimicIVPGAge: a graph and a measurement table per size (graph [graphName], table <graph>.measurements); one
@@ -44,7 +44,9 @@ open class SmartBenchPGAge(
     user: String = "postgres",
     password: String = "psw",
     protected val graphName: String = pgageGraph(size),
-    private val batchSize: Int = 20_000,
+    private val batchSize: Int = 10,
+    // Rows per COPY (with copy, above the small sizes)
+    private val copyBatchSize: Int = 20_000,
     private val copy: Boolean = pgageCopy(size)
 ) : SmartBenchJsonLoader(size, threads = 1) {
     protected val measurementTable = "$graphName.measurements"
@@ -90,7 +92,7 @@ open class SmartBenchPGAge(
         addVertex(first[TYPE] as String, first - "_id")
         // Only the temperatures have a mapping to the measurement table
         val rows = events.filter { it.json[TYPE] == "Temperature" }
-        rows.chunked(batchSize).forEach { if (copy) copyMeasurements(it) else insertMeasurements(it) }
+        if (copy) rows.chunked(copyBatchSize).forEach { copyMeasurements(it) } else rows.chunked(batchSize).forEach { insertMeasurements(it) }
         skippedEvents += events.size - rows.size
     }
 
@@ -100,9 +102,10 @@ open class SmartBenchPGAge(
     }
 
     override fun createIndexes() {
+        // The SRID of the locations first: the ALTER rewrites the table, and would rebuild the indexes already there
+        execute("ALTER TABLE $measurementTable ALTER COLUMN location TYPE geometry(PointZ, 4326) USING ST_Force3D(location);")
         // The default index of TimescaleDB on time (same name and definition), as the range index of SmartBenchNeo4J
         execute("CREATE INDEX $TIME_INDEX ON $measurementTable (time DESC);")
-        execute("ALTER TABLE $measurementTable ALTER COLUMN location TYPE geometry(PointZ, 4326) USING ST_Force3D(location);")
         execute("DROP INDEX IF EXISTS $graphName.measurements_location_gist;")
         execute("CREATE INDEX measurements_location_gist ON $measurementTable USING GIST (location);")
     }

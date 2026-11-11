@@ -16,8 +16,8 @@ import java.util.zip.Deflater
 import java.util.zip.GZIPOutputStream
 import kotlin.io.path.name
 
-/** Whether SmartBench is loaded into Neo4j from CSV files (neo4j-admin import) rather than through the driver: from medium on */
-fun neo4jCsv(size: String): Boolean = size !in listOf("xsmall", "small")
+/** Whether SmartBench is loaded into Neo4j from CSV files (neo4j-admin import) rather than through the driver: from medium on, and always in the CI (CI=true, as GitHub Actions sets it), to keep it short */
+fun neo4jCsv(size: String): Boolean = System.getenv("CI") == "true" || size !in listOf("xsmall", "small")
 
 /**
  * Loads SmartBench into Neo4j from the JSON dataset of the other systems (datasets/original/smartbench/<size>), as
@@ -42,7 +42,7 @@ fun neo4jCsv(size: String): Boolean = size !in listOf("xsmall", "small")
 class SmartBenchNeo4J(
     size: String,
     private val uri: String = "bolt://localhost:7687",
-    private val batchSize: Int = 20_000,
+    private val batchSize: Int = 10,
     private val csv: Boolean = neo4jCsv(size),
     private val csvImport: ((File, List<String>) -> Long)? = null
 ) : AbstractSmartBenchLoader(size, threads = 1) {

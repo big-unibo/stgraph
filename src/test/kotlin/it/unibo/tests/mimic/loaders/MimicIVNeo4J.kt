@@ -11,8 +11,8 @@ import java.io.PrintWriter
 import java.io.Writer
 import java.util.zip.GZIPOutputStream
 
-/** Whether MIMIC-IV is loaded into Neo4j from CSV files (neo4j-admin import) rather than one node at a time: above the small sizes */
-fun neo4jCsv(limit: Long): Boolean = limit >= 5_000_000
+/** Whether MIMIC-IV is loaded into Neo4j from CSV files (neo4j-admin import) rather than one node at a time: above the small sizes, and always in the CI (CI=true) */
+fun neo4jCsv(limit: Long): Boolean = System.getenv("CI") == "true" || limit >= 5_000_000
 
 /**
  * Loads MIMIC-IV into Neo4j, in two ways that produce the same graph (the one of the CSV files):
@@ -37,7 +37,7 @@ class MimicIVNeo4J(
     val csv: Boolean,
     postgres: PostgresConfig = PostgresConfig(),
     private val csvImport: ((File) -> Long)? = null,
-    private val batchSize: Int = 20_000
+    private val batchSize: Int = 10
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
 
     private val driver: Driver? = if (csv) null else neo4jDriver(uri, userNeo4j, passwordNeo4j)
