@@ -63,6 +63,10 @@ class MimicIVPGAge(
             // Set search path to allow AGE operations
             safeExec("SET search_path = ag_catalog, \"$user\", public;")
 
+            // The hypertable first, with DROP TABLE: drop_graph drops the schema without the hooks of TimescaleDB,
+            // whose catalog would keep the hypertable and its chunks (see SmartBenchPGAge)
+            safeExec("DROP TABLE IF EXISTS $graphName.measurements")
+
             // Drop the graph if it exists
             try {
                 st.execute("SELECT drop_graph('$graphName', true)")

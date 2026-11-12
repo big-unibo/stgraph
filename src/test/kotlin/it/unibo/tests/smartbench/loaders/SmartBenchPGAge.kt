@@ -62,6 +62,10 @@ open class SmartBenchPGAge(
     init {
         // Clean-up and schema (not timed), as MimicIVPGAge: an error is printed (e.g., a graph that does not exist yet).
         // The table is in the schema of the graph, dropped with it
+        // The hypertable first, with DROP TABLE: drop_graph drops the schema without the hooks of TimescaleDB, whose
+        // catalog would keep the hypertable and its chunks (create_hypertable, if_not_exists, would then reuse them:
+        // "cache lookup failed for relation _timescaledb_internal._hyper_..._chunk" at the first INSERT)
+        safeExec("DROP TABLE IF EXISTS $measurementTable;")
         safeExec("SELECT * FROM ag_catalog.drop_graph('$graphName', true);")
         safeExec("CREATE EXTENSION IF NOT EXISTS age;")
         safeExec("CREATE EXTENSION IF NOT EXISTS postgis;")
