@@ -9,9 +9,9 @@ import it.unibo.stats.Querying
 import it.unibo.stats.TestConfig
 import kotlin.system.measureTimeMillis
 
-class EnvironmentOutlier(val graph: Graph, val size: String) : Querying {
+class EnvironmentOutlier(val graph: Graph, val size: String, selectivity: String = "increased", rangeIndex: Int = 0) : Querying {
     override val queryId = "EnvironmentOutlier"
-    val temporalConstraints = TestConfig.loadTemporalRanges("increased", queryId, size)[0]!!
+    val temporalConstraints = TestConfig.loadTemporalRanges(selectivity, queryId, size)[rangeIndex]!!
     override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
         val tA = temporalConstraints.from
         val tB = temporalConstraints.to

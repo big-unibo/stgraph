@@ -1,0 +1,11 @@
+SELECT *
+FROM (
+    SELECT *
+    FROM cypher('{GRAPH}'::name, $$
+        MATCH (p)--(t)
+        WHERE p.c > 25000
+        RETURN DISTINCT p, t, id(t)
+    $$) AS (p agtype, t agtype, tsid bigint)
+) t
+JOIN {GRAPH}.measurements m ON m.ts_id = t.tsid
+WHERE m.value > {FILTER};

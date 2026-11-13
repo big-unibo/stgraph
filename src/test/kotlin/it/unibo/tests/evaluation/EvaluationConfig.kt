@@ -1,0 +1,201 @@
+package it.unibo.tests.evaluation
+
+import it.unibo.graph.query.QueryMode
+import org.yaml.snakeyaml.Yaml
+import java.io.File
+
+/**
+ * A configuration of the evaluation, from test_config.yml (see test_config.example.yml): which systems run on which
+ * datasets, and how. Two levels, which take the parameters they do not set from the defaults section:
+ * - [load]: the evaluation section, i.e., every combination of its parameters (./gradlew evaluate);
+ * - [loadSpecificRuns]: the runs of the specificRuns section, one after the other (./gradlew evaluateSpecificRuns),
+ *   the same runs that the tests of STGraph read (TestConfig).
+ * The setups of STGraph and the sizes of the datasets come from the rest of the file (TestConfig), the data folders of
+ * the systems from its volumes section, their resources and configuration from its resources section.
+ */
+data class EvaluationConfig(
+    val systems: List<String>,
+    val datasets: List<String>,
+    /** Sizes of every dataset (null: the ones of datasets.<dataset>.sizes) */
+    val sizes: List<String>?,
+    /** Setups (AsterixDB) of STGraph */
+    val setups: List<String>,
+    /**
+     * Threads of the Kotlin queries of STGraph (its ingestion and the competitors run single-threaded): those of the
+     * evaluation section or of the run, otherwise 16 with conf-free/ of its AsterixDB (the default) and 1 with conf/
+     * (see withThreads)
+     */
+    val threads: List<Int>,
+    /** Query modes of STGraph */
+    val modes: List<QueryMode>,
+    val ingestionIterations: Int,
+    val queryIterations: Int,
+    /** Selectivities of time_constraints.yaml: each query runs on every time window of each one */
+    val selectivities: List<String>,
+    /** Query ids to run (empty: all) */
+    val queryIds: List<String>,
+    /** Downloads the missing datasets */
+    val download: Boolean,
+    /** Starts each system before its runs and stops it after, one system at a time */
+    val deploy: Boolean,
+    /**
+     * The data folders of the systems, as the variables of their compose files (e.g., NEO4J_DATA to an absolute path),
+     * from the volumes section, with {size} for the size of the run (see [volumes]); a system without one keeps its
+     * data in its Docker volume
+     */
+    val volumeFolders: Map<String, String> = emptyMap(),
+    /** Appended to the model of the results (e.g., stgraph_4CPU for the label 4CPU): the configuration the run measures */
+    val label: String? = null,
+    /**
+     * The resources and configuration of the systems, as the variables of their compose files (e.g., NEO4J_MEMORY to
+     * 12g, NEO4J_CONF to an absolute path), from the resources section; a variable not set keeps the value of the
+     * compose file
+     */
+    val resources: Map<String, String> = emptyMap()
+) {
+    /**
+     * The data folders of [volumeFolders] for [size], with {size} replaced (e.g., a folder per size for Neo4j and PGAge,
+     * which keep a single database), created if missing, so that Docker does not create them as root
+     */
+    fun volumes(dataset: String, size: String): Map<String, String> =
+        volumeFolders.mapValues { (_, folder) -> File(folder.replace("{dataset}", dataset).replace("{size}", size)).apply { mkdirs() }.path }
+
+    /** The variables of the compose files for [size]: the data folders ([volumes]) and the [resources] */
+    fun environment(dataset: String, size: String): Map<String, String> = volumes(dataset, size) + resources
+
+    /** [system] as the model of the results: with the [label] of the run, if any */
+    fun model(system: String): String = label?.let { "${system}_$it" } ?: system
+
+    /**
+     * The configuration of [system] recorded in the results: the name of its folder in the resources section (conf,
+     * conf-free...), otherwise conf-free, the default of the compose files; empty for the systems without one (AeonG,
+     * HyGraph)
+     */
+    fun configuration(system: String): String {
+        val prefix = mapOf("stgraph" to "ASTERIXDB", "graphix" to "GRAPHIX", "neo4j" to "NEO4J", "pgage" to "PGAGE")[system] ?: return ""
+        return resources["${prefix}_CONF"]?.let { File(it).name } ?: "conf-free"
+    }
+
+    companion object {
+        val knownSystems = listOf("stgraph", "neo4j", "pgage", "graphix", "aeong", "hygraph")
+
+        /** The variable of the compose file of each system of the volumes section (asterixdb: the AsterixDB of STGraph) */
+        private val volumeVariables = mapOf(
+            "asterixdb" to "ASTERIXDB_DATA",
+            "graphix" to "GRAPHIX_DATA",
+            "neo4j" to "NEO4J_DATA",
+            "pgage" to "PGAGE_DATA",
+            "aeong" to "AEONG_DATA"
+        )
+
+        /**
+         * The prefix of the variables of each system of the resources section: the systems of the volumes section, and
+         * AeonG and HyGraph (only cpus, cpuset and memory: they have no conf or shm)
+         */
+        private val resourcePrefixes = volumeVariables.mapValues { it.value.removeSuffix("_DATA") } + mapOf("aeong" to "AEONG", "hygraph" to "HYGRAPH")
+
+        /** The suffix of the variable of each key of the resources section, after the prefix of the system (NEO4J_MEMORY) */
+        private val resourceVariables = mapOf("cpus" to "CPUS", "cpuset" to "CPUSET", "memory" to "MEMORY", "shm" to "SHM", "conf" to "CONF")
+
+        /** The evaluation section of [path] */
+        @Suppress("UNCHECKED_CAST")
+        fun load(path: String = "src/main/resources/test_config.yml"): EvaluationConfig {
+            val yaml = yaml(path)
+            val section = yaml["evaluation"] as? Map<String, Any?>
+                ?: error("No evaluation section in $path: copy it from test_config.example.yml")
+            val resources = resources(yaml, path)
+            return parse(section, defaults(yaml), path).copy(volumeFolders = volumes(yaml, path), resources = resources).withThreads()
+        }
+
+        /** The runs of the specificRuns section of [path] */
+        @Suppress("UNCHECKED_CAST")
+        fun loadSpecificRuns(path: String = "src/main/resources/test_config.yml"): List<EvaluationConfig> {
+            val yaml = yaml(path)
+            val runs = (yaml["specificRuns"] as? Map<String, Any?>)?.get("runs") as? List<Map<String, Any?>>
+            require(!runs.isNullOrEmpty()) { "No specificRuns.runs in $path: copy them from test_config.example.yml" }
+            val volumes = volumes(yaml, path)
+            val resources = resources(yaml, path)
+            return runs.map { parse(it, defaults(yaml), path).copy(volumeFolders = volumes, resources = resources).withThreads() }
+        }
+
+        /** The query threads of STGraph not set by the run: 1 with the least parallelism of conf/, 16 with conf-free/ (the default) */
+        private fun EvaluationConfig.withThreads(): EvaluationConfig =
+            if (threads.isNotEmpty()) this
+            else copy(threads = if (resources["ASTERIXDB_CONF"]?.let { File(it).name } == "conf") listOf(1) else listOf(16))
+
+        private fun yaml(path: String): Map<String, Any?> = Yaml().load(File(path).inputStream())
+
+        @Suppress("UNCHECKED_CAST")
+        private fun defaults(yaml: Map<String, Any?>): Map<String, Any?> = yaml["defaults"] as? Map<String, Any?> ?: emptyMap()
+
+        /**
+         * The data folders of the volumes section of [yaml] (relative paths: from the repository root), still with
+         * {size}: they are created for each size (see [EvaluationConfig.volumes])
+         */
+        @Suppress("UNCHECKED_CAST")
+        private fun volumes(yaml: Map<String, Any?>, path: String): Map<String, String> {
+            val section = yaml["volumes"] as? Map<String, Any?> ?: return emptyMap()
+            val unknown = section.keys - volumeVariables.keys
+            require(unknown.isEmpty()) { "Unknown systems in the volumes section of $path: $unknown (known: ${volumeVariables.keys})" }
+            return section.mapNotNull { (system, folder) ->
+                folder?.toString()?.takeIf { it.isNotBlank() }?.let { volumeVariables.getValue(system) to File(it).absoluteFile.path }
+            }.toMap()
+        }
+
+        /**
+         * The variables of the resources section of [yaml]: for each system, its cpus, cpuset, memory, shm and conf
+         * (relative paths: from the repository root), e.g., NEO4J_CPUS, as the volumes
+         */
+        @Suppress("UNCHECKED_CAST")
+        private fun resources(yaml: Map<String, Any?>, path: String): Map<String, String> {
+            val section = yaml["resources"] as? Map<String, Any?> ?: return emptyMap()
+            val unknown = section.keys - resourcePrefixes.keys
+            require(unknown.isEmpty()) { "Unknown systems in the resources section of $path: $unknown (known: ${resourcePrefixes.keys})" }
+            return section.flatMap { (system, values) ->
+                val keys = values as? Map<String, Any?> ?: emptyMap()
+                val known = if (system in volumeVariables) resourceVariables.keys else setOf("cpus", "cpuset", "memory")
+                val unknownKeys = keys.keys - known
+                require(unknownKeys.isEmpty()) { "Unknown keys of $system in the resources section of $path: $unknownKeys (known: $known)" }
+                val prefix = resourcePrefixes.getValue(system)
+                keys.mapNotNull { (key, value) ->
+                    value?.toString()?.takeIf { it.isNotBlank() }?.let {
+                        "${prefix}_${resourceVariables.getValue(key)}" to if (key == "conf") File(it).absoluteFile.path else it
+                    }
+                }
+            }.toMap()
+        }
+
+        /** The parameters of [map]; the ones it does not set come from [defaults], then from the built-in defaults */
+        @Suppress("UNCHECKED_CAST")
+        private fun parse(map: Map<String, Any?>, defaults: Map<String, Any?>, path: String): EvaluationConfig {
+            fun section(m: Map<String, Any?>, key: String) = m[key] as? Map<String, Any?> ?: emptyMap()
+            fun strings(m: Map<String, Any?>, key: String): List<String>? = (m[key] as? List<Any?>)?.map { it.toString() }
+            fun strings(key: String) = strings(map, key) ?: strings(defaults, key)
+            fun int(sectionKey: String, key: String): Int? = (section(map, sectionKey)[key] ?: section(defaults, sectionKey)[key]) as? Int
+            fun boolean(key: String): Boolean? = (map[key] ?: defaults[key]) as? Boolean
+
+            val config = EvaluationConfig(
+                // "systems" in the evaluation section, "approaches" in the runs (as in the runs of the tests)
+                systems = strings(map, "systems") ?: strings(map, "approaches") ?: emptyList(),
+                datasets = strings(map, "datasets") ?: emptyList(),
+                sizes = strings(map, "sizes"),
+                setups = strings("setups") ?: listOf("c0"),
+                // Only those of the evaluation section or of the run: defaults.threads is the one of the tests (CI);
+                // empty: from the configuration of AsterixDB (see withThreads)
+                threads = strings(map, "threads")?.map { it.toInt() } ?: emptyList(),
+                modes = strings("modes")?.map { QueryMode.valueOf(it) } ?: listOf(QueryMode.OPTIMIZED),
+                ingestionIterations = int("ingestion", "iterations") ?: 1,
+                queryIterations = int("queries", "iterations") ?: 1,
+                selectivities = strings(section(map, "queries"), "selectivities") ?: strings(section(defaults, "queries"), "selectivities")
+                    ?: listOf("increased"),
+                queryIds = strings(section(map, "queries"), "ids") ?: strings(section(defaults, "queries"), "ids") ?: emptyList(),
+                download = boolean("download") ?: true,
+                deploy = boolean("deploy") ?: true,
+                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() }
+            )
+            val unknown = config.systems - knownSystems.toSet()
+            require(unknown.isEmpty()) { "Unknown systems in $path: $unknown (known: $knownSystems)" }
+            return config
+        }
+    }
+}

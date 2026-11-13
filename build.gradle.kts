@@ -23,11 +23,11 @@ tasks.withType<Test>().configureEach {
          languageVersion = JavaLanguageVersion.of(jVersion)
      }
     jvmArgs(
-        "-Dcom.sun.management.jmxremote",
-        "-Dcom.sun.management.jmxremote.port=9010",
-        "-Dcom.sun.management.jmxremote.rmi.port=9010",
-        "-Dcom.sun.management.jmxremote.authenticate=false",
-        "-Dcom.sun.management.jmxremote.ssl=false",
+        // "-Dcom.sun.management.jmxremote",
+        // "-Dcom.sun.management.jmxremote.port=9010",
+        // "-Dcom.sun.management.jmxremote.rmi.port=9010",
+        // "-Dcom.sun.management.jmxremote.authenticate=false",
+        // "-Dcom.sun.management.jmxremote.ssl=false",
         // "-Djava.rmi.server.hostname=172.27.236.32"
         // "-XX:-Inline"
     )
@@ -54,6 +54,8 @@ dependencies {
     implementation("org.neo4j.driver:neo4j-java-driver-slim:4.4.21")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+    // Extraction of the downloaded datasets in the evaluation
+    testImplementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation(platform("org.junit:junit-bom:6.0.3"))
     testImplementation("org.junit.jupiter:junit-jupiter-api")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -62,6 +64,55 @@ dependencies {
 
 tasks.jar {
     exclude("datasets/**")
+}
+
+// The downloader of the datasets, of the evaluation and of downloadDataset.sh (src/test/kotlin/.../evaluation/Download.kt)
+tasks.register<JavaExec>("downloadDataset") {
+    description = "Downloads a dataset into datasets/original: --args=\"<dataset> <size or file>\" (e.g., smartbench small)"
+    group = "evaluation"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "it.unibo.tests.evaluation.DownloadKt"
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(jVersion)
+    }
+    workingDir = projectDir
+}
+
+// Only the reads of MIMIC-IV from PostgreSQL, into the local copies the ingestions read (src/test/kotlin/.../mimic/MimicCache.kt)
+tasks.register<JavaExec>("mimicCache") {
+    description = "Reads MIMIC-IV from PostgreSQL into datasets/original/mimic/cache, without loading any system: --args=\"<size> ...\" (default: datasets.mimic.sizes)"
+    group = "evaluation"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "it.unibo.tests.mimic.MimicCacheKt"
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(jVersion)
+    }
+    workingDir = projectDir
+}
+
+// The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
+// test_config.yml (evaluation/README.md), with both phases or only one of them. Not tests: the CI does not run them.
+mapOf(
+    "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to listOf()),
+    "evaluateIngestion" to ("As evaluate, only the ingestion" to listOf("ingestion")),
+    "evaluateQueries" to ("As evaluate, only the queries, on the data already loaded" to listOf("queries")),
+    "evaluateSpecificRuns" to ("Runs the specificRuns.runs of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns")),
+    "evaluateSpecificRunsIngestion" to ("As evaluateSpecificRuns, only the ingestion" to listOf("specificRuns", "ingestion")),
+    "evaluateSpecificRunsQueries" to ("As evaluateSpecificRuns, only the queries, on the data already loaded" to listOf("specificRuns", "queries"))
+).forEach { (name, task) ->
+    tasks.register<JavaExec>(name) {
+        description = task.first
+        group = "evaluation"
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass = "it.unibo.tests.evaluation.EvaluationKt"
+        args(task.second)
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(jVersion)
+        }
+        workingDir = projectDir
+        // The heap of the evaluation, i.e., of STGraph: 64g, or -PevaluationHeap (e.g., 3g, in a memory budget)
+        maxHeapSize = providers.gradleProperty("evaluationHeap").getOrElse("64g")
+    }
 }
 
 defaultTasks("clean", "build", "check")

@@ -1,0 +1,16 @@
+test_id,model,startTimestamp,endTimestamp,dataset,datasetSize,threads,graphElapsedTime,tsElapsedTime,elapsedTime,numMachines,storage,iteration,note
+52513bdc-a310-48d0-b736-2df8c6851d69,HyGraph,1758099663,1758099690.0,smartbench,small,1,-1,-1,27192,-1,-1,0,
+82e69fd1-53e7-4b09-b45a-249eb834c841,HyGraph,1758100926,1758100953.0,smartbench,small,1,-1,-1,27583,-1,-1,0,
+52513bdc-a310-48d0-b736-2df8c6851d69,HyGraph,1758099663,1758099690.6871746,smartbench,small,1,-1,-1,27192,-1,-1,1,
+82e69fd1-53e7-4b09-b45a-249eb834c841,HyGraph,1758100926,1758100953.6571846,smartbench,small,1,-1,-1,27583,-1,-1,1,
+b385b33c-084d-4078-8a8b-aa980eedcf4f,HyGraph,1758522744,1758522771.4439664,smartbench,small,1,-1,-1,27081,-1,-1,0,
+d4c9016b-bc6d-49bc-b7f4-252128f3cefd,HyGraph,1760092519,1760092602.875661,smartbench,Medium,1,-1,-1,83178,-1,-1,0,
+3993bbc3-80e8-42af-80e9-82f69d68a971,HyGraph,1760104083,1760104165.029259,smartbench,Medium,1,-1,-1,81545,-1,-1,0,
+3993bbc3-80e8-42af-80e9-82f69d68a971,HyGraph,1760104165,1760104247.7814603,smartbench,Medium,1,-1,-1,82750,-1,-1,1,
+3993bbc3-80e8-42af-80e9-82f69d68a971,HyGraph,1760104247,1760104332.319243,smartbench,Medium,1,-1,-1,84536,-1,-1,2,
+3993bbc3-80e8-42af-80e9-82f69d68a971,HyGraph,1760104332,1760104418.8148878,smartbench,Medium,1,-1,-1,86494,-1,-1,3,
+3993bbc3-80e8-42af-80e9-82f69d68a971,HyGraph,1760104418,1760104507.6535552,smartbench,Medium,1,-1,-1,88837,-1,-1,4,
+3993bbc3-80e8-42af-80e9-82f69d68a972,HyGraph,1000000,2000000,smartbench,Large,1,-1,-1,,-1,-1,0,OOM
+daf30544-6a91-448b-b157-42aa5a0e1f9d,HyGraph,1780491029,1780507167.398984,mimic-iv,small,1,-1,-1,,-1,-1,0,
+daf30544-6a91-448b-b157-42aa5a0e1f9e,HyGraph,1780491029,1780652403.965857,mimic-iv,medium,1,-1,-1,,-1,-1,0,
+3993bbc3-80e8-42af-80e9-82f69d68a972,HyGraph,1000000,2000000,mimic-iv,Large,1,-1,-1,,-1,-1,0,OOM

@@ -9,6 +9,12 @@ import it.unibo.graph.utils.encodeBitwise
 import org.locationtech.jts.io.WKTReader
 import java.io.Serializable
 
+/**
+ * The WKT reader of the locations of the events, one per thread (a WKTReader is not thread-safe): created once, not at
+ * every event of the ingestion
+ */
+private val wktReader: ThreadLocal<WKTReader> = ThreadLocal.withInitial { WKTReader() }
+
 interface TS : Serializable {
     val g: Graph
 
@@ -28,7 +34,7 @@ interface TS : Serializable {
     }
 
     fun add(label: String, timestamp: Long, value: Long, location: String, isUpdate: Boolean = false, flush: Boolean = true, properties: List<Triple<String, Any, PropType>> = emptyList()): N {
-        val n = createNode(label, timestamp, value, properties + Triple(LOCATION, WKTReader().read(location), PropType.GEOMETRY))
+        val n = createNode(label, timestamp, value, properties + Triple(LOCATION, wktReader.get().read(location), PropType.GEOMETRY))
         return add(n, isUpdate, flush)
     }
 

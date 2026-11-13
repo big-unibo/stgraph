@@ -193,12 +193,15 @@ fun jsonToNode(tsId: Long, g: Graph, node: JSONObject): N {
     return entity
 }
 
+/** The WKT writer of the geometries, one per thread (a WKTWriter is not thread-safe): created once, not at every event */
+private val wktWriter: ThreadLocal<WKTWriter> = ThreadLocal.withInitial { WKTWriter() }
+
 fun valueToJson(value: Any, isUpdate: Boolean): String {
     return when (value) {
         is Int -> "$value"
         is Long -> "$value"
         is Double -> "$value"
-        is Geometry -> if (isUpdate) "st_geom_from_text(\"${WKTWriter().write(value)}\")" else "\"${WKTWriter().write(value)}\""
+        is Geometry -> wktWriter.get().write(value).let { if (isUpdate) "st_geom_from_text(\"$it\")" else "\"$it\"" }
         else -> "\"$value\""
         // else -> throw IllegalArgumentException("Unknown prop type ${value::class.qualifiedName}")
     }

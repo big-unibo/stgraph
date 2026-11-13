@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Downloads a dataset into datasets/original/<dataset> with the downloader of the evaluation
+# (src/test/kotlin/it/unibo/tests/evaluation/Download.kt), the only one: same URLs, archives extracted (the JSON files of
+# SmartBench gzipped) and removed. Needs Java, as ./gradlew
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
@@ -6,40 +9,10 @@ if [[ $# -lt 2 ]]; then
     echo "Example:"
     echo "  $0 smartbench small"
     echo "  $0 smartbench medium.tar.gz"
+    echo "  $0 mimic x1692200.dump"
     exit 1
 fi
 
-DATASET="$1"
-DATASET_SIZE="$2"
-
-BASE_URL="https://big.csr.unibo.it/downloads/stgraph"
-OUTPUT_DIR="datasets/original/${DATASET}"
-
-mkdir -p "$OUTPUT_DIR"
-cd "$OUTPUT_DIR"
-
-# Determine filename
-if [[ "$DATASET_SIZE" == *.* ]]; then
-    FILENAME="$DATASET_SIZE"
-else
-    FILENAME="${DATASET_SIZE}.tar.gz"
-fi
-
-URL="${BASE_URL}/${DATASET}/${FILENAME}"
-
-wget --no-check-certificate --tries=3 -O "$FILENAME" "$URL"
-
-if [[ ! -f "$FILENAME" ]]; then
-    echo "Error: failed to download ${URL}"
-    exit 1
-fi
-
-echo "Downloaded: $FILENAME"
-
-if [[ "$FILENAME" == *.tar.gz ]]; then
-    echo "Extracting..."
-    tar -xzvf "$FILENAME"
-    rm "$FILENAME"
-fi
-
+cd "$(dirname "$0")"
+./gradlew --quiet downloadDataset --args="$1 $2"
 echo "Done."

@@ -12,18 +12,40 @@ import it.unibo.stats.QueryResultData
 import it.unibo.stats.Querying
 import it.unibo.stats.TestConfig
 import it.unibo.stats.runQuery
-import it.unibo.tests.mimic.loaders.limitToPort
+import it.unibo.tests.systems.GraphixQuery
 import org.junit.jupiter.api.TestInstance
-import org.neo4j.driver.AuthTokens
-import org.neo4j.driver.GraphDatabase
+import it.unibo.tests.systems.Neo4JQuery
+import it.unibo.tests.systems.PGAgeQuery
+import it.unibo.tests.systems.neo4jDriver
+import it.unibo.tests.systems.pgAgeConnection
+import it.unibo.tests.systems.queryTemplate
+import org.neo4j.driver.Session
 import java.io.File
-import java.sql.DriverManager
+import java.sql.Connection
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 const val mimicFilter = 100L
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestMimicQuery {
+    /** Expected cardinalities per dataset size: x1692200 is the reduced dump used by the CI */
+    private val expectedCardinalities = mapOf(
+        "x1692200" to mapOf("Q1" to 7347, "Q2" to 7, "Q3" to 5)
+    )
+
+    /** For the sizes with known cardinalities, fails the test if [query] returns a different number of results */
+    private fun checked(size: String, query: Querying?): Querying? {
+        val expected = expectedCardinalities[size] ?: return query
+        if (query == null) return null
+        return object : Querying {
+            override val queryId = query.queryId
+            override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData =
+                query.runQuery(threads, queryMode).also {
+                    assertEquals(expected.getValue(queryId), it.card, "Cardinality of $queryId on $size ($queryMode, $threads threads)")
+                }
+        }
+    }
 
     abstract class Q : Querying {
         override val queryId = this::class.simpleName.toString()
@@ -39,72 +61,36 @@ class TestMimicQuery {
         abstract fun query(threads: Int, queryMode: QueryMode): List<Any>
     }
 
-    abstract class QNeo4J(val uri: String = "bolt://localhost:7687", val user: String = "neo4j", val pwd: String = "password") : Querying {
-        override val queryId = this::class.simpleName.toString()
-        override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
-            val res = mutableListOf<List<Any?>>()
-            val time: Long
-            GraphDatabase.driver(uri, AuthTokens.basic(user, pwd)).use { driver ->
-                driver.session().use { session ->
-                     time = getTime {
-                        val result = session.run(query())
-                        // Iterate over rows
-                        while (result.hasNext()) {
-                            val record = result.next()
-                            // Get all values in the row as Any
-                            val rowValues = record.keys().map { key ->
-                                val value = record[key]
-                                when {
-                                    value.isNull -> null
-                                    else -> value.asObject()
-                                }
-                            }
-                            res.add(rowValues)
-                        }
-                    }
-                }
-            }
-            return QueryResultData(time, res.size)
-        }
-
-        abstract fun query(): String
+    companion object {
+        /** The Neo4j and the PostgreSQL (PGAge) of the MIMIC-IV evaluation */
+        const val NEO4J_USER = "neo4j"
+        const val NEO4J_PASSWORD = "password"
+        const val PGAGE_URL = "jdbc:postgresql://localhost:5435/mimic-iv" // The PGAge of MimicIVPGAge (its default url)
+        const val PGAGE_USER = "postgres"
+        const val PGAGE_PASSWORD = "password"
     }
 
-    abstract class QPgAge(
-        val graph: String,
-        val url: String = "jdbc:postgresql://192.168.30.108:5435/mimic-iv",
-        val user: String = "postgres",
-        val pwd: String = "password"
-    ) : Querying {
+    /*
+     * The competitors' queries are templates, src/test/resources/queries/mimic/<system>/<Q1|Q2|Q3>.txt (as the ones of
+     * SmartBench), with {FILTER} replaced by [mimicFilter] and, for PGAge, {GRAPH} by the graph
+     */
 
+    /** A query on the Neo4j loaded by MimicIVNeo4J, on an open [session] (runner of it.unibo.tests.systems) */
+    abstract class QNeo4J(session: Session) : Neo4JQuery(session) {
         override val queryId = this::class.simpleName.toString()
+        override fun statement() = queryTemplate("mimic", "neo4j", queryId.removeSuffix("Neo4J"), mapOf("FILTER" to mimicFilter))
+    }
 
-        override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
-            val res = mutableListOf<List<Any?>>()
-            val time: Long
-            DriverManager.getConnection(url, user, pwd).use { conn ->
-                conn.createStatement().use { stmt ->
-                    time = getTime {
-                        val sql = query()
-                        stmt.execute("LOAD 'age'")
-                        stmt.execute("SET search_path = ag_catalog, public")
-                        val rs = stmt.executeQuery(sql)
-                        val meta = rs.metaData
-                        val colCount = meta.columnCount
-                        while (rs.next()) {
-                            val row = ArrayList<Any?>(colCount)
-                            for (i in 1..colCount) {
-                                val value = rs.getObject(i)
-                                row.add(value)
-                            }
-                            res.add(row)
-                        }
-                    }
-                }
-            }
-            return QueryResultData(time, res.size)
-        }
-        abstract fun query(): String
+    /** A query on the PostgreSQL loaded by MimicIVPGAge, on an open [connection] (see pgAgeConnection) */
+    abstract class QPgAge(val graph: String, connection: Connection) : PGAgeQuery(connection) {
+        override val queryId = this::class.simpleName.toString()
+        override fun statement() = queryTemplate("mimic", "pgage", queryId.removeSuffix("PGAge"), mapOf("FILTER" to mimicFilter, "GRAPH" to graph))
+    }
+
+    /** A query on the graph created by MimicIVGraphix */
+    abstract class QGraphix(size: String) : GraphixQuery("mimic_graphix_$size") {
+        override val queryId = this::class.simpleName.toString()
+        override fun statement() = queryTemplate("mimic", "graphix", queryId.removeSuffix("Graphix"), mapOf("FILTER" to mimicFilter))
     }
 
     class Q1(val graph: Graph, pId: Long = Long.MIN_VALUE, c: Long = Long.MIN_VALUE) : Q() {
@@ -125,29 +111,15 @@ class TestMimicQuery {
         }
     }
 
-    class Q1Neo4J(uri: String) : QNeo4J(uri) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 AND toFloat(m.value) > $mimicFilter RETURN p, t, m"
-    }
+    class Q1Neo4J(session: Session) : QNeo4J(session)
 
-    class Q1PGAge(graph: String) : QPgAge(graph) {
-        override fun query(): String = """
-            SELECT *
-            FROM (
-                SELECT *
-                FROM cypher('$graph'::name, $$
-                    MATCH (p)--(t)
-                    WHERE p.c > 25000
-                    RETURN DISTINCT p, t, id(t)
-                $$) AS (p agtype, t agtype, tsid bigint)
-            ) t
-            JOIN $graph.measurements_csv m ON m.ts_id = t.tsid
-            WHERE m.value > $mimicFilter;
-        """.trimIndent()
-    }
+    class Q1PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
+
+    class Q1Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `get measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        if (mode == QueryMode.NAIVE && size == "full") null else Q1(graph)
+        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q1(graph))
     }
 
     class Q2(val graph: Graph, pId: Long = Long.MIN_VALUE, c: Long = Long.MIN_VALUE) : Q() {
@@ -169,29 +141,15 @@ class TestMimicQuery {
         }
     }
 
-    class Q2Neo4J(uri: String) : QNeo4J(uri) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 RETURN m.label, avg(toFloat(m.value))"
-    }
+    class Q2Neo4J(session: Session) : QNeo4J(session)
 
-    class Q2PGAge(graph: String) : QPgAge(graph) {
-        override fun query(): String = """
-                SELECT m.label, avg(m.value)
-                FROM (
-                    SELECT *
-                    FROM cypher('$graph'::name, $$
-                        MATCH (p)--(t)
-                        WHERE p.c > 25000
-                        RETURN DISTINCT id(t)
-                    $$) AS (tsid bigint)
-                ) t
-                JOIN $graph.measurements_csv m ON m.ts_id = t.tsid
-                GROUP BY m.label
-        """.trimIndent()
-    }
+    class Q2PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
+
+    class Q2Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `get average measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        if (mode == QueryMode.NAIVE && size == "full") null else Q2(graph)
+        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q2(graph))
     }
 
     class Q3(val graph: Graph) : Q() {
@@ -212,30 +170,15 @@ class TestMimicQuery {
         }
     }
 
-    class Q3Neo4J(uri: String) : QNeo4J(uri) {
-        override fun query(): String = "MATCH (p)-->(t)-->(m) WHERE toFloat(p.c) > 25000 AND toFloat(m.value) > $mimicFilter RETURN m.abbreviation, avg(toFloat(m.value))"
-    }
+    class Q3Neo4J(session: Session) : QNeo4J(session)
 
-    class Q3PGAge(graph: String) : QPgAge(graph) {
-        override fun query(): String = """
-                SELECT m.label, avg(m.value)
-                FROM (
-                    SELECT *
-                    FROM cypher('$graph'::name, $$
-                        MATCH (p)--(t)
-                        WHERE p.c > 25000
-                        RETURN DISTINCT id(t)
-                    $$) AS (tsid bigint)
-                ) t
-                JOIN $graph.measurements_csv m ON m.ts_id = t.tsid
-                WHERE m.value > $mimicFilter
-                GROUP BY m.label
-        """.trimIndent()
-    }
+    class Q3PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
+
+    class Q3Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `filter and group by measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        if (mode == QueryMode.NAIVE && size == "full") null else Q3(graph)
+        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q3(graph))
     }
 
     // @Test
@@ -276,22 +219,39 @@ class TestMimicQuery {
 
 fun main() {
     TestConfig.loadConfig().datasets["mimic"]!!.sizes.forEach { size ->
-        listOf(
-            TestMimicQuery.Q1Neo4J("bolt://localhost:${limitToPort(size.toString().toLong())}"),
-            TestMimicQuery.Q2Neo4J("bolt://localhost:${limitToPort(size.toString().toLong())}"),
-            TestMimicQuery.Q3Neo4J("bolt://localhost:${limitToPort(size.toString().toLong())}")
-        ).forEach { query ->
-            println(query.javaClass.toString())
-            runQuery(query, "neo4j", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
+        // The sessions and the connections are opened once, not timed (runners of it.unibo.tests.systems)
+        val neo4jUri = "bolt://localhost:7687"
+        neo4jDriver(neo4jUri, TestMimicQuery.NEO4J_USER, TestMimicQuery.NEO4J_PASSWORD).use { driver ->
+            driver.session().use { session ->
+                listOf(
+                    TestMimicQuery.Q1Neo4J(session),
+                    TestMimicQuery.Q2Neo4J(session),
+                    TestMimicQuery.Q3Neo4J(session)
+                ).forEach { query ->
+                    println(query.javaClass.toString())
+                    runQuery(query, "neo4j", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
+                }
+            }
+        }
+
+        pgAgeConnection(TestMimicQuery.PGAGE_URL, TestMimicQuery.PGAGE_USER, TestMimicQuery.PGAGE_PASSWORD).use { connection ->
+            listOf(
+                TestMimicQuery.Q1PGAge("mimic_$size", connection),
+                TestMimicQuery.Q2PGAge("mimic_$size", connection),
+                TestMimicQuery.Q3PGAge("mimic_$size", connection),
+            ).forEach { query ->
+                println(query.javaClass.toString())
+                runQuery(query, "pgage", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
+            }
         }
 
         listOf(
-            TestMimicQuery.Q1PGAge("mimic_$size"),
-            TestMimicQuery.Q2PGAge("mimic_$size"),
-            TestMimicQuery.Q3PGAge("mimic_$size"),
+            TestMimicQuery.Q1Graphix(size.toString()),
+            TestMimicQuery.Q2Graphix(size.toString()),
+            TestMimicQuery.Q3Graphix(size.toString()),
         ).forEach { query ->
             println(query.javaClass.toString())
-            runQuery(query, "pgage", threads = 1, numMachines = -1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
+            runQuery(query, "graphix", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
         }
     }
 }

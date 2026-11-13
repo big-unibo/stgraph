@@ -25,7 +25,11 @@ private fun getFolderSize(folderPath: String): Long {
     return round(sizeBytes.toDouble() / (1024 * 1024)).toLong() // Converti in MB
 }
 
-fun loadDataset(loader: Loader, model: String, threads: Int, numMachines: Int, dataset: String, size: String) {
+/**
+ * Loads the data with [loader] and appends its statistics to the ingestion statistics; [configuration]: the configuration
+ * of the system (conf or conf-free, see evaluation/README.md), empty when not known (e.g., the tests)
+ */
+fun loadDataset(loader: Loader, model: String, threads: Int, numMachines: Int, dataset: String, size: String, configuration: String = "") {
     if (!resultFolder.exists()) resultFolder.mkdirs()
     val startTimestamp = System.currentTimeMillis()
     loader.loadData()
@@ -49,11 +53,21 @@ fun loadDataset(loader: Loader, model: String, threads: Int, numMachines: Int, d
         "tsStorage" to tsStorage,
         "gsStorage" to gsStorage,
         "tsCard" to loader.getTSCardinality(),
-        "gsCard" to loader.getGSCardinality()
+        "gsCard" to loader.getGSCardinality(),
+        "configuration" to configuration
     )
+    // A file written before the last columns were added: extend its header (the old rows leave them empty), as runQuery
+    val header = row.keys.joinToString(",")
+    if (statisticsFile.exists()) {
+        val oldHeader = statisticsFile.bufferedReader().use { it.readLine() }
+        if (oldHeader != null && oldHeader != header && header.startsWith("$oldHeader,")) {
+            val rows = statisticsFile.readLines().drop(1)
+            statisticsFile.writeText((listOf(header) + rows).joinToString("\n", postfix = "\n"))
+        }
+    }
     val writeHeader = !statisticsFile.exists()
     statisticsFile.appendText(buildString {
-        if (writeHeader) append(row.keys.joinToString(",") + "\n")
+        if (writeHeader) append(header + "\n")
         append(row.values.joinToString(",") + "\n")
     })
     loader.close()

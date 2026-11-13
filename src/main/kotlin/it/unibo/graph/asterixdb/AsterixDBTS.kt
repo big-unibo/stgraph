@@ -91,7 +91,7 @@ class AsterixDBTS(
                 selectQuery += " LIMIT 1"
             }
         }
-        selectQuery = selectQuery.replace(VALUE, "`$VALUE`")
+        selectQuery = quoteValue(selectQuery)
         return when (val result = connection.selectFromAsterixDB(selectQuery, isGroupBy = by.isNotEmpty())) {
             is AsterixDBResult.SelectResult -> {
                 if (result.entities.isEmpty) return emptyList()
@@ -128,6 +128,22 @@ class AsterixDBTS(
 
             else -> throw IllegalArgumentException("Error occurred while performing query \n $selectQuery")
         }
+    }
+
+    /**
+     * [sql] with the identifier $VALUE (a reserved word of SQL++) between backticks: only as a whole word, outside of the
+     * string literals and of the longer identifiers (e.g., not in "values" or in a string value)
+     */
+    private fun quoteValue(sql: String): String {
+        val identifier = Regex("""(?<![\w`])$VALUE(?![\w`])""")
+        val literal = Regex(""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""")
+        val result = StringBuilder()
+        var last = 0
+        for (m in literal.findAll(sql)) {
+            result.append(sql.substring(last, m.range.first).replace(identifier, "`$VALUE`")).append(m.value)
+            last = m.range.last + 1
+        }
+        return result.append(sql.substring(last).replace(identifier, "`$VALUE`")).toString()
     }
 
     private fun updateTs(n: N) = connection.updateTs("USE $dataverse; UPSERT INTO $dataset ([${nodeToJson(n, isUpdate = true, tsId = id)}])")

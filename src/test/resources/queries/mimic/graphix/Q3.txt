@@ -1,0 +1,1 @@
+FROM GRAPH Mimic MATCH (p:`Person`)-[:`hasParameters`]->(t:`TimeSeries`)-[:`hasMeasurement`]->(m:`Measurement`) WHERE p.c > 25000 AND m.`value` > {FILTER} GROUP BY m.`label` AS lbl SELECT lbl, AVG(m.`value`) AS avgValue;

@@ -1,0 +1,55 @@
+# PostgreSQL + TimescaleDB + PostGIS + Apache AGE for the SmartBench evaluation. The database only: ingestion and
+# queries run from the evaluation (./gradlew evaluate, see evaluation/README.md), which also starts and stops it.
+services:
+  # One-shot: makes the data folder writable by the user 1000 of the pgage container (postgres), whoever created it
+  # (e.g., the evaluation creates the folders of PGAGE_DATA as the user that runs it, Docker as root); pgage starts once
+  # it has exited successfully
+  pgage-init:
+    image: busybox:1.36
+    container_name: pgage-init
+    user: root
+    command: [ "chown", "1000:1000", "/home/postgres/pgdata" ]
+    volumes:
+      - "${PGAGE_DATA:-pgage-data}:/home/postgres/pgdata"
+    restart: "no"
+
+  pgage:
+    image: mp4sini/pgage:latest
+    container_name: pgage
+    hostname: pgage
+    # No CPU or memory limit by default (free). PGAGE_CPUS, PGAGE_CPUSET (the cores), PGAGE_MEMORY and PGAGE_CONF (the
+    # folder of postgresql.conf):
+    # the resources and configuration of a run, e.g. cpus 1 for the single-core comparison of the paper (set by the
+    # evaluation from the resources section of test_config.yml, see evaluation/README.md)
+    cpus: ${PGAGE_CPUS:-0}
+    cpuset: "${PGAGE_CPUSET:-}"
+    mem_limit: ${PGAGE_MEMORY:-0}
+    # The shared memory of the parallel workers of PostgreSQL (PGAGE_SHM, the shm of the resources section): disabled,
+    # so the Docker default (64 MB) as the other systems; uncomment it if the parallel queries of conf-free/ fail with
+    # "could not resize shared memory segment"
+    # shm_size: ${PGAGE_SHM:-64m}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PSW:-psw}
+      POSTGRES_DB: ${DB_NAME:-smartbench_eval}
+      PGDATA: /home/postgres/pgdata/data
+    volumes:
+      - "${PGAGE_CONF:-./conf-free}:/pgconf"
+      # Data of PostgreSQL (PGDATA is a folder inside), kept when the container is recreated; PGAGE_DATA: a host directory
+      # instead of the Docker volume (set by the evaluation from the volumes section of test_config.yml), made
+      # writable by the user 1000 of the container (postgres) by pgage-init
+      - "${PGAGE_DATA:-pgage-data}:/home/postgres/pgdata"
+    depends_on:
+      pgage-init:
+        condition: service_completed_successfully
+    # Up to 5 minutes for a clean shutdown on docker stop (checkpoint), instead of the 10 s of Docker: e.g., after a
+    # large ingestion, no recovery at the next start
+    stop_grace_period: 5m
+    # Fast shutdown of PostgreSQL (clients disconnected, then checkpoint), as the official image
+    stop_signal: SIGINT
+    command: [ "-c", "config_file=/pgconf/postgresql.conf" ]
+    ports:
+      - ${POSTGRES_PORT_EXT:-5432}:5432
+
+volumes:
+  pgage-data:

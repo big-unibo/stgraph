@@ -1,0 +1,1 @@
+MATCH (p)-->(t)-->(m) WHERE p.c > 25000 RETURN labels(m), avg(m.value)
