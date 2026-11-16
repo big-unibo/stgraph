@@ -30,9 +30,9 @@ interface TS : Serializable {
             label,
             value = value,
             fromTimestamp = timestamp,
-            toTimestamp = timestamp,
+            toTimestamp = timestamp + 1, // an event is valid in [timestamp, timestamp + 1)
             g = g,
-            properties = properties.map { (key, value, type) -> P(DUMMY_ID, id, NODE, key, value, type, fromTimestamp = timestamp, toTimestamp = timestamp, g = g) }.toMutableList()
+            properties = properties.map { (key, value, type) -> P(DUMMY_ID, id, NODE, key, value, type, fromTimestamp = timestamp, toTimestamp = timestamp + 1, g = g) }.toMutableList()
         )
     }
 
@@ -58,10 +58,10 @@ interface TS : Serializable {
      */
     fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, intervals: List<Pair<Long, Long>>): List<N> =
         intervals.flatMap { (from, to) ->
-            // The interval as time filters, [from, to), as Query.getPredicates (no filter on an unbounded side)
+            // The events starting in [from, to), as Query.getPredicates (no filter on an unbounded side)
             val time = listOfNotNull(
                 if (from != Long.MIN_VALUE) Filter(FROM_TIMESTAMP, Operators.GTE, from) else null,
-                if (to != Long.MAX_VALUE) Filter(TO_TIMESTAMP, if (from == to) Operators.LTE else Operators.LT, to) else null // [t, t]: the instant t
+                if (to != Long.MAX_VALUE) Filter(FROM_TIMESTAMP, Operators.LT, to) else null
             )
             getValues(by, filters + time, isGroupBy) // the other filters still apply (they restrict every interval)
         }

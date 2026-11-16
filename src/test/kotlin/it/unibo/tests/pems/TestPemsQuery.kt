@@ -35,9 +35,8 @@ val pemsQueries = listOf("Q1", "Q2", "Q3", "Q4")
  * - Q4: average speed (station total) by station type.
  * A measurement belongs to the segment and has the type of its station at its timestamp. STGraph enforces it by the
  * validity of the elements of the path (the inSegment edges, the properties of the stations, the incidents); the
- * competitors with explicit conditions on valid_from and valid_to (resources/queries/pems/<system>/<Q>.txt): the
- * half-open [valid_from, valid_to), and, as timeOverlap in STGraph, the instant valid_from = valid_to = timestamp for the
- * incidents of zero minutes (Q3; the station versions always have valid_from < valid_to)
+ * competitors with explicit conditions on the half-open [valid_from, valid_to) (resources/queries/pems/<system>/<Q>.txt);
+ * the incidents of zero minutes are valid in [t, t + 1) in every system (see AbstractPemsLoader)
  */
 class PemsQuery(override val queryId: String, private val graph: Graph) : Querying {
     /** (Segment)<-[inSegment]-(Station)-[hasTimeSeries]->(TimeSeries)-->(m): the segment of the station at the time of m */

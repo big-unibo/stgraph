@@ -27,6 +27,7 @@ fun query(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), by: 
 
 @JvmName("queryJoin")
 fun query(g: Graph, match: List<List<Step?>>, where: List<Compare> = emptyList(), by: List<Aggregate> = emptyList(), from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE, timeaware: Boolean = true, threads: Int = 1, mode: QueryMode = QueryMode.OPTIMIZED): List<Any> {
+    @Suppress("NAME_SHADOWING") val to = halfOpen(from, to) // an instant [t, t] as [t, t + 1)
     val mapAliases: Map<String, Pair<Int, Int>> =
         match // get the aliases for each pattern
             .mapIndexed { patternIndex, pattern ->
@@ -160,7 +161,7 @@ fun project(row: Path, match: List<List<Step?>>, by: List<Aggregate>, mapAliases
             else aggregates.fold(listOf(listOf<P?>())) { acc, a -> acc.flatMap { c -> e.getProps(name = a.property, timeaware = false).map { c + it } } }.map { null to it }
         tuples = tuples.flatMap { (elements, interval) ->
             versions.ifEmpty { listOf(null to aggregates.map { null }) }.mapNotNull { (slice, v) ->
-                // Valid at the same time: the intersection of their validity (instants as in timeOverlap)
+                // Valid at the same time: the intersection of their validity
                 if (slice != null && !timeOverlap(interval.first, interval.second, slice.first, slice.second)) return@mapNotNull null
                 val i = if (slice == null) interval else max(interval.first, slice.first) to min(interval.second, slice.second)
                 // The element replaced by a virtual one, with these versions of its properties (null if none)
@@ -244,25 +245,19 @@ private fun aggregation(rows: List<Path>, by: List<Aggregate>, mapAliases: Map<S
  * its elements). Used by the projection (see project), also before the operators that read time-varying properties: the
  * selection (see select), the expansion towards TS with pushdown (see queryTSOpt), and the join.
  * E.g., a.type = ML in [0, 2), HV in [2, 4), [from, to) = [MIN, MAX): [MIN, 0) null, [0, 2) ML, [2, 4) HV, [4, MAX) null.
- * Instants as in timeOverlap: a version valid in [t, t] gives the slice [t, t] (with integer timestamps, it is separated
- * from the next instants as [t, t + 1)). Without properties, or in an instant ([from] = [to]), the whole [from, to]
+ * Without properties, the whole [from, to)
  */
 fun temporalPropertyJoin(keys: List<Pair<ElemP, String>>, from: Long, to: Long): List<Pair<Pair<Long, Long>, List<P?>>> {
     val versions = keys.map { (e, key) -> e.getProps(name = key, fromTimestamp = from, toTimestamp = to) } // the versions of each property in the tuple
-    if (from >= to) return listOf((from to to) to versions.map { it.firstOrNull() }) // an instant: at most one version each
-    fun end(p: P) = if (p.fromTimestamp == p.toTimestamp && p.toTimestamp < Long.MAX_VALUE) p.toTimestamp + 1 else p.toTimestamp
     // The bounds of the versions (within the tuple) and of the tuple: no version starts or ends inside a slice
-    val bounds = (versions.flatten().flatMap { listOf(it.fromTimestamp, end(it)) }.filter { it in from..to } + from + to).toSortedSet().toList()
-    val slices = bounds.zipWithNext().map { (f, t) ->
-        val slice = versions.map { vs -> vs.firstOrNull { it.fromTimestamp <= f && t <= end(it) } } // the version of each property in [f, t)
-        (if (t == f + 1 && slice.any { it != null && it.fromTimestamp == it.toTimestamp }) f to f else f to t) to slice
-    }
+    val bounds = (versions.flatten().flatMap { listOf(it.fromTimestamp, it.toTimestamp) }.filter { it in from..to } + from + to).toSortedSet().toList()
     val merged = mutableListOf<Pair<Pair<Long, Long>, List<P?>>>()
-    slices.forEach { (i, v) -> // consecutive slices (not instants) with the same values: a single slice
+    bounds.zipWithNext().forEach { (f, t) ->
+        val slice = versions.map { vs -> vs.firstOrNull { it.fromTimestamp <= f && t <= it.toTimestamp } } // the version of each property in [f, t)
         val last = merged.lastOrNull()
-        if (last != null && last.first.second == i.first && last.first.first != last.first.second && i.first != i.second && last.second.map { it?.value } == v.map { it?.value }) {
-            merged[merged.size - 1] = (last.first.first to i.second) to last.second
-        } else merged += i to v
+        if (last != null && last.first.second == f && last.second.map { it?.value } == slice.map { it?.value }) {
+            merged[merged.size - 1] = (last.first.first to t) to last.second // consecutive slices with the same values: a single slice
+        } else merged += (f to t) to slice
     }
     return merged
 }
@@ -359,7 +354,7 @@ fun getAggregate(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggr
 fun getPredicates(index: Int, curPath: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Filter> {
     val filters = mutableListOf<Filter>()
     if (from != Long.MIN_VALUE) filters += Filter(FROM_TIMESTAMP, Operators.GTE, from) // add the from filter
-    if (to != Long.MAX_VALUE) filters += Filter(TO_TIMESTAMP, if (from == to) Operators.LTE else Operators.LT, to) // add the to filter ([t, t] is the instant t, as in timeOverlap)
+    if (to != Long.MAX_VALUE) filters += Filter(FROM_TIMESTAMP, Operators.LT, to) // add the to filter (the events starting in [from, to))
     if (index + 1 < match.size) { // If there is another step
         val nextMatch = match[index + 1] ?: return filters // select it
         val nextAlias = nextMatch.alias // and its alias (if any)
@@ -451,6 +446,7 @@ fun searchPool(threads: Int): kotlinx.coroutines.ExecutorCoroutineDispatcher = s
 }
 
 fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE, timeaware: Boolean = false, by: List<Aggregate> = emptyList(), threads: Int = 1, mode: QueryMode = QueryMode.OPTIMIZED): List<Path> {
+    @Suppress("NAME_SHADOWING") val to = halfOpen(from, to) // an instant [t, t] as [t, t + 1)
     val executor = searchPool(threads)
     val wait = Semaphore(0) // Mutex(locked = true)
     val completed = AtomicInteger(0)

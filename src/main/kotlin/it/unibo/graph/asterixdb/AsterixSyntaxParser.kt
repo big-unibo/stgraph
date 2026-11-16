@@ -165,7 +165,7 @@ fun jsonToNode(tsId: Long, g: Graph, node: JSONObject): N {
     }
 
     val fromTimestamp = if (node.has(FROM_TIMESTAMP)) node.getLong(FROM_TIMESTAMP) else timestamp
-    val toTimestamp = if (node.has(TO_TIMESTAMP)) node.getLong(TO_TIMESTAMP) else timestamp
+    val toTimestamp = if (node.has(TO_TIMESTAMP)) node.getLong(TO_TIMESTAMP) else timestamp + 1 // an event: [timestamp, timestamp + 1)
 
     val entity = N(
         id = id,
