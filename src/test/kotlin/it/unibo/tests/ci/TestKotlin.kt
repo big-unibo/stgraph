@@ -696,6 +696,68 @@ class TestKotlin {
         g.close()
     }
 
+    /**
+     * Random graphs (property histories with gaps, edges with limited validity, events with two labels): the NAIVE and
+     * OPTIMIZED modes must return the same result for grouping, filter, time window and join queries
+     */
+    @Test
+    fun `naive and optimized agree on random graphs`() {
+        matrix { g ->
+            (1..3).forEach { seed ->
+                val rnd = kotlin.random.Random(seed)
+                g.clear()
+                g.getTSM().clear()
+                // Consecutive versions of [key] on [0, 20), each missing with probability 1/4 (a gap)
+                fun history(id: Long, key: String, values: List<String>) {
+                    var t = 0L
+                    while (t < 20) {
+                        val length = rnd.nextLong(1, 8)
+                        if (rnd.nextInt(4) > 0) g.addProperty(id, key, values.random(rnd), PropType.STRING, from = t, to = t + length)
+                        t += length
+                    }
+                }
+                val bs = (0 until 3).map { i ->
+                    val b = g.addNode(B, isTs = true)
+                    val ts = g.getTSM().addTS(b.id)
+                    (0L until 20L).shuffled(rnd).take(10).forEach { ts.add(if (rnd.nextBoolean()) C else D, timestamp = it, value = rnd.nextLong(0, 10), location = POINT_IN_T0) }
+                    g.addProperty(b.id, "name", "b$i", PropType.STRING)
+                    g.addProperty(b.id, "code", listOf("p", "q").random(rnd), PropType.STRING)
+                    b
+                }
+                repeat(2) {
+                    val a = g.addNode(A)
+                    history(a.id, "name", listOf("x", "y"))
+                    history(a.id, "type", listOf("ML", "HV"))
+                    g.addProperty(a.id, "code", listOf("p", "q").random(rnd), PropType.STRING)
+                    bs.filter { rnd.nextBoolean() }.forEach { b ->
+                        if (rnd.nextBoolean()) g.addEdge(Foo, a.id, b.id) else rnd.nextLong(0, 15).let { from -> g.addEdge(Foo, a.id, b.id, from = from, to = from + rnd.nextLong(1, 10)) }
+                    }
+                }
+
+                val path = listOf(Step(A, alias = "a"), null, Step(B, alias = "b"), null, Step(alias = "c"))
+                val ml = listOf(Step(A, alias = "a", properties = listOf(Filter("type", Operators.EQ, "ML"))), null, Step(B, alias = "b"), null, Step(alias = "c"))
+                val join = listOf(listOf(Step(A, alias = "a", properties = listOf(Filter("type", Operators.EQ, "ML")))), listOf(Step(B, alias = "b"), null, Step(alias = "c")))
+                fun sum(vararg keys: Aggregate) = keys.toList() + Aggregate("c", property = VALUE, operator = AggOperator.SUM)
+                val from = rnd.nextLong(0, 10)
+                val to = from + rnd.nextLong(1, 11)
+                val queries: List<Pair<String, (QueryMode) -> List<Any>>> = listOf(
+                    "sum by a.name" to { m -> query(g, path, by = sum(Aggregate("a", property = "name")), mode = m) },
+                    "avg by a.name" to { m -> query(g, path, by = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.AVG)), mode = m) },
+                    "max by a.type" to { m -> query(g, path, by = listOf(Aggregate("a", property = "type"), Aggregate("c", property = VALUE, operator = AggOperator.MAX)), mode = m) },
+                    "sum by label" to { m -> query(g, path, by = sum(Aggregate("c", property = LABEL)), mode = m) },
+                    "sum by a.name, b.name" to { m -> query(g, path, by = sum(Aggregate("a", property = "name"), Aggregate("b", property = "name")), mode = m) },
+                    "sum by a.name in [$from, $to)" to { m -> query(g, path, by = sum(Aggregate("a", property = "name")), from = from, to = to, mode = m) },
+                    "filter, sum by a.name" to { m -> query(g, ml, by = sum(Aggregate("a", property = "name")), mode = m) },
+                    "filter, rows" to { m -> listOf(query(g, ml, mode = m).size) },
+                    "join, sum by b.name" to { m -> query(g, join, where = listOf(Compare("a", "b", property = "code", operator = Operators.EQ)), by = sum(Aggregate("b", property = "name")), mode = m) }
+                )
+                queries.forEach { (name, run) ->
+                    assertEquals(run(QueryMode.NAIVE).toSet(), run(QueryMode.OPTIMIZED).toSet(), "seed $seed: $name")
+                }
+            }
+        }
+    }
+
     @Test
     fun `push down internal group by`() {
         matrix { g ->
