@@ -390,40 +390,69 @@ private fun groupBy(by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>
  * [path] keep the same values: an aggregation pushed down to a time series runs once per sub-interval, so that its
  * events are grouped with the property values of their own time, as in NAIVE mode (see replaceTemporalProperties; the
  * events where an element has no value are grouped as null). A property valid in a single instant t is valid in [t, t + 1)
+ *
+ * Why: a partial aggregate computed by the time series spans [first event, last event]. When the path is projected on
+ * the grouping properties (replaceTemporalProperties), the partial aggregate is paired with every version overlapping
+ * that span: if a grouping property changes inside it, its events are counted once per version. Cutting the interval
+ * at every change makes each partial aggregate overlap exactly one version (or none: the null group).
+ * In the paper: the temporal partition of the tuple, i.e., the boundaries of Algorithm 1 (temporal property join)
+ * computed before the expansion towards the time series, instead of after it.
+ * E.g., [path] = (a)-->(b), [by] = a.name, sum(c.value), a.name = x in [0, 2) and y in [3, 4), [from, to) = [MIN, MAX):
+ * the result is [MIN, 0), [0, 2), [2, 3), [3, 4), [4, MAX), where [2, 3) and the extremes are the null group.
  */
 fun groupingIntervals(path: List<ElemP>, by: List<Aggregate>, mapAlias: Map<String, Int>, from: Long, to: Long): List<Pair<Long, Long>> {
-    if (from >= to) return listOf(from to to)
-    val bounds = sortedSetOf(from, to)
-    by.filter { it.operator == null && it.property != null }.forEach { a ->
-        val index = mapAlias[a.n]
-        if (index != null && index < path.size) {
-            path[index].getProps(name = a.property, fromTimestamp = from, toTimestamp = to).forEach { p ->
+    if (from >= to) return listOf(from to to) // an empty or instantaneous interval cannot be split
+    val bounds = sortedSetOf(from, to) // the bounds of the sub-intervals, always including those of the path
+    by.filter { it.operator == null && it.property != null }.forEach { a -> // for each grouping property (e.g., a.name)...
+        val index = mapAlias[a.n] // ... of an element...
+        if (index != null && index < path.size) { // ... already in the path (i.e., before the time series; not the events)
+            path[index].getProps(name = a.property, fromTimestamp = from, toTimestamp = to).forEach { p -> // ... each version overlapping the path
+                // A version valid in a single instant t covers the events at t only: as [t, t + 1)
                 val end = if (p.fromTimestamp == p.toTimestamp && p.toTimestamp < Long.MAX_VALUE) p.toTimestamp + 1 else p.toTimestamp
-                listOf(p.fromTimestamp, end).filter { it in from..to }.forEach { bounds += it }
+                listOf(p.fromTimestamp, end).filter { it in from..to }.forEach { bounds += it } // ... starts and ends a sub-interval (clipped to the path)
             }
         }
     }
+    // Consecutive bounds: the sub-intervals, covering [from, to) without overlaps (no grouping property changes inside one)
     return bounds.toList().zipWithNext()
 }
 
 /**
  * The maximal sub-intervals of [[from], [to]) in which the properties of [e] pass the filters of [step] (except those on
  * the properties in [skip], as matchesStep). A property valid in a single instant t is valid in [t, t + 1)
+ *
+ * Why: matchesStep keeps [e] if any version of the filtered property passes the filter, but the path keeps the whole
+ * interval [from, to), also the periods in which the property has another value. With continuous semantics, a path
+ * holds only while every element (properties included) is valid: the path must continue only in the returned
+ * sub-intervals (one path each, see search). In both modes, since the events read later are filtered by the interval
+ * of the path. In the paper: the selection on a property of a tuple, whose validity is the intersection of the
+ * validity of its elements, i.e., the tuple extended with the versions passing the filter.
+ * E.g., [step] = (a {type: "ML"}), a.type = ML in [0, 2), HV in [2, 4), ML in [4, MAX), [from, to) = [MIN, MAX): the
+ * result is [0, 2), [4, MAX). Returns [[from], [to]) itself when the filters hold in the whole interval (nothing to
+ * split), and nothing when they never hold.
  */
 fun filterIntervals(e: ElemP, step: Step?, from: Long, to: Long, timeaware: Boolean, skip: List<String?>): List<Pair<Long, Long>> {
-    val filters = step?.properties.orEmpty().filter { it.property !in skip }
+    val filters = step?.properties.orEmpty().filter { it.property !in skip } // the filters that matchesStep applied to e
+    // No time (timeaware = false), an empty or instantaneous interval (e.g., an event), or no filter: nothing to split
     if (!timeaware || from >= to || filters.isEmpty()) return listOf(from to to)
+    // A version valid in a single instant t covers the instant t only: as [t, t + 1)
     fun end(p: P) = if (p.fromTimestamp == p.toTimestamp && p.toTimestamp < Long.MAX_VALUE) p.toTimestamp + 1 else p.toTimestamp
+    // For each filter, the versions of its property (overlapping the path) that pass it; a comparison between values of
+    // different types does not pass (instead of failing the query)
     val passing = filters.map { f ->
         e.getProps(name = f.property, fromTimestamp = from, toTimestamp = to, timeaware = timeaware).filter { p ->
             runCatching { if (f.attrFirst) Compare.apply(p.value, f.value, f.operator) else Compare.apply(f.value, p.value, f.operator) }.getOrDefault(false)
         }
     }
+    // The bounds of the passing versions (clipped to the path) and of the path: no version starts or ends inside two
+    // consecutive bounds, so a passing version either covers such a sub-interval or does not overlap it
     val bounds = (passing.flatten().flatMap { listOf(it.fromTimestamp, end(it)) }.filter { it in from..to } + from + to).toSortedSet().toList()
     val valid = mutableListOf<Pair<Long, Long>>()
-    bounds.zipWithNext().filter { (f, t) -> passing.all { ps -> ps.any { it.fromTimestamp <= f && t <= end(it) } } }.forEach { (f, t) ->
-        if (valid.isNotEmpty() && valid.last().second == f) valid[valid.size - 1] = valid.last().first to t else valid += f to t // merge consecutive intervals
-    }
+    bounds.zipWithNext()
+        .filter { (f, t) -> passing.all { ps -> ps.any { it.fromTimestamp <= f && t <= end(it) } } } // the sub-intervals in which every filter passes...
+        .forEach { (f, t) -> // ... merged when consecutive (e.g., ML in [0, 2) and ML in [2, 4): a single path in [0, 4))
+            if (valid.isNotEmpty() && valid.last().second == f) valid[valid.size - 1] = valid.last().first to t else valid += f to t
+        }
     return valid
 }
 
@@ -533,11 +562,21 @@ fun expandNode(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match
         .map { ExploredPath(it, cur.index + 1, path, from, to) }
 }
 
-/** The thread pools of [search], one per number of threads, shared by all the queries: daemon threads, created once */
+/**
+ * The thread pools of [search], one per number of threads, shared by all the queries: daemon threads, created once.
+ * Before, each search created its pool (and its threads) and closed it at the end, which costs more than a short query.
+ * In the paper: the fixed-size thread pool of the "Query Service" (multi-threaded query execution).
+ */
 private val searchPools = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.ExecutorCoroutineDispatcher>()
 
+/**
+ * The pool of [search] with [threads] threads, created at the first query with that number of threads. Bounded: at most
+ * [threads] threads, whatever the number of queries (also concurrent ones, which share it). The threads are daemons:
+ * the pool is never closed, and it does not keep the JVM alive. Only search uses it: join keeps its own pool, since its
+ * tasks run search and wait for it (with a shared fixed pool, they could take all its threads and wait forever)
+ */
 fun searchPool(threads: Int): kotlinx.coroutines.ExecutorCoroutineDispatcher = searchPools.computeIfAbsent(threads) { n ->
-    val count = AtomicInteger()
+    val count = AtomicInteger() // the threads are named stgraph-search-<threads>-<i> (e.g., to find them in a thread dump)
     Executors.newFixedThreadPool(n) { r -> Thread(r, "stgraph-search-$n-${count.incrementAndGet()}").apply { isDaemon = true } }.asCoroutineDispatcher()
 }
 
@@ -569,8 +608,12 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                 if (!matchesStep(curElem, match, by, timeaware, mapAlias, mapWhere, mode)) continue
                 val (newFrom, newTo, curPath) = updatePath(curElem)
                 // Continuous semantics: the path holds only while the filtered properties pass the filters, one path per interval
+                // (see filterIntervals). The properties skipped by matchesStep in OPTIMIZED (those aggregated by the time
+                // series) are skipped here too
                 val valid = filterIntervals(curElem.e, match[curElem.index], newFrom, newTo, timeaware, if (mode == QueryMode.OPTIMIZED) by.filter { it.operator != null }.map { it.property } else emptyList())
-                if (valid != listOf(newFrom to newTo)) {
+                if (valid != listOf(newFrom to newTo)) { // the filters do not hold in the whole interval of the path:
+                    // the same element again, once per valid sub-interval (none if the filters never hold), as a path limited to
+                    // it. At the next poll, the filters hold in the whole (limited) interval, so the path continues as usual
                     valid.forEach { (f, t) -> queue.add(ExploredPath(curElem.e, curElem.index, curElem.path, f, t)) }
                     continue
                 }
@@ -599,11 +642,17 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                                 }
                                 try {
                                     // One pushed-down aggregation per sub-interval in which the grouping properties of the path do not change
+                                    // (see groupingIntervals). Only with an aggregation pushed down (OPTIMIZED): the events read one by
+                                    // one (NAIVE, or without aggregation) are already grouped with the properties of their own time
                                     val intervals = if (pushDownBy.isEmpty()) listOf(newFrom to newTo) else groupingIntervals(curPath, by, mapAlias, newFrom, newTo)
                                     val ts = g.getTSM().getTS(r.toN, mode = TsMode.READ)
+                                    // A single interval: the usual request. Several: all of them in one request (TS.getValues on
+                                    // intervals), which returns one partial aggregate per non-empty sub-interval (and group of the time series)
                                     val res = (if (intervals.size == 1) ts.getValues(pushDownBy, pushDownFilter, isGroupBy) else ts.getValues(pushDownBy, pushDownFilter, isGroupBy, intervals)) // push down the filters from the next step
                                         .map { n ->
-                                            // ... each partial aggregate with the sub-interval of its events
+                                            // Each partial aggregate continues as a path limited to the sub-interval of its events, found
+                                            // by its first event (fromTimestamp): the projection (replaceTemporalProperties) then pairs it
+                                            // with the only version of the grouping properties valid there
                                             val (f, t) = if (intervals.size == 1) newFrom to newTo else intervals.first { n.fromTimestamp >= it.first && n.fromTimestamp < it.second }
                                             ExploredPath(n, curElem.index + 1, curPath, f, t)
                                         }

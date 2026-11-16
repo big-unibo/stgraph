@@ -16,7 +16,11 @@ import java.io.BufferedWriter
 import java.io.PrintWriter
 
 @OptIn(DelicateCoroutinesApi::class)
-/** The interval of the partial aggregates of a request on several intervals (see AsterixDBTS.getValues) */
+/**
+ * The interval of the partial aggregates of a request on several intervals (see AsterixDBTS.getValues): the alias of the
+ * CASE expression in the GROUP BY, i.e., the index of the interval of the events. Removed from the results (it is not a
+ * property)
+ */
 private const val BUCKET = "stgraphBucket"
 
 class AsterixDBTS(
@@ -55,13 +59,21 @@ class AsterixDBTS(
 
     override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean): List<N> = select(by, filters, isGroupBy, emptyList())
 
-    /** An aggregation on several [intervals] in one request: the events are also grouped by interval (CASE on the timestamp) */
+    /**
+     * An aggregation on several [intervals] in one request: the events are also grouped by interval (CASE on the timestamp).
+     * E.g., [by] = sum(value), [intervals] = [MIN, 2), [2, 4), [4, MAX):
+     *   SELECT ..., SUM(value), MIN(id) AS from, MAX(id) AS to FROM ... WHERE tsId = ...
+     *   GROUP BY tsId, CASE WHEN id < 2 THEN 0 WHEN id < 4 THEN 1 ELSE 2 END AS stgraphBucket
+     * returns one partial aggregate per non-empty interval (as one request per interval, see TS.getValues), with a single
+     * scan of the events instead of one request (and job) per interval
+     */
     override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, intervals: List<Pair<Long, Long>>): List<N> =
+        // Without aggregation (the events themselves, each in its interval) or with a single interval: the usual requests
         if (by.isEmpty() || intervals.size <= 1) super.getValues(by, filters, isGroupBy, intervals)
-        else select(by, filters + listOfNotNull(
+        else select(by, filters + listOfNotNull( // the events of all the intervals: from the start of the first one...
             intervals.first().first.takeIf { it != Long.MIN_VALUE }?.let { Filter(FROM_TIMESTAMP, Operators.GTE, it) },
-            intervals.last().second.takeIf { it != Long.MAX_VALUE }?.let { Filter(TO_TIMESTAMP, Operators.LT, it) }
-        ), isGroupBy, intervals.dropLast(1).map { it.second })
+            intervals.last().second.takeIf { it != Long.MAX_VALUE }?.let { Filter(TO_TIMESTAMP, Operators.LT, it) } // ... to the end of the last one
+        ), isGroupBy, intervals.dropLast(1).map { it.second }) // ... split at the end of each interval but the last
 
     /** [buckets]: the upper bounds of the intervals but the last, whose events are aggregated separately */
     private fun select(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, buckets: List<Long>): List<N> {
@@ -98,6 +110,9 @@ class AsterixDBTS(
 
         selectQuery =  "USE $dataverse;"
         if (by.isNotEmpty()) {
+            // With buckets, the events are also grouped by interval: the i-th interval (i.e., the first whose end is after
+            // the timestamp of the event, since the intervals are sorted and consecutive), the last one otherwise. Empty
+            // intervals return no group. The interval is selected (and removed from the results, see BUCKET)
             val bucket = if (buckets.isEmpty()) "" else ", CASE ${buckets.mapIndexed { i, b -> "WHEN $ID < $b THEN $i" }.joinToString(" ")} ELSE ${buckets.size} END AS $BUCKET"
             selectQuery +=  "SELECT ${(groupby + aggregators + listOfNotNull(BUCKET.takeIf { buckets.isNotEmpty() })).joinToString(",")} FROM $dataset ${applyFilters(filters.map { it.second })} GROUP BY ${groupby.joinToString(","){ removeAlias(it).replace(".$VALUE", "") }}$bucket"
         } else {
