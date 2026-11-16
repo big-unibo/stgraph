@@ -3,7 +3,6 @@ package it.unibo.graph.query
 import it.unibo.graph.interfaces.*
 import it.unibo.graph.utils.*
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.*
@@ -50,8 +49,13 @@ fun query(g: Graph, match: List<List<Step?>>, where: List<Compare> = emptyList()
     return aggregation(result, by, mapAliases, match)
 }
 
-/*
- * Join two patterns
+/**
+ * JOIN of the tuples of the first pattern ([pattern1]) with the second pattern (match[1]). For each tuple, the join
+ * comparisons ([joinFilters]) become filters of the steps of the second pattern, one plan per version of the compared
+ * properties of the tuple (with the validity of the version), and the second pattern is searched once per plan. No
+ * recursion and no pool of its own: the tuples are joined one at a time by the calling thread, and the searches use the
+ * shared pool (see searchPool), so a query never uses more than [threads] threads.
+ * E.g., a.name = b.name with a.name = x in [0, 2) and y in [2, 4): search b with name = x in [0, 2) and name = y in [2, 4)
  */
 private fun join(
     g: Graph,
@@ -67,78 +71,35 @@ private fun join(
     threads: Int,
     mode: QueryMode
 ): List<Path> {
-    val result = ConcurrentLinkedQueue<Path>()
-    // Funzione ricorsiva locale
-    fun rec(curMatch: MutableList<Step?>, index: Int, fromLimit: Long, toLimit: Long, row: Path, acc: MutableList<Path>) {
-        if (index >= match[1].size) {
-            // PROJECTION before the join: with an aggregation pushed down in the second pattern, the grouping properties
-            // of the first one, so that each search of the second pattern binds one version of them (temporal property join)
-            val grouping = if (mode == QueryMode.OPTIMIZED && by.any { it.operator != null && mapAliases[it.n]?.first == 1 })
-                by.filter { it.operator == null && it.property != null && mapAliases[it.n]?.first == 0 }.map { row.result[mapAliases[it.n]!!.second] to it.property!! }
-                else emptyList()
-            temporalPropertyJoin(grouping, fromLimit, toLimit).forEach { (slice, _) ->
-                acc += search(g, curMatch, (where - joinFilters).filter { mapAliases[it.first]!!.first == 1 }, slice.first, slice.second, timeaware, by = by, threads, mode)
-                    .map { Path(row.result + it.result, it.from, it.to) }
-            }
-            return
-        }
-
-        val step = match[1][index]
-        if (step == null) {
-            curMatch.add(null)
-            rec(curMatch, index + 1, fromLimit, toLimit, row, acc)
-            curMatch.removeAt(curMatch.size - 1)
-            return
-        }
-
-        val curJoinFilters = joinFilters.filter { step.alias == it.first || step.alias == it.second }
-        if (curJoinFilters.isNotEmpty()) {
+    val where2 = (where - joinFilters).filter { mapAliases[it.first]!!.first == 1 } // the comparisons within the second pattern
+    return pattern1.flatMap { row ->
+        // The plans of the second pattern for this tuple: (steps, from, to), one per combination of versions of the compared properties
+        val plans = match[1].fold(listOf(Triple(listOf<Step?>(), max(from, row.from), min(to, row.to)))) { plans, step ->
+            val c = joinFilters.filter { step != null && (step.alias == it.first || step.alias == it.second) }
             // Only one comparison per step would be applied: fail instead of ignoring the others
-            if (curJoinFilters.size > 1) throw UnsupportedOperationException("At most one join comparison (where) per step: $curJoinFilters")
-            val curJoinFilter = curJoinFilters.first()
-            val cAlias = if (step.alias != curJoinFilter.first) curJoinFilter.first else curJoinFilter.second
-            val props = row.result[mapAliases[cAlias]!!.second].getProps(name = curJoinFilter.property, fromTimestamp = fromLimit, toTimestamp = toLimit, timeaware = timeaware)
-            props.forEach { p ->
-                curMatch.add(
-                    Step(
-                        step.label,
-                        step.properties + Filter(
-                            curJoinFilter.property,
-                            curJoinFilter.operator,
-                            p.value,
-                            attrFirst = mapAliases[curJoinFilter.first]!!.first == 1
-                        ),
-                        step.alias
-                    )
-                )
-                rec(curMatch, index + 1, max(fromLimit, p.fromTimestamp), min(toLimit, p.toTimestamp), row, acc)
-                curMatch.removeAt(curMatch.size - 1)
-            }
-        } else {
-            curMatch.add(step)
-            rec(curMatch, index + 1, fromLimit, toLimit, row, acc)
-            curMatch.removeAt(curMatch.size - 1)
-        }
-    }
-
-    // Closed at the end: its threads are not daemons, they would stay alive after the query
-    Executors.newFixedThreadPool(threads).asCoroutineDispatcher().use { executor ->
-        runBlocking {
-            val jobs = pattern1.map { row ->
-                launch(executor) {
-                    val acc = mutableListOf<Path>()
-                    rec(mutableListOf(), 0, max(from, row.from), min(to, row.to), row, acc)
-                    result += acc
+            if (c.size > 1) throw UnsupportedOperationException("At most one join comparison (where) per step: $c")
+            plans.flatMap { (steps, f, t) ->
+                if (c.isEmpty()) return@flatMap listOf(Triple(steps + step, f, t))
+                val j = c.first()
+                val other = if (step!!.alias != j.first) j.first else j.second // the alias in the first pattern
+                row.result[mapAliases[other]!!.second].getProps(name = j.property, fromTimestamp = f, toTimestamp = t, timeaware = timeaware).map { p ->
+                    val filter = Filter(j.property, j.operator, p.value, attrFirst = mapAliases[j.first]!!.first == 1)
+                    Triple(steps + Step(step.label, step.properties + filter, step.alias), max(f, p.fromTimestamp), min(t, p.toTimestamp))
                 }
             }
-            jobs.joinAll()
+        }
+        // PROJECTION before the join: with an aggregation pushed down in the second pattern, the grouping properties of
+        // the first one, so that each search of the second pattern binds one version of them (temporal property join)
+        val grouping = if (mode == QueryMode.OPTIMIZED && by.any { it.operator != null && mapAliases[it.n]?.first == 1 })
+            by.filter { it.operator == null && it.property != null && mapAliases[it.n]?.first == 0 }.map { row.result[mapAliases[it.n]!!.second] to it.property!! }
+            else emptyList()
+        plans.flatMap { (steps, f, t) ->
+            temporalPropertyJoin(grouping, f, t).flatMap { (slice, _) ->
+                search(g, steps, where2, slice.first, slice.second, timeaware, by = by, threads, mode).map { Path(row.result + it.result, it.from, it.to) }
+            }
         }
     }
-    return result.toList()
 }
-
-
-
 
 /**
  * PROJECTION (π) of a tuple ([row]) on the properties of [by]: each element with projected properties is replaced by a
@@ -437,8 +398,8 @@ private val searchPools = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.co
 /**
  * The pool of [search] with [threads] threads, created at the first query with that number of threads. Bounded: at most
  * [threads] threads, whatever the number of queries (also concurrent ones, which share it). The threads are daemons:
- * the pool is never closed, and it does not keep the JVM alive. Only search uses it: join keeps its own pool, since its
- * tasks run search and wait for it (with a shared fixed pool, they could take all its threads and wait forever)
+ * the pool is never closed, and it does not keep the JVM alive. Also the joins use it, through search: join itself
+ * runs on the calling thread (its tasks would wait for search, and could take all the threads of a shared pool)
  */
 fun searchPool(threads: Int): kotlinx.coroutines.ExecutorCoroutineDispatcher = searchPools.computeIfAbsent(threads) { n ->
     val count = AtomicInteger() // the threads are named stgraph-search-<threads>-<i> (e.g., to find them in a thread dump)

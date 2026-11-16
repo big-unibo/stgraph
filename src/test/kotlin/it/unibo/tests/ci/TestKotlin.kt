@@ -988,6 +988,40 @@ class TestKotlin {
     }
 
     /**
+     * Join without its own pool: the tuples of the first pattern are joined by the calling thread, and the searches of
+     * the second pattern run on the shared pool (Query.searchPool), so a join with 2 threads uses at most 2 workers and
+     * creates no other pool. The join comparison binds each version of a.code: a (code 1 in [0, 5), 2 in [5, 10)) joins
+     * b1 (code 1) with the event at 1 and b2 (code 2) with the event at 6, not the events outside these versions
+     */
+    @Test
+    fun `join uses the shared thread pool`() {
+        val g = MemoryGraph()
+        g.tsm = MemoryTSM(g)
+        g.clear()
+        g.getTSM().clear()
+        val a = g.addNode(A)
+        g.addProperty(a.id, "code", 1L, PropType.LONG, from = 0, to = 5)
+        g.addProperty(a.id, "code", 2L, PropType.LONG, from = 5, to = 10)
+        listOf(1L, 2L).forEach { code ->
+            val b = g.addNode(B, isTs = true)
+            g.addProperty(b.id, "code", code, PropType.LONG)
+            val ts = g.getTSM().addTS(b.id)
+            listOf(1L, 6L).forEach { t -> ts.add(C, timestamp = t, value = t, location = POINT_IN_T0) } // events at 1 and 6
+        }
+        val join = listOf(listOf(Step(A, alias = "a")), listOf(Step(B, alias = "b"), null, Step(C, alias = "c")))
+        val where = listOf(Compare("a", "b", "code", Operators.EQ))
+        val pools = { Thread.getAllStackTraces().keys.count { it.name.startsWith("pool-") } } // the threads of an unnamed pool
+        val before = pools()
+        QueryMode.entries.forEach { mode ->
+            // The events valid with the version of a.code equal to the code of their b: 1 (b1) and 6 (b2)
+            assertEquals(listOf(7.0), query(g, join, where = where, by = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM)), threads = 2, mode = mode))
+        }
+        assertEquals(before, pools()) // no pool other than the shared one
+        assertTrue(Thread.getAllStackTraces().keys.count { it.name.startsWith("stgraph-search-2-") } <= 2)
+        g.close()
+    }
+
+    /**
      * Random graphs (property histories with gaps, edges with limited validity, events with two labels): the NAIVE and
      * OPTIMIZED modes must return the same result for grouping, filter, time window and join queries. NAIVE reads the
      * events one by one and resolves the properties at the timestamp of each event, so it is the reference: any pushdown
