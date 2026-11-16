@@ -322,18 +322,25 @@ fun temporalPropertyJoin(keys: List<Pair<ElemP, String>>, from: Long, to: Long):
 }
 
 /**
- * SELECTION (σ) on the properties of the element matched at the step of [cur] (the filters of the step, and the
- * comparison of the where clause with an element already in [path]), after their temporal property join (π): the slices
- * of [[from], [to]) in which they hold. The tuple holds only while its properties satisfy the predicate (continuous
- * semantics), so it continues once per slice, or not at all. [[from], [to]] itself without such properties or without
- * time. The filters on the properties aggregated by the time series ([skip], as matchesStep) are not evaluated
+ * SELECTION (σ), the only evaluation of the predicates, on the properties of the element matched at the step of [cur]
+ * (the filters of the step, and the comparison of the where clause with an element already in [path]), after their
+ * temporal property join (π): the slices of [[from], [to]) in which they hold. The tuple holds only while its properties
+ * satisfy the predicate (continuous semantics), so it continues once per slice, or not at all. Without time
+ * ([timeaware] = false), [[from], [to]] if some version of the properties satisfies it. [[from], [to]] itself without
+ * predicates. The filters on the properties aggregated by the time series ([skip]: OPTIMIZED, already applied by TS
+ * before aggregating, see queryTSOpt) are not evaluated on the partial aggregates
  */
 fun select(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>, timeaware: Boolean, skip: List<String?>): List<Pair<Long, Long>> {
     val step = match[cur.index]
     val filters = step?.properties.orEmpty().filter { it.property !in skip }
     val c = step?.alias?.let { mapWhere[it] } // the comparison of the where clause, with an element already in the path
-    if (!timeaware || (filters.isEmpty() && c == null)) return listOf(from to to)
+    if (filters.isEmpty() && c == null) return listOf(from to to) // no predicate
     val compared = if (c == null) emptyList() else listOf(path[mapAlias[c.first.toString()]!!] to c.property, path[mapAlias[c.second.toString()]!!] to c.property)
+    if (!timeaware) { // without time: some version of each property satisfies the predicate
+        val holds = filters.all { f -> cur.e.getProps(name = f.property, timeaware = false).any { f.holds(it.value) } } &&
+            (c == null || c.isOk(compared[0].first, compared[1].first, timeaware = false))
+        return if (holds) listOf(from to to) else emptyList()
+    }
     val n = filters.size
     return temporalPropertyJoin(filters.map { cur.e to it.property } + compared, from, to)
         .filter { (_, v) ->
@@ -425,14 +432,7 @@ fun getPredicates(index: Int, curPath: List<ElemP>, from: Long, to: Long, match:
     return filters // push down the filters from the next step
 }
 
-fun whereClause(e: ElemP, path: List<ElemP>, alias: String, mapWhere: Map<String, Compare>, c: Compare, timeaware: Boolean, mapAlias: Map<String, Int>, from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE): Boolean {
-    return when (alias) {
-        mapWhere[alias]?.first -> c.isOk(e, path[mapAlias[c.second]!!], timeaware, from, to)
-        mapWhere[alias]?.second -> c.isOk(path[mapAlias[c.first]!!], e, timeaware, from, to)
-        else -> false
-    }
-}
-
+/** A tuple being extended at the step [index] by the element [e], after [path], valid in [[from], [to]] */
 class ExploredPath(val e: ElemP, val index: Int, val path: List<ElemP>, val from: Long, val to: Long)
 
 fun buildAliasMap(match: List<Step?>): Map<String, Int> =
@@ -457,24 +457,13 @@ fun initializeQueue(g: Graph, from: Long, to: Long): Queue<ExploredPath> {
     return acc
 }
 
-fun matchesStep(cur: ExploredPath, match: List<Step?>, by: List<Aggregate>, timeaware: Boolean, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>, mode: QueryMode): Boolean {
+/**
+ * Whether the element of [cur] can extend the tuple at its step: its label, and its validity overlapping that of the
+ * tuple. Not a selection: the predicates on its properties are evaluated by the selection only (see select)
+ */
+fun matchesStep(cur: ExploredPath, match: List<Step?>, timeaware: Boolean): Boolean {
     val step = match[cur.index]
-    val alias = step?.alias
-    val compare = alias?.let { mapWhere[it] }
-
-    return (step == null || ( // no filter
-                            (step.label == null || step.label == cur.e.label.name)  // filter on label
-                                && step
-                                    .properties
-                                    .filter { f ->  !(mode == QueryMode.OPTIMIZED && by.filter { it.operator != null }.map { it.property }.contains(f.property)) } // do not apply filter on the result of pushed-down group by (otherwise it would be like SELECT * FROM (SELECT SUM(value) as value ...) WHERE value > 10)
-                                    .all { f -> // for all filters...
-                                        cur.e
-                                            .getProps(name = f.property, fromTimestamp = cur.from, toTimestamp = cur.to, timeaware = timeaware) // ... a certain time-aware property must match
-                                            .any { p -> if (f.attrFirst) { Compare.apply(p.value, f.value, f.operator) } else { Compare.apply(f.value, p.value, f.operator) } }
-                                        })) // filter on properties
-                        && cur.e.timeOverlap(timeaware, cur.from, cur.to) // check time overlap
-                        && (compare == null || whereClause(cur.e, cur.path, alias, mapWhere, compare, timeaware, mapAlias, cur.from, cur.to))
-
+    return (step?.label == null || step.label == cur.e.label.name) && cur.e.timeOverlap(timeaware, cur.from, cur.to)
 }
 
 fun updatePath(cur: ExploredPath): Triple<Long, Long, List<ElemP>> {
@@ -541,7 +530,7 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                 }
             } else {
                 val curElem = queue.poll()// .removeAt(0)
-                if (!matchesStep(curElem, match, by, timeaware, mapAlias, mapWhere, mode)) continue
+                if (!matchesStep(curElem, match, timeaware)) continue
                 val (newFrom, newTo, curPath) = updatePath(curElem)
                 // SELECTION after the PROJECTION of the properties it reads (σ ∘ π, see select): one tuple per slice of time
                 // in which the filters of the step and the comparison of the where clause hold, none if they never hold

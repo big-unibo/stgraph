@@ -59,8 +59,8 @@ class Compare(val first: Any, val second: Any, val property: String, val operato
 
     /**
      * Whether the comparison holds between [a] and [b] at some time of [[from], [to]): for some pair of versions of the
-     * property valid at the same time (any pair without time). It only checks the step (matchesStep): the selection then
-     * restricts the tuple to the time in which it holds (see select in Query.kt)
+     * property valid at the same time (any pair without time). Used by the selection without time (see select in
+     * Query.kt); with time, the selection computes when it holds
      */
     fun isOk(a: ElemP, b: ElemP, timeaware: Boolean, from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE): Boolean =
         a.getProps(name = property, fromTimestamp = from, toTimestamp = to, timeaware = timeaware).any { p ->
