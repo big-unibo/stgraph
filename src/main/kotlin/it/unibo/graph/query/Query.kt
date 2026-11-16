@@ -46,11 +46,7 @@ fun query(g: Graph, match: List<List<Step?>>, where: List<Compare> = emptyList()
         }
 
     result = result.flatMap { row -> project(row, match, by, mapAliases, from, to, timeaware) } // PROJECTION on the properties of the aggregation
-    val result2 = result.groupBy { row -> groupBy(by, mapAliases, row, match) }
-    val result3 = result2.mapValues { rowGroup -> aggregate(by, rowGroup, mapAliases, match) }
-    val result4 = result3.map { wrapResult(by, it) }
-    val result5 = result4.flatten()
-    return result5
+    return aggregation(result, by, mapAliases, match)
 }
 
 /*
@@ -164,45 +160,18 @@ fun project(row: Path, match: List<List<Step?>>, by: List<Aggregate>, mapAliases
             else aggregates.fold(listOf(listOf<P?>())) { acc, a -> acc.flatMap { c -> e.getProps(name = a.property, timeaware = false).map { c + it } } }.map { null to it }
         tuples = tuples.flatMap { (elements, interval) ->
             versions.ifEmpty { listOf(null to aggregates.map { null }) }.mapNotNull { (slice, v) ->
-                val i = if (slice == null) interval else intersection(interval, slice) ?: return@mapNotNull null // valid at the same time
-                elements.toMutableList().apply { this[index] = virtual(e, aggregates.zip(v), i) } to i
+                // Valid at the same time: the intersection of their validity (instants as in timeOverlap)
+                if (slice != null && !timeOverlap(interval.first, interval.second, slice.first, slice.second)) return@mapNotNull null
+                val i = if (slice == null) interval else max(interval.first, slice.first) to min(interval.second, slice.second)
+                // The element replaced by a virtual one, with these versions of its properties (null if none)
+                val props = aggregates.zip(v).map { (a, p) -> p ?: P(DUMMY_ID, sourceType = NODE, key = a.property!!, value = "null", type = PropType.NULL, fromTimestamp = i.first, toTimestamp = i.second, sourceId = DUMMY_ID, g = e.g) }
+                val virtual = if (e is N) N.createVirtualN(e.label, props, i.first, i.second, e.g) else R.createVirtualR(e.label, props, i.first, i.second, e.g)
+                elements.toMutableList().apply { this[index] = virtual } to i
             }
         }
     }
     return tuples.map { (elements, interval) -> Path(elements, interval.first, interval.second) }
 }
-
-/** The intersection of the intervals [a] and [b] (instants [t, t] as in timeOverlap), null if they do not overlap */
-private fun intersection(a: Pair<Long, Long>, b: Pair<Long, Long>): Pair<Long, Long>? =
-    if (timeOverlap(a.first, a.second, b.first, b.second)) max(a.first, b.first) to min(a.second, b.second) else null
-
-/** The (virtual) element replacing [e] in a projected tuple valid in [interval]: the given versions of its properties (null if none) */
-private fun virtual(e: ElemP, versions: List<Pair<Aggregate, P?>>, interval: Pair<Long, Long>): ElemP {
-    val props = versions.map { (a, p) -> p ?: P(DUMMY_ID, sourceType = NODE, key = a.property!!, value = "null", type = PropType.NULL, fromTimestamp = interval.first, toTimestamp = interval.second, sourceId = DUMMY_ID, g = e.g) }
-    return if (e is N) N.createVirtualN(e.label, props, interval.first, interval.second, e.g) else R.createVirtualR(e.label, props, interval.first, interval.second, e.g)
-}
-
-/**
- * Make the result compatible with Neo4J
- */
-private fun wrapResult(by: List<Aggregate>, it: Map.Entry<List<Any>, List<Any>>) =
-    if (by.isNotEmpty()) {
-        if (by.any { it.operator != null }) {
-            if (by.size == 1) {
-                it.key + it.value // MATCH (n)-->(m) RETURN n.name, avg(m.value) => [[a, 12.5], [b, 13.0], ...]
-            } else {
-                listOf(it.key + it.value)
-            }
-        } else {
-            if (by.size == 1) {
-                it.key // MATCH (n) RETURN n.name => [a, b, ...]
-            } else {
-                listOf(it.key)  // MATCH (n)-->(m) RETURN n.name, m.name => [[a, b], [a, c], ...]
-            }
-        }
-    } else {
-        it.value
-    }
 
 fun aggregateNumbers(numbers: List<Any>, aggregationOperator: AggOperator, lastAggregation: Boolean): Any {
     val numbers = numbers.filter { it != null && it != "null" } // TODO: this is necessary to handle data grouped by in TS
@@ -246,49 +215,26 @@ fun aggregateNumbers(numbers: List<Any>, aggregationOperator: AggOperator, lastA
 }
 
 /**
- * Aggregate the result of group by
+ * AGGREGATION (γ) of the tuples [rows], projected on the properties of [by] (see project): grouped by the properties
+ * without operator, with the property with an operator (one at most) aggregated by aggregateNumbers (which also combines
+ * the partial aggregates computed by TS). Without operator, the groups; without [by], the tuples themselves. As Neo4J
+ * returns them: [[a, 12.5], [b, 13.0], ...], or [a, b, ...] with a single property
  */
-private fun aggregate(by: List<Aggregate>, group: Map.Entry<List<Any>, List<Path>>, mapAliases: Map<String, Pair<Int, Int>>, match: List<List<Step?>>): List<Any> {
-    val aggregationOperators = by.filter { it.operator != null }
-    if (aggregationOperators.isEmpty()) {
-        // no aggregation operator has been specified
-        // E.g., MATCH (n) RETURN n.name => [a, b, ...]
-        return group.value
-    } else {
-        // some aggregation operator has been specified
-        if (aggregationOperators.filter { it.operator != null }.size > 1) throw IllegalArgumentException("More than one aggregation operator")
-        val aggregationOperator = aggregationOperators.first()
-        // E.g., MATCH (n)-->(m) RETURN n.name, avg(m.value) => [[a, 12.5], [b, 13.0], ...]
-        val values: List<Any> = group.value
-            .map { row ->
-                val alias = mapAliases[by.first { it.operator != null }.n]!!
-                val properties = row.result[alias.second + (if (alias.first == 1) match[0].size else 0)].getProps(name = aggregationOperator.property!!)
-                if (properties.size != 1) {
-                    throw IllegalArgumentException("Properties should be 1: $properties")
-                }
-                properties.first().value
-            }
-        val value = aggregateNumbers(values, aggregationOperator.operator!!, lastAggregation = true)
-        return listOf(value) // E.g., [12.5]
+private fun aggregation(rows: List<Path>, by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>, match: List<List<Step?>>): List<Any> {
+    if (by.isEmpty()) return rows
+    val operators = by.filter { it.operator != null }
+    if (operators.size > 1) throw IllegalArgumentException("More than one aggregation operator")
+    fun value(row: Path, a: Aggregate): Any { // the value of the property of [a] in the projected tuple (a single version)
+        val alias = mapAliases[a.n]!!
+        val properties = row.result[alias.second + (if (alias.first == 1) match[0].size else 0)].getProps(name = a.property)
+        if (properties.size != 1) throw IllegalArgumentException("Properties should be 1: $properties")
+        return properties.first().value
     }
+    return rows.groupBy { row -> by.filter { it.operator == null }.map { value(row, it) } }.map { (key, group) ->
+        val values = key + operators.map { a -> aggregateNumbers(group.map { value(it, a) }, a.operator!!, lastAggregation = true) }
+        if (by.size == 1) values else listOf(values)
+    }.flatten()
 }
-
-/**
- * Group several rows by key
- */
-private fun groupBy(by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>, row: Path, match: List<List<Step?>>): List<Any> =
-    // group by all elements that are not aggregation operator
-    // MATCH (n)-->(m) RETURN n.name, m.name => group by n and m
-    // MATCH (n)-->(m) RETURN n.name, avg(m.value) => group by only on n
-    by.filter { it.operator == null }.map {
-        val alias = mapAliases[it.n]!!
-        // row[alias.second + (if (alias.first == 1) match[0].size else 0)]
-        val properties = row.result[alias.second + (if (alias.first == 1) match[0].size else 0)].getProps(name = it.property)
-        if (properties.size != 1) {
-            throw IllegalArgumentException("Properties should be 1: $properties")
-        }
-        properties.first().value
-    }
 
 /**
  * TEMPORAL PROPERTY JOIN (Algorithm 1) of the properties [keys] of the elements of a tuple valid in [[from], [to]), on any
