@@ -43,7 +43,7 @@ class MemoryTS(override val g: Graph, val id: Long) : TS {
             val f = filteredValues
                 .map { n -> Path(listOf(n), n.fromTimestamp, n.toTimestamp) }  // Convert each node into a Path object containing the node and its time range
                 .flatMap { row -> // Expand temporal properties
-                    replaceTemporalProperties(row, emptyList(), by, mapOf(by.first().n to Pair(0, 0)), from = row.from, to = row.to, timeaware = true)
+                    project(row, emptyList(), by, mapOf(by.first().n to Pair(0, 0)), from = row.from, to = row.to, timeaware = true)
                 }
                 .groupBy { row -> // Group the paths by the values of the group-by attribute
                     groupby.map {

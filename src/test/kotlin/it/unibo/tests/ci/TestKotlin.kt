@@ -592,7 +592,7 @@ class TestKotlin {
 
     /**
      * Grouping by a property whose value changes over time, while the aggregation is pushed down to the time series
-     * (the projection before the expansion towards TS, Query.projectBeforeTS). Each event must be grouped with the value of the property at its own timestamp, in both
+     * (the projection before the expansion towards TS, Query.queryTSOpt). Each event must be grouped with the value of the property at its own timestamp, in both
      * modes. Before the fix, OPTIMIZED aggregated the whole series once, [0, 5], and that partial aggregate overlapped
      * the three versions of a.name, so the whole sum (21) was counted once per version.
      */
@@ -745,7 +745,7 @@ class TestKotlin {
     /**
      * Instants as in timeOverlap: an element valid in [t, t] is valid in the instant t only, so a path through it reaches
      * the events at t only, in both modes. Pushed down, the instant must become ts = t (ts >= t AND ts <= t), not the
-     * empty range ts >= t AND ts < t (Query.pushDownFilters); a filter passing only in an instant limits the path to
+     * empty range ts >= t AND ts < t (Query.getPredicates); a filter passing only in an instant limits the path to
      * [t, t] (Query.select)
      */
     @Test
@@ -788,9 +788,10 @@ class TestKotlin {
     }
 
     /**
-     * The projection of time-varying properties (Query.project, Algorithm 1 on any number of properties): the slices of
-     * time in which every property keeps the same version, with their versions (null where a property has none), instants
-     * ([t, t], as in timeOverlap) apart. The selection, the expansion towards TS with pushdown, and the join use it
+     * The temporal property join (Query.temporalPropertyJoin, Algorithm 1 on any number of properties): the slices of time
+     * in which every property keeps the same value, with their versions (null where a property has none), instants ([t, t],
+     * as in timeOverlap) apart, consecutive slices with the same values merged. The projection, the selection, the
+     * expansion towards TS with pushdown, and the join use it
      */
     @Test
     fun `project temporal properties`() {
@@ -803,7 +804,7 @@ class TestKotlin {
         g.addProperty(a.id, "v", 2L, PropType.LONG, from = 2, to = 4)
         g.addProperty(a.id, "v", 1L, PropType.LONG, from = 6, to = 6) // the instant 6, after a gap [4, 6)
         g.addProperty(b.id, "v", 3L, PropType.LONG, from = 1) // always 3 from 1
-        fun slices(from: Long, to: Long) = project(listOf(a to "v", b to "v"), from, to).map { (slice, v) -> slice to v.map { it?.value } }
+        fun slices(from: Long, to: Long) = temporalPropertyJoin(listOf(a to "v", b to "v"), from, to).map { (slice, v) -> slice to v.map { it?.value } }
         assertEquals(
             listOf(
                 (Long.MIN_VALUE to 0L) to listOf(null, null), (0L to 1L) to listOf(1L, null), (1L to 2L) to listOf(1L, 3L),
@@ -816,7 +817,12 @@ class TestKotlin {
         // In an instant: one version each
         assertEquals(listOf((6L to 6L) to listOf(1L, 3L)), slices(6, 6))
         // Without properties: the whole tuple
-        assertEquals(listOf((0L to 5L) to emptyList<P?>()), project(emptyList(), 0, 5))
+        assertEquals(listOf((0L to 5L) to emptyList<P?>()), temporalPropertyJoin(emptyList(), 0, 5))
+        // Consecutive versions with the same value: one slice (1 in [0, 2) and 1 in [2, 4) -> [0, 4))
+        val c = g.addNode(C)
+        g.addProperty(c.id, "v", 1L, PropType.LONG, from = 0, to = 2)
+        g.addProperty(c.id, "v", 1L, PropType.LONG, from = 2, to = 4)
+        assertEquals(listOf(0L to 4L), temporalPropertyJoin(listOf(c to "v"), 0, 4).map { it.first })
         // isOk: some pair of versions valid at the same time satisfies a.v < b.v (1 < 3 in [1, 2)), within [4, 6) none
         val lt = Compare("a", "b", "v", Operators.LT)
         assertTrue(lt.isOk(a, b, timeaware = true))
@@ -860,9 +866,9 @@ class TestKotlin {
     }
 
     /**
-     * replaceTemporalProperties with more than two grouping properties of the same element: one row per combination of
+     * The projection (Query.project) on more than two grouping properties of the same element: one row per combination of
      * the versions valid at the same time (null where a property has none), instead of failing with "Too many props".
-     * The look-ahead on the next element uses timeOverlap (half-open intervals and instants), as the rest of the query
+     * The tuple is valid only with the versions valid with its other elements (e.g., an edge valid from 2)
      */
     @Test
     fun `group by several temporal properties of the same element`() {
@@ -897,7 +903,7 @@ class TestKotlin {
 
     /**
      * A comparison between the events and a temporal property of the path, pushed down to the time series
-     * (Query.projectBeforeTS, pushDownFilters): one path per version of the property, each with its own value, in both modes.
+     * (Query.queryTSOpt, getPredicates): one path per version of the property, each with its own value, in both modes.
      * Before, OPTIMIZED failed with "Too many property values in the same temporal range"
      */
     @Test

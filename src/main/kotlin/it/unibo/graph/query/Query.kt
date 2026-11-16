@@ -45,7 +45,7 @@ fun query(g: Graph, match: List<List<Step?>>, where: List<Compare> = emptyList()
             join(g, pattern1, match, joinFilters, mapAliases, where, from, to, timeaware, by, threads, mode)
         }
 
-    result = result.flatMap { row -> replaceTemporalProperties(row, match, by, mapAliases, from, to, timeaware) }
+    result = result.flatMap { row -> project(row, match, by, mapAliases, from, to, timeaware) } // PROJECTION on the properties of the aggregation
     val result2 = result.groupBy { row -> groupBy(by, mapAliases, row, match) }
     val result3 = result2.mapValues { rowGroup -> aggregate(by, rowGroup, mapAliases, match) }
     val result4 = result3.map { wrapResult(by, it) }
@@ -75,11 +75,11 @@ private fun join(
     fun rec(curMatch: MutableList<Step?>, index: Int, fromLimit: Long, toLimit: Long, row: Path, acc: MutableList<Path>) {
         if (index >= match[1].size) {
             // PROJECTION before the join: with an aggregation pushed down in the second pattern, the grouping properties
-            // of the first one, so that each search of the second pattern binds one version of them (see project)
+            // of the first one, so that each search of the second pattern binds one version of them (temporal property join)
             val grouping = if (mode == QueryMode.OPTIMIZED && by.any { it.operator != null && mapAliases[it.n]?.first == 1 })
                 by.filter { it.operator == null && it.property != null && mapAliases[it.n]?.first == 0 }.map { row.result[mapAliases[it.n]!!.second] to it.property!! }
                 else emptyList()
-            project(grouping, fromLimit, toLimit).forEach { (slice, _) ->
+            temporalPropertyJoin(grouping, fromLimit, toLimit).forEach { (slice, _) ->
                 acc += search(g, curMatch, (where - joinFilters).filter { mapAliases[it.first]!!.first == 1 }, slice.first, slice.second, timeaware, by = by, threads, mode)
                     .map { Path(row.result + it.result, it.from, it.to) }
             }
@@ -144,124 +144,42 @@ private fun join(
 
 
 /**
- * The temporal property join (Algorithm 1) of the versions of several properties of the same element (e.g., two grouping
- * properties): one combination of the versions valid in each slice of the timeline (null where a property has none), and
- * one for each instant [t, t] (as in timeOverlap). Without time, all the combinations (none if a property has no version)
+ * PROJECTION (π) of a tuple ([row]) on the properties of [by]: each element with projected properties is replaced by a
+ * (virtual) element holding one version of each of them, and the tuple is generated once per combination of versions
+ * valid at the same time (temporal property join, Algorithm 1), with the validity of their intersection. An element
+ * without any version in the tuple holds null. Without time ([timeaware] = false), all the combinations of versions.
+ * E.g., (a, b) with a.name = x in [0, 2) and y in [2, 4), b.name = z: (x, z) in [0, 2), (y, z) in [2, 4)
  */
-fun intervalOuterJoin(lists: List<List<Elem>>, timeaware: Boolean): Set<List<Elem?>> {
-    if (!timeaware) return lists.fold(listOf(listOf<Elem?>())) { acc, list -> acc.flatMap { c -> list.map { c + it } } }.toSet()
-    val boundaries = lists.flatten().flatMap { listOf(it.fromTimestamp, it.toTimestamp) }.toSortedSet().toList()
-    val slices = mutableSetOf<List<Elem?>>()
-    for (i in 0 until boundaries.size - 1) { // the slices of the timeline [boundaries[i], boundaries[i + 1])
-        slices += lists.map { list -> list.find { it.timeOverlap(timeaware, boundaries[i], boundaries[i + 1]) } }
-    }
-    boundaries.filter { b -> lists.any { list -> list.any { it.fromTimestamp == b && it.toTimestamp == b } } }.forEach { point -> // the instants
-        val combination = lists.map { list -> list.find { it.timeOverlap(timeaware, point, point) } }
-        if (combination.any { it != null }) slices += combination
-    }
-    return slices
-}
-
-/**
- * Replace properties if necessary
- */
-fun replaceTemporalProperties(row: Path, match: List<List<Step?>>, by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>, from: Long, to: Long, timeaware: Boolean): List<Path> {
-    // Restrict the temporal interval
-    val from = max(from, row.from)
-    val to = min(to, row.to)
-    val row = row.result
-    // Find the nodes that should be replaced by their properties
-    // MATCH (n)-->(m) RETURN n.name, m => only n
-    // MATCH (n)-->(m) RETURN n.name, avg(m.value) => n and m
-    val toReplace: Map<Int, List<Aggregate>> = by.filter { it.property != null }.groupBy {
+fun project(row: Path, match: List<List<Step?>>, by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>, from: Long, to: Long, timeaware: Boolean): List<Path> {
+    val keys = by.filter { it.property != null }.groupBy { // the projected properties, by element (index in the tuple)
         val alias = mapAliases[it.n] ?: throw IllegalArgumentException("Alias `${it.n}` is not defined")
         alias.second + (if (alias.first == 1) match[0].size else 0)
-    } // find its index in the path
-    val acc: MutableList<Path> = mutableListOf() // accumulator of rows
-    fun createVirtual(replace: List<Pair<Aggregate, P?>>, from: Long, to: Long, elem: ElemP): ElemP {
-        val virtualP: List<P> = replace.map { pair->
-            val p = pair.second
-            p?: P(DUMMY_ID, sourceType = NODE, key = pair.first.property!!, value = "null", type = PropType.NULL, fromTimestamp = from, toTimestamp = to, sourceId = DUMMY_ID, g = elem.g)
-        }
-        val maxFrom = max(from, virtualP.maxOf { it.fromTimestamp })
-        val minTo = min(to, virtualP.minOf { it.toTimestamp })
-        val virtual =
-            if (elem is N) {
-                N.createVirtualN(elem.label, virtualP, maxFrom, minTo, elem.g)
-            } else {
-                R.createVirtualR(elem.label, virtualP, maxFrom, minTo, elem.g)
-            }
-        return virtual
     }
+    val validity = max(from, row.from) to min(to, row.to)
+    var tuples = listOf(row.result to validity) // the tuples generated so far, with their validity
+    for ((index, aggregates) in keys) {
+        val e = row.result[index]
+        val versions: List<Pair<Pair<Long, Long>?, List<P?>>> = // (validity, a version of each property), null validity without time
+            if (timeaware) temporalPropertyJoin(aggregates.map { e to it.property!! }, validity.first, validity.second).filter { (_, v) -> v.any { it != null } }
+            else aggregates.fold(listOf(listOf<P?>())) { acc, a -> acc.flatMap { c -> e.getProps(name = a.property, timeaware = false).map { c + it } } }.map { null to it }
+        tuples = tuples.flatMap { (elements, interval) ->
+            versions.ifEmpty { listOf(null to aggregates.map { null }) }.mapNotNull { (slice, v) ->
+                val i = if (slice == null) interval else intersection(interval, slice) ?: return@mapNotNull null // valid at the same time
+                elements.toMutableList().apply { this[index] = virtual(e, aggregates.zip(v), i) } to i
+            }
+        }
+    }
+    return tuples.map { (elements, interval) -> Path(elements, interval.first, interval.second) }
+}
 
-    return if (toReplace.isNotEmpty()) { // if I need to replace at least one element
-        fun rec(curRow: List<ElemP>, index: Int, from: Long, to: Long) { // recursive function
-            if (index < row.size) { // iterate until all elements have been checked
-                val replace: List<Aggregate>? = toReplace[index] // find the next item to replace
-                val elem: ElemP = row[index]
-                if (replace == null) {  // if I don't need to replace this item... continue the recursion but compute the reduced from/to timestamps
-                    if (timeOverlap(from, to, elem.fromTimestamp, elem.toTimestamp, timeaware)) { // this node/edge is still valid (i.e., it overlaps with the time span of the property)
-                        val newFrom = max(from, elem.fromTimestamp)
-                        val newTo = min(to, elem.toTimestamp)
-                        rec(curRow + elem, index + 1, newFrom, newTo) // continue the recursion
-                    }
-                } else { // else, I need to replace these items
-                    val props: List<Pair<Aggregate, List<P>>> = replace.map { it to elem.getProps(name = it.property, fromTimestamp = from, toTimestamp = to, timeaware = timeaware) } // For each aggregate, I can have multiple historical properties
-                    val replacements: List<ElemP> =
-                        if (props.size > 1) { // several grouping properties of the same element: their combinations in time
-                            intervalOuterJoin(props.map { it.second }, timeaware)
-                                .map { combination -> props.mapIndexed { i, (a, _) -> Pair(a, combination[i] as P?) } }
-                                .map { createVirtual(it, from, to, elem) }
-                        } else {
-                            props
-                                .flatMap { group -> group.second.map { Pair(group.first, it) } }
-                                .map { replacement -> createVirtual(listOf(replacement), from, to, elem) }
-                        }
-                    if (replacements.isEmpty()) { // if they are empty, add the null value as a return
-                        rec(curRow + createVirtual(props.map { Pair(it.first, null) }, from, to, elem), index + 1, from, to) // ... and continue the recursion
-                    } else {
-                        /* I cannot simply iterate over the properties to start the recursion, for instance let's consider
-                         * (a)---[0, 0)--->(b1)
-                         * (a)---[1, 1)--->(b2)
-                         * (a)---[2, 2)--->(b3)
-                         *
-                         * where (a) has two properties
-                         * a.name = "foo" in (0, 0)
-                         * a.name = "bar" in (1, 1)
-                         *
-                         * The query MATCH (a)-->(b) RETURN a.name, b
-                         * must return
-                         * -------------
-                         * | foo  | b1 |
-                         * | bar  | b2 |
-                         * | null | b3 |
-                         * -------------
-                         * So I need to check the time span of the next element to decide whether I should push a "null" value down the recursion
-                         */
-                        if (index + 1 < row.size) { // if this element is not the last
-                            val nextElem = row[index + 1] // look ahead the next element
-                            val overlappingReplacements = replacements.filter { p -> p.timeOverlap(timeaware, nextElem.fromTimestamp, nextElem.toTimestamp) } // find the overlapping properties (half-open intervals and instants, as timeOverlap)
-                            if (overlappingReplacements.isEmpty()) { // if there is no overlapping, push null down to the recursion
-                                rec(curRow + createVirtual(props.map { Pair(it.first, null) }, from, to, elem), index + 1, from, to)
-                            } else {
-                                overlappingReplacements.forEach { p ->  // if an overlapping element exists
-                                    rec(curRow + p, index + 1, max(from, p.fromTimestamp), min(to, p.toTimestamp)) // continue the recursion by further reducing the interval with the element values
-                                }
-                            }
-                        } else { // If this is the last element, simply iterate over the existing properties
-                            replacements.forEach { rec(curRow + it, index + 1, max(from, it.fromTimestamp), min(to, it.toTimestamp)) } // continue the recursion by further reducing the interval with the element values
-                        }
-                    }
-                }
-            } else {
-                acc.add(Path(curRow, from, to))
-            }
-        }
-        rec(emptyList(), 0, from, to)
-        acc
-    } else {
-        listOf(Path(row, from, to))
-    }
+/** The intersection of the intervals [a] and [b] (instants [t, t] as in timeOverlap), null if they do not overlap */
+private fun intersection(a: Pair<Long, Long>, b: Pair<Long, Long>): Pair<Long, Long>? =
+    if (timeOverlap(a.first, a.second, b.first, b.second)) max(a.first, b.first) to min(a.second, b.second) else null
+
+/** The (virtual) element replacing [e] in a projected tuple valid in [interval]: the given versions of its properties (null if none) */
+private fun virtual(e: ElemP, versions: List<Pair<Aggregate, P?>>, interval: Pair<Long, Long>): ElemP {
+    val props = versions.map { (a, p) -> p ?: P(DUMMY_ID, sourceType = NODE, key = a.property!!, value = "null", type = PropType.NULL, fromTimestamp = interval.first, toTimestamp = interval.second, sourceId = DUMMY_ID, g = e.g) }
+    return if (e is N) N.createVirtualN(e.label, props, interval.first, interval.second, e.g) else R.createVirtualR(e.label, props, interval.first, interval.second, e.g)
 }
 
 /**
@@ -373,31 +291,39 @@ private fun groupBy(by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>
     }
 
 /**
- * PROJECTION (π) of the properties [keys] of the elements of a tuple valid in [[from], [to]): the temporal property join
- * (Algorithm 1) on any number of properties, i.e., the slices of time in which every property keeps the same version,
- * each with its validity and its versions (null where a property has none). Extended with them, the tuple has the
- * validity of the slice (the intersection of the validity of its elements). Used before the operators that read
- * time-varying properties: the selection (see select), the expansion towards TS with pushdown (see projectBeforeTS), and
- * the join (grouping properties of its first pattern).
+ * TEMPORAL PROPERTY JOIN (Algorithm 1) of the properties [keys] of the elements of a tuple valid in [[from], [to]), on any
+ * number of properties: the slices of time in which every property keeps the same value, each with its validity and its
+ * versions (null where a property has none); consecutive slices with the same values are merged (e.g., ML in [2, 4) and
+ * ML in [4, 6): [2, 6)). Extended with them, the tuple has the validity of the slice (the intersection of the validity of
+ * its elements). Used by the projection (see project), also before the operators that read time-varying properties: the
+ * selection (see select), the expansion towards TS with pushdown (see queryTSOpt), and the join.
  * E.g., a.type = ML in [0, 2), HV in [2, 4), [from, to) = [MIN, MAX): [MIN, 0) null, [0, 2) ML, [2, 4) HV, [4, MAX) null.
  * Instants as in timeOverlap: a version valid in [t, t] gives the slice [t, t] (with integer timestamps, it is separated
  * from the next instants as [t, t + 1)). Without properties, or in an instant ([from] = [to]), the whole [from, to]
  */
-fun project(keys: List<Pair<ElemP, String>>, from: Long, to: Long): List<Pair<Pair<Long, Long>, List<P?>>> {
+fun temporalPropertyJoin(keys: List<Pair<ElemP, String>>, from: Long, to: Long): List<Pair<Pair<Long, Long>, List<P?>>> {
     val versions = keys.map { (e, key) -> e.getProps(name = key, fromTimestamp = from, toTimestamp = to) } // the versions of each property in the tuple
     if (from >= to) return listOf((from to to) to versions.map { it.firstOrNull() }) // an instant: at most one version each
     fun end(p: P) = if (p.fromTimestamp == p.toTimestamp && p.toTimestamp < Long.MAX_VALUE) p.toTimestamp + 1 else p.toTimestamp
     // The bounds of the versions (within the tuple) and of the tuple: no version starts or ends inside a slice
     val bounds = (versions.flatten().flatMap { listOf(it.fromTimestamp, end(it)) }.filter { it in from..to } + from + to).toSortedSet().toList()
-    return bounds.zipWithNext().map { (f, t) ->
+    val slices = bounds.zipWithNext().map { (f, t) ->
         val slice = versions.map { vs -> vs.firstOrNull { it.fromTimestamp <= f && t <= end(it) } } // the version of each property in [f, t)
         (if (t == f + 1 && slice.any { it != null && it.fromTimestamp == it.toTimestamp }) f to f else f to t) to slice
     }
+    val merged = mutableListOf<Pair<Pair<Long, Long>, List<P?>>>()
+    slices.forEach { (i, v) -> // consecutive slices (not instants) with the same values: a single slice
+        val last = merged.lastOrNull()
+        if (last != null && last.first.second == i.first && last.first.first != last.first.second && i.first != i.second && last.second.map { it?.value } == v.map { it?.value }) {
+            merged[merged.size - 1] = (last.first.first to i.second) to last.second
+        } else merged += i to v
+    }
+    return merged
 }
 
 /**
  * SELECTION (σ) on the properties of the element matched at the step of [cur] (the filters of the step, and the
- * comparison of the where clause with an element already in [path]), after their PROJECTION (π, see project): the slices
+ * comparison of the where clause with an element already in [path]), after their temporal property join (π): the slices
  * of [[from], [to]) in which they hold. The tuple holds only while its properties satisfy the predicate (continuous
  * semantics), so it continues once per slice, or not at all. [[from], [to]] itself without such properties or without
  * time. The filters on the properties aggregated by the time series ([skip], as matchesStep) are not evaluated
@@ -409,7 +335,7 @@ fun select(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match: Li
     if (!timeaware || (filters.isEmpty() && c == null)) return listOf(from to to)
     val compared = if (c == null) emptyList() else listOf(path[mapAlias[c.first.toString()]!!] to c.property, path[mapAlias[c.second.toString()]!!] to c.property)
     val n = filters.size
-    return project(filters.map { cur.e to it.property } + compared, from, to)
+    return temporalPropertyJoin(filters.map { cur.e to it.property } + compared, from, to)
         .filter { (_, v) ->
             filters.indices.all { i -> v[i]?.let { p -> filters[i].holds(p.value) } ?: false } && // every filter (no version: false)
                 (c == null || (v[n] != null && v[n + 1] != null && c.holds(v[n]!!.value, v[n + 1]!!.value))) // ... and the comparison
@@ -421,22 +347,49 @@ fun select(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match: Li
 private fun Filter.holds(v: Any): Boolean = runCatching { if (attrFirst) Compare.apply(v, value, operator) else Compare.apply(value, v, operator) }.getOrDefault(false)
 
 /**
- * PROJECTION (π) before the expansion towards TS with pushdown (QueryTSOpt): the versions of the grouping properties of
- * the elements in [path], if the aggregation is pushed down (GetAggregate), and of the property compared with the events
- * (where clause on the next step), if the comparison is pushed down (GetPredicates). Each slice is a tuple binding one
- * version of each: the partial aggregates and the bound predicate refer to it. Slices without the compared property are
- * discarded (the comparison never holds). [[from], [to]] itself without such properties
+ * QUERYTS: the expansion of the tuple [path] (valid in [[from], [to]]) towards the events of the time series [ts]: every
+ * event extends the tuple, and the next steps check them one by one (NAIVE)
  */
-fun projectBeforeTS(index: Int, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, by: List<Aggregate>, pushDownBy: List<Aggregate>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Pair<Long, Long>> {
-    val grouping = if (pushDownBy.isEmpty()) emptyList()
+fun queryTS(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long): List<ExploredPath> =
+    getTSEvents(ts, emptyList(), emptyList(), false).map { ExploredPath(it, index + 1, path, from, to) }
+
+/**
+ * QUERYTSOPT: the expansion of the tuple [path] (valid in [[from], [to]]) towards the time series [ts], pushing down the
+ * operators of the next steps (OPTIMIZED): the aggregation (GetAggregate) and the predicates (GetPredicates, with the
+ * validity of the tuple). Before the expansion, the tuple is projected on the time-varying properties the pushdown binds
+ * (temporal property join): the grouping properties of the path, if the aggregation is pushed down, and the property
+ * compared with the events (where clause on the next step), so that every partial aggregate and every bound predicate
+ * refers to one version (slices without the compared property are discarded: the comparison never holds). The slices go
+ * to TS in one request, unless the comparison binds a different value in each of them. GetProjectedProperties is not
+ * needed: the time series returns whole events
+ */
+fun queryTSOpt(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, by: List<Aggregate>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<ExploredPath> {
+    val aggregate = getAggregate(index, by, match)
+    val grouping = if (aggregate.isEmpty()) emptyList()
         else by.filter { it.operator == null && it.property != null }.mapNotNull { a -> mapAlias[a.n]?.takeIf { it < path.size }?.let { path[it] to a.property!! } }
     val nextAlias = match.getOrNull(index + 1)?.alias
     val c = nextAlias?.let { mapWhere[it] }
     val compared = if (c == null) null else mapAlias[(if (c.first == nextAlias) c.second else c.first).toString()]?.takeIf { it < path.size }?.let { path[it] to c.property }
-    return project(grouping + listOfNotNull(compared), from, to).filter { compared == null || it.second.last() != null }.map { it.first }
+    val slices = temporalPropertyJoin(grouping + listOfNotNull(compared), from, to).filter { compared == null || it.second.last() != null }.map { it.first }
+    return if (slices.size > 1 && compared == null) {
+        getTSEvents(ts, getPredicates(index, path, from, to, match, mapAlias, mapWhere), aggregate, by.isNotEmpty(), slices)
+            .map { n -> slices.first { timeOverlap(it.first, it.second, n.fromTimestamp, n.fromTimestamp) }.let { (f, t) -> ExploredPath(n, index + 1, path, f, t) } }
+    } else {
+        slices.flatMap { (f, t) ->
+            getTSEvents(ts, getPredicates(index, path, f, t, match, mapAlias, mapWhere), aggregate, by.isNotEmpty()).map { ExploredPath(it, index + 1, path, f, t) }
+        }
+    }
 }
 
-fun pushDownBy(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggregate> {
+/**
+ * GETTSEVENTS: the events of the time series [ts] satisfying the [predicates] (Θ), aggregated by [aggregate] (Γ) if any;
+ * on several consecutive [intervals], in one request (each result in one of them)
+ */
+fun getTSEvents(ts: TS, predicates: List<Filter>, aggregate: List<Aggregate>, isGroupBy: Boolean, intervals: List<Pair<Long, Long>>? = null): List<N> =
+    if (intervals == null) ts.getValues(aggregate, predicates, isGroupBy) else ts.getValues(aggregate, predicates, isGroupBy, intervals)
+
+/** GETAGGREGATE: the aggregation (Γ) on the events of the next step, which TS can compute */
+fun getAggregate(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggregate> {
     val cby = mutableListOf<Aggregate>()
     if (index + 1 < match.size) { // If there is another step
         val nextMatch = match[index + 1] ?: return cby // select it
@@ -448,7 +401,8 @@ fun pushDownBy(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggreg
     return cby
 }
 
-fun pushDownFilters(index: Int, curPath: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Filter> {
+/** GETPREDICATES: the predicates (Θ) on the events of the next step, with the validity of the tuple and the bound values of the where clause */
+fun getPredicates(index: Int, curPath: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Filter> {
     val filters = mutableListOf<Filter>()
     if (from != Long.MIN_VALUE) filters += Filter(FROM_TIMESTAMP, Operators.GTE, from) // add the from filter
     if (to != Long.MAX_VALUE) filters += Filter(TO_TIMESTAMP, if (from == to) Operators.LTE else Operators.LT, to) // add the to filter ([t, t] is the instant t, as in timeOverlap)
@@ -533,7 +487,8 @@ fun updatePath(cur: ExploredPath): Triple<Long, Long, List<ElemP>> {
 fun isCompletePath(path: List<Elem>, match: List<Step?>): Boolean =
     path.size == match.size
 
-fun expandNode(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match: List<Step?>): List<ExploredPath> {
+/** EXPAND from the node of [cur]: its edges (with the direction of the next step) */
+fun expand(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match: List<Step?>): List<ExploredPath> {
     val nextStep = match.getOrNull(cur.index + 1)
     return (cur.e as N)
         .getEdges(
@@ -595,33 +550,17 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                     if (isCompletePath(curPath, match)) { // the tuple has completed the query plan
                         acc.add(Path(curPath, tFrom, tTo))
                     } else if (curElem.index % 2 == 0) { // EXPAND from a node: its edges
-                        queue.addAll(expandNode(curElem, curPath, tFrom, tTo, match))
+                        queue.addAll(expand(curElem, curPath, tFrom, tTo, match))
                     } else if (curElem.e.label.name == HasTS) { // EXPAND towards TS: QueryTS (NAIVE) or QueryTSOpt (OPTIMIZED)
                         val r = curElem.e as R
                         launched++
                         launch(executor) {
                             try {
                                 val ts = g.getTSM().getTS(r.toN, mode = TsMode.READ)
-                                val res = if (mode == QueryMode.NAIVE) { // QueryTS: all the events, checked one by one by the next steps
-                                    ts.getValues(emptyList(), emptyList(), false).map { ExploredPath(it, curElem.index + 1, curPath, tFrom, tTo) }
-                                } else { // QueryTSOpt: GetAggregate (pushDownBy), GetPredicates (pushDownFilters, with the time of the tuple)
-                                    val pushDownBy = pushDownBy(curElem.index, by, match)
-                                    // PROJECTION before the expansion: one tuple per version of the properties the pushdown binds
-                                    val slices = projectBeforeTS(curElem.index, curPath, tFrom, tTo, match, by, pushDownBy, mapAlias, mapWhere)
-                                    // A comparison with the events binds a value per slice: one request each. Otherwise, all the
-                                    // slices in one request (TS.getValues on intervals), each result with the slice of its events
-                                    val bound = match.getOrNull(curElem.index + 1)?.alias?.let { mapWhere[it] } != null
-                                    if (slices.size > 1 && !bound) {
-                                        ts.getValues(pushDownBy, pushDownFilters(curElem.index, curPath, tFrom, tTo, match, mapAlias, mapWhere), by.isNotEmpty(), slices)
-                                            .map { n -> slices.first { timeOverlap(it.first, it.second, n.fromTimestamp, n.fromTimestamp) }.let { (f, t) -> ExploredPath(n, curElem.index + 1, curPath, f, t) } }
-                                    } else {
-                                        slices.flatMap { (f, t) ->
-                                            ts.getValues(pushDownBy, pushDownFilters(curElem.index, curPath, f, t, match, mapAlias, mapWhere), by.isNotEmpty())
-                                                .map { ExploredPath(it, curElem.index + 1, curPath, f, t) }
-                                        }
-                                    }
-                                }
-                                queue.addAll(res)
+                                queue.addAll(
+                                    if (mode == QueryMode.NAIVE) queryTS(ts, curElem.index, curPath, tFrom, tTo)
+                                    else queryTSOpt(ts, curElem.index, curPath, tFrom, tTo, match, by, mapAlias, mapWhere)
+                                )
                             } catch (e: Exception) {
                                 failure.compareAndSet(null, e)
                             } finally {
