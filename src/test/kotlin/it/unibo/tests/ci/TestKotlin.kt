@@ -633,6 +633,38 @@ class TestKotlin {
      * per interval. AsterixDB answers with one request (CASE on the timestamp in the GROUP BY), the other stores with one
      * request per interval (the default of TS)
      */
+    /**
+     * MIN and COUNT pushed down to the time series (aggregateNumbers): the partial aggregates must be combined as the
+     * events one by one (NAIVE). Before, the partial minimums from AsterixDB could not be combined (no MIN on pairs), and
+     * the partial counts from MemoryTS were counted instead of summed (the number of partial aggregates)
+     */
+    @Test
+    fun `push down min and count`() {
+        matrix { g ->
+            QueryMode.entries.forEach { mode ->
+                g.clear()
+                g.getTSM().clear()
+                val a1 = g.addNode(A)
+                g.addProperty(a1.id, "name", "x", PropType.STRING, from = 0, to = 3) // events 0, 1, 2 of both time series
+                g.addProperty(a1.id, "name", "y", PropType.STRING, from = 3, to = Long.MAX_VALUE) // events 3, 4, 5
+                listOf(0L, 10L).forEach { offset -> // two time series: values 1..6 and 11..16 at 0..5
+                    val b = g.addNode(B, isTs = true)
+                    val ts = g.getTSM().addTS(b.id)
+                    (0L..5L).forEach { ts.add(C, timestamp = it, value = offset + it + 1, location = POINT_IN_T0) }
+                    g.addEdge(Foo, a1.id, b.id)
+                }
+                val pattern = listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c"))
+                fun by(operator: AggOperator, grouped: Boolean) = (if (grouped) listOf(Aggregate("a", property = "name")) else emptyList()) + Aggregate("c", property = VALUE, operator = operator)
+                // All the events: one partial aggregate per time series
+                assertEquals(listOf(1.0), query(g, pattern, by = by(AggOperator.MIN, false), mode = mode))
+                assertEquals(listOf(12), query(g, pattern, by = by(AggOperator.COUNT, false), mode = mode))
+                // By name: one partial aggregate per time series and version of the name
+                assertEquals(setOf(listOf("x", 1.0), listOf("y", 4.0)), query(g, pattern, by = by(AggOperator.MIN, true), mode = mode).toSet())
+                assertEquals(setOf(listOf("x", 6), listOf("y", 6)), query(g, pattern, by = by(AggOperator.COUNT, true), mode = mode).toSet())
+            }
+        }
+    }
+
     @Test
     fun `push down aggregation on several intervals`() {
         matrix { g ->
@@ -849,8 +881,7 @@ class TestKotlin {
      * events one by one and resolves the properties at the timestamp of each event, so it is the reference: any pushdown
      * of OPTIMIZED (filters, time filters, aggregations, grouping intervals) must not change the result. The seeds are
      * fixed, so a failure is reproducible; the message names the seed and the query.
-     * Not covered: MIN (no combination of its partial aggregates in aggregateNumbers) and COUNT (an Int in NAIVE, a
-     * Double from AsterixDB), and grouping by a temporal property of the other pattern of a join (not split).
+     * Not covered: grouping by a temporal property of the other pattern of a join (not split).
      */
     @Test
     fun `naive and optimized agree on random graphs`() {
@@ -901,6 +932,8 @@ class TestKotlin {
                     "sum by a.name" to { m -> query(g, path, by = sum(Aggregate("a", property = "name")), mode = m) },
                     "avg by a.name" to { m -> query(g, path, by = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.AVG)), mode = m) },
                     "max by a.type" to { m -> query(g, path, by = listOf(Aggregate("a", property = "type"), Aggregate("c", property = VALUE, operator = AggOperator.MAX)), mode = m) },
+                    "min by a.type" to { m -> query(g, path, by = listOf(Aggregate("a", property = "type"), Aggregate("c", property = VALUE, operator = AggOperator.MIN)), mode = m) },
+                    "count by a.name" to { m -> query(g, path, by = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.COUNT)), mode = m) },
                     "sum by label" to { m -> query(g, path, by = sum(Aggregate("c", property = LABEL)), mode = m) },
                     "sum by a.name, b.name" to { m -> query(g, path, by = sum(Aggregate("a", property = "name"), Aggregate("b", property = "name")), mode = m) },
                     "sum by a.name in [$from, $to)" to { m -> query(g, path, by = sum(Aggregate("a", property = "name")), from = from, to = to, mode = m) },

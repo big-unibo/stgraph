@@ -308,7 +308,9 @@ fun aggregateNumbers(numbers: List<Any>, aggregationOperator: AggOperator, lastA
         val cNumbers = numbers.map { (it as Number).toDouble() }
         return when (aggregationOperator) {
             AggOperator.SUM -> cNumbers.sum()
-            AggOperator.COUNT -> cNumbers.count()
+            // A partial count (lastAggregation = false, e.g., MemoryTS) as AsterixDBTS returns it, (count, count): the final
+            // aggregation sums the partial counts (Pair branch), instead of counting the partial aggregates
+            AggOperator.COUNT -> if (lastAggregation) cNumbers.count() else cNumbers.count().toDouble() to cNumbers.count()
             AggOperator.MAX -> cNumbers.max()
             AggOperator.MIN -> cNumbers.min()
             AggOperator.AVG -> {
@@ -332,6 +334,7 @@ fun aggregateNumbers(numbers: List<Any>, aggregationOperator: AggOperator, lastA
 
             AggOperator.SUM -> cNumbers.sumOf { it.first }
             AggOperator.MAX -> cNumbers.maxOf { it.first }
+            AggOperator.MIN -> cNumbers.minOf { it.first } // the partial minimums (e.g., from AsterixDBTS), as MAX
             AggOperator.COUNT -> cNumbers.sumOf { it.second }
             else -> throw IllegalArgumentException("Unsupported aggregation operator: $aggregationOperator")
         }
