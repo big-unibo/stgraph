@@ -533,8 +533,16 @@ fun expandNode(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match
         .map { ExploredPath(it, cur.index + 1, path, from, to) }
 }
 
+/** The thread pools of [search], one per number of threads, shared by all the queries: daemon threads, created once */
+private val searchPools = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.coroutines.ExecutorCoroutineDispatcher>()
+
+fun searchPool(threads: Int): kotlinx.coroutines.ExecutorCoroutineDispatcher = searchPools.computeIfAbsent(threads) { n ->
+    val count = AtomicInteger()
+    Executors.newFixedThreadPool(n) { r -> Thread(r, "stgraph-search-$n-${count.incrementAndGet()}").apply { isDaemon = true } }.asCoroutineDispatcher()
+}
+
 fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE, timeaware: Boolean = false, by: List<Aggregate> = emptyList(), threads: Int = 1, mode: QueryMode = QueryMode.OPTIMIZED): List<Path> {
-    val executor = Executors.newFixedThreadPool(threads).asCoroutineDispatcher()
+    val executor = searchPool(threads)
     val wait = Semaphore(0) // Mutex(locked = true)
     val completed = AtomicInteger(0)
     var launched = 0
@@ -547,8 +555,8 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
     val mapWhere = buildWhereMap(where, mapAlias)
     val queue = initializeQueue(g, from, to)
 
-    // The executor is closed at the end: its threads are not daemons, they would stay alive after the query
-    executor.use { runBlocking {
+    // The executor is shared by the queries with the same number of threads (see searchPool): not closed
+    runBlocking {
         while (true) {
             if (queue.isEmpty()) {
                 if (completed.get() < launched) {
@@ -616,7 +624,7 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                 }
             }
         }
-    } }
+    }
 
     failure.get()?.let { throw it }
     return acc

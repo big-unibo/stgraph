@@ -677,6 +677,26 @@ class TestKotlin {
     }
 
     @Test
+    fun `queries share a bounded thread pool`() {
+        val g = MemoryGraph()
+        g.tsm = MemoryTSM(g)
+        g.clear()
+        g.getTSM().clear()
+        repeat(4) { // four time series, read in parallel
+            val b = g.addNode(B, isTs = true)
+            g.getTSM().addTS(b.id).add(C, timestamp = 0, value = 1, location = POINT_IN_T0)
+        }
+        val pattern = listOf(Step(B), null, Step(C, alias = "c"))
+        repeat(5) { assertEquals(4, search(g, pattern, threads = 3).size) }
+        assertTrue(searchPool(3) === searchPool(3))
+        // At most 3 threads for all the queries with 3 threads, and they do not keep the JVM alive
+        val workers = Thread.getAllStackTraces().keys.filter { it.name.startsWith("stgraph-search-3-") }
+        assertTrue(workers.size in 1..3, "$workers")
+        assertTrue(workers.all { it.isDaemon })
+        g.close()
+    }
+
+    @Test
     fun `push down internal group by`() {
         matrix { g ->
             QueryMode.entries.forEach { mode ->
