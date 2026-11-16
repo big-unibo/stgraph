@@ -508,11 +508,26 @@ fun pushDownFilters(index: Int, curPath: List<ElemP>, from: Long, to: Long, matc
     return filters // push down the filters from the next step
 }
 
-fun whereClause(e: ElemP, path: List<ElemP>, alias: String, mapWhere: Map<String, Compare>, c: Compare, timeaware: Boolean, mapAlias: Map<String, Int>): Boolean {
+fun whereClause(e: ElemP, path: List<ElemP>, alias: String, mapWhere: Map<String, Compare>, c: Compare, timeaware: Boolean, mapAlias: Map<String, Int>, from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE): Boolean {
     return when (alias) {
-        mapWhere[alias]?.first -> c.isOk(e, path[mapAlias[c.second]!!], timeaware)
-        mapWhere[alias]?.second -> c.isOk(path[mapAlias[c.first]!!], e, timeaware)
+        mapWhere[alias]?.first -> c.isOk(e, path[mapAlias[c.second]!!], timeaware, from, to)
+        mapWhere[alias]?.second -> c.isOk(path[mapAlias[c.first]!!], e, timeaware, from, to)
         else -> false
+    }
+}
+
+/**
+ * The maximal intervals of [[from], [to]) in which the comparison of the where clause on [e] (bound to [alias]) holds
+ * with the element already in [path] (see Compare.intervals); [[from], [to]) itself without a comparison on [alias] or
+ * without time. As filterIntervals, for the comparisons between two elements
+ */
+fun whereIntervals(e: ElemP, path: List<ElemP>, alias: String?, mapWhere: Map<String, Compare>, timeaware: Boolean, mapAlias: Map<String, Int>, from: Long, to: Long): List<Pair<Long, Long>> {
+    val c = alias?.let { mapWhere[it] }
+    if (c == null || !timeaware) return listOf(from to to)
+    return when (alias) {
+        c.first -> c.intervals(e, path[mapAlias[c.second]!!], from, to)
+        c.second -> c.intervals(path[mapAlias[c.first]!!], e, from, to)
+        else -> listOf(from to to)
     }
 }
 
@@ -555,7 +570,7 @@ fun matchesStep(cur: ExploredPath, match: List<Step?>, by: List<Aggregate>, time
                                             .any { p -> if (f.attrFirst) { Compare.apply(p.value, f.value, f.operator) } else { Compare.apply(f.value, p.value, f.operator) } }
                                         })) // filter on properties
                         && cur.e.timeOverlap(timeaware, cur.from, cur.to) // check time overlap
-                        && (compare == null || whereClause(cur.e, cur.path, alias, mapWhere, compare, timeaware, mapAlias))
+                        && (compare == null || whereClause(cur.e, cur.path, alias, mapWhere, compare, timeaware, mapAlias, cur.from, cur.to))
 
 }
 
@@ -628,6 +643,9 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                 // (see filterIntervals). The properties skipped by matchesStep in OPTIMIZED (those aggregated by the time
                 // series) are skipped here too
                 val valid = filterIntervals(curElem.e, match[curElem.index], newFrom, newTo, timeaware, if (mode == QueryMode.OPTIMIZED) by.filter { it.operator != null }.map { it.property } else emptyList())
+                    .flatMap { (f, t) -> // ... and the comparison of the where clause with the elements already in the path (if any)
+                        whereIntervals(curElem.e, curPath, match[curElem.index]?.alias, mapWhere, timeaware, mapAlias, f, t)
+                    }
                 if (valid != listOf(newFrom to newTo)) { // the filters do not hold in the whole interval of the path:
                     // the same element again, once per valid sub-interval (none if the filters never hold), as a path limited to
                     // it. At the next poll, the filters hold in the whole (limited) interval, so the path continues as usual

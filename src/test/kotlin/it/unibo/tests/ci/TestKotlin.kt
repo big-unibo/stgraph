@@ -755,6 +755,72 @@ class TestKotlin {
         }
     }
 
+    /**
+     * Compare.intervals: the maximal intervals in which a comparison between the temporal properties of two elements
+     * holds, pairing their versions valid at the same time (as the temporal property join). Consecutive intervals are
+     * merged, instants ([t, t], as in timeOverlap) are kept apart
+     */
+    @Test
+    fun `compare temporal properties of two elements`() {
+        val g = MemoryGraph()
+        g.tsm = MemoryTSM(g)
+        g.clear()
+        val a = g.addNode(A)
+        val b = g.addNode(B)
+        g.addProperty(a.id, "v", 1L, PropType.LONG, from = 0, to = 2)
+        g.addProperty(a.id, "v", 2L, PropType.LONG, from = 2, to = 4)
+        g.addProperty(a.id, "v", 5L, PropType.LONG, from = 4, to = 6)
+        g.addProperty(a.id, "v", 1L, PropType.LONG, from = 6, to = 6) // the instant 6
+        g.addProperty(a.id, "v", 5L, PropType.LONG, from = 7, to = Long.MAX_VALUE)
+        g.addProperty(b.id, "v", 3L, PropType.LONG) // always 3
+        val lt = Compare("a", "b", "v", Operators.LT)
+        // a.v < b.v: 1 and 2 in [0, 4) (merged), 1 in the instant 6
+        assertEquals(listOf(0L to 4L, 6L to 6L), lt.intervals(a, b, Long.MIN_VALUE, Long.MAX_VALUE))
+        // ... within [1, 5): [1, 4) only
+        assertEquals(listOf(1L to 4L), lt.intervals(a, b, 1, 5))
+        // a.v > b.v: 5 in [4, 6) and [7, MAX) (not consecutive: the instant 6 is between them)
+        assertEquals(listOf(4L to 6L, 7L to Long.MAX_VALUE), Compare("a", "b", "v", Operators.GT).intervals(a, b, Long.MIN_VALUE, Long.MAX_VALUE))
+        // isOk: at some time of the interval (before, only the last version added, 5, was compared: 5 < 3 never held)
+        assertTrue(lt.isOk(a, b, timeaware = true))
+        assertTrue(!lt.isOk(a, b, timeaware = true, from = 4, to = 6))
+        assertTrue(lt.isOk(a, b, timeaware = false))
+        g.close()
+    }
+
+    /**
+     * A where clause comparing the temporal properties of two elements of the same path (Compare.isOk, whereIntervals):
+     * the path holds only while the comparison holds, so only the events of those periods are returned, in both modes
+     */
+    @Test
+    fun `where clause on temporal properties`() {
+        matrix { g ->
+            QueryMode.entries.forEach { mode ->
+                g.clear()
+                g.getTSM().clear()
+                val b1 = g.addNode(B, isTs = true)
+                val ts1 = g.getTSM().addTS(b1.id)
+                (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
+                g.addProperty(b1.id, "v", 3L, PropType.LONG) // always 3
+                val a1 = g.addNode(A)
+                g.addProperty(a1.id, "v", 1L, PropType.LONG, from = 0, to = 4) // a.v < b.v in [0, 4)
+                g.addProperty(a1.id, "v", 5L, PropType.LONG, from = 4, to = Long.MAX_VALUE) // a.v > b.v in [4, MAX)
+                g.addEdge(Foo, a1.id, b1.id)
+
+                // MATCH (a:A)-->(b:B)-->(c:C) WHERE a.v < b.v RETURN sum(c.value)
+                val pattern = listOf(Step(A, alias = "a"), null, Step(B, alias = "b"), null, Step(C, alias = "c"))
+                val sum = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+                // Events 0..3 (values 1 + 2 + 3 + 4); before, no result (only the last version of a.v, 5, was compared)
+                assertEquals(listOf(10.0), query(g, pattern, where = listOf(Compare("a", "b", "v", Operators.LT)), by = sum, mode = mode))
+                assertEquals(4, query(g, pattern, where = listOf(Compare("a", "b", "v", Operators.LT)), mode = mode).size)
+                // a.v > b.v: events 4, 5 (values 5 + 6)
+                assertEquals(listOf(11.0), query(g, pattern, where = listOf(Compare("a", "b", "v", Operators.GT)), by = sum, mode = mode))
+                // ... WHERE timestamp in [2, 5): events 2, 3 for <, event 4 for >
+                assertEquals(listOf(7.0), query(g, pattern, where = listOf(Compare("a", "b", "v", Operators.LT)), by = sum, from = 2, to = 5, mode = mode))
+                assertEquals(listOf(5.0), query(g, pattern, where = listOf(Compare("a", "b", "v", Operators.GT)), by = sum, from = 2, to = 5, mode = mode))
+            }
+        }
+    }
+
     @Test
     fun `queries share a bounded thread pool`() {
         val g = MemoryGraph()
