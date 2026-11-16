@@ -2,6 +2,7 @@ package it.unibo.tests.evaluation
 
 import it.unibo.stats.TestConfig
 import it.unibo.tests.mimic.MimicEvaluation
+import it.unibo.tests.pems.PemsEvaluation
 import it.unibo.tests.smartbench.SmartBenchEvaluation
 import it.unibo.tests.synth.SynthEvaluation
 import java.io.File
@@ -48,6 +49,7 @@ fun main(args: Array<String>) {
                             "smartbench" -> SmartBenchEvaluation(config, evaluation, size).run(system)
                             "synth" -> SynthEvaluation(config, evaluation, size).run(system)
                             "mimic" -> MimicEvaluation(config, evaluation, size).run(system)
+                            "pems" -> PemsEvaluation(config, evaluation, size).run(system)
                             else -> error("Dataset not supported by the evaluation: $dataset")
                         }
                     } catch (e: Exception) {

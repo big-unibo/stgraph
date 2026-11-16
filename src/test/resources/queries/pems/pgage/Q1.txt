@@ -1,0 +1,10 @@
+SELECT g.segment_id, m.label, avg(m.value)
+FROM (
+    SELECT *
+    FROM cypher('{GRAPH}'::name, $$
+        MATCH (g:Segment)<-[:inSegment]-(v:StationVersion)<-[:hasVersion]-(:Station)-[:hasTimeSeries]->(t:TimeSeries)
+        RETURN g.segment_id, v.valid_from, v.valid_to, id(t)
+    $$) AS (segment_id agtype, valid_from bigint, valid_to bigint, tsid bigint)
+) g
+JOIN {GRAPH}.measurements m ON m.ts_id = g.tsid AND m.timestamp >= g.valid_from AND m.timestamp < g.valid_to
+GROUP BY g.segment_id, m.label

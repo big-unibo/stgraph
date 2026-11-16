@@ -1,0 +1,1 @@
+MATCH (i:Incident)-[:locatedIn]->(g:Segment)<-[:inSegment]-(v:StationVersion)<-[:hasVersion]-(:Station)-[:hasTimeSeries]->(:TimeSeries)-[:hasMeasurement]->(m:lane0_avg_speed) WHERE v.valid_from <= m.timestamp < v.valid_to AND i.valid_from <= m.timestamp < i.valid_to RETURN i.severity, avg(m.value)

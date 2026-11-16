@@ -1,0 +1,1 @@
+FROM GRAPH Pems MATCH (g:`Segment`)<-[:`inSegment`]-(v:`StationVersion`)<-[:`hasVersion`]-(s:`Station`)-[:`hasTimeSeries`]->(t:`TimeSeries`)-[:`hasMeasurement`]->(m:`Measurement`) WHERE v.`valid_from` <= m.`timestamp` AND m.`timestamp` < v.`valid_to` AND m.`value` > {FILTER} GROUP BY g.`segment_id` AS seg, m.`label` AS lbl SELECT seg, lbl, AVG(m.`value`) AS avgValue;

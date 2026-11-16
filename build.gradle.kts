@@ -90,6 +90,18 @@ tasks.register<JavaExec>("mimicCache") {
     workingDir = projectDir
 }
 
+// Only the reads of PeMS from PostgreSQL, into the local copies the ingestions read (src/test/kotlin/.../pems/PemsCache.kt)
+tasks.register<JavaExec>("pemsCache") {
+    description = "Reads PeMS from PostgreSQL into datasets/original/pems/cache, without loading any system: --args=\"<size> ...\" (default: datasets.pems.sizes)"
+    group = "evaluation"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "it.unibo.tests.pems.PemsCacheKt"
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(jVersion)
+    }
+    workingDir = projectDir
+}
+
 // The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
 // test_config.yml (evaluation/README.md), with both phases or only one of them. Not tests: the CI does not run them.
 mapOf(

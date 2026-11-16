@@ -1,0 +1,1 @@
+MATCH (g:Segment)<-[:inSegment]-(v:StationVersion)<-[:hasVersion]-(:Station)-[:hasTimeSeries]->(:TimeSeries)-[:hasMeasurement]->(m) WHERE v.valid_from <= m.timestamp < v.valid_to AND m.value > {FILTER} RETURN g.segment_id, labels(m)[0], avg(m.value)

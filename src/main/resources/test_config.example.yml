@@ -12,6 +12,16 @@ datasets:
     user: "postgres"
     password: "password"
 
+  # PeMS, hourly data (pems repository: schema pems_cleaned); sizes: measurements, xsmall 1K, small 1M, medium 10M,
+  # large 100M. Read once into datasets/original/pems/cache/<size> (./gradlew pemsCache), then from there
+  pems:
+    sizes: [ "xsmall" ] # "small", "medium", "large"
+    postgres_endpoint: "localhost"
+    port: 5435
+    database: "pems"
+    user: "postgres"
+    password: "password"
+
 # AsterixDB of STGraph: host and port of the cluster controller (CC, query API), addresses of the node controllers
 # (NC, which receive the data feeds)
 setups:
