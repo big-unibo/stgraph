@@ -385,6 +385,27 @@ private fun groupBy(by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>
         properties.first().value
     }
 
+/**
+ * The sub-intervals of [[from], [to]) in which the grouping properties (aggregates without operator) of the elements of
+ * [path] keep the same values: an aggregation pushed down to a time series runs once per sub-interval, so that its
+ * events are grouped with the property values of their own time, as in NAIVE mode (see replaceTemporalProperties; the
+ * events where an element has no value are grouped as null). A property valid in a single instant t is valid in [t, t + 1)
+ */
+fun groupingIntervals(path: List<ElemP>, by: List<Aggregate>, mapAlias: Map<String, Int>, from: Long, to: Long): List<Pair<Long, Long>> {
+    if (from >= to) return listOf(from to to)
+    val bounds = sortedSetOf(from, to)
+    by.filter { it.operator == null && it.property != null }.forEach { a ->
+        val index = mapAlias[a.n]
+        if (index != null && index < path.size) {
+            path[index].getProps(name = a.property, fromTimestamp = from, toTimestamp = to).forEach { p ->
+                val end = if (p.fromTimestamp == p.toTimestamp && p.toTimestamp < Long.MAX_VALUE) p.toTimestamp + 1 else p.toTimestamp
+                listOf(p.fromTimestamp, end).filter { it in from..to }.forEach { bounds += it }
+            }
+        }
+    }
+    return bounds.toList().zipWithNext()
+}
+
 fun pushDownBy(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggregate> {
     val cby = mutableListOf<Aggregate>()
     if (index + 1 < match.size) { // If there is another step
@@ -542,11 +563,16 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                                     isGroupBy = by.isNotEmpty()
                                 }
                                 try {
-                                    val res = g.getTSM()
-                                        .getTS(r.toN, mode = TsMode.READ)
-                                        .getValues(pushDownBy, pushDownFilter, isGroupBy) // push down the filters from the next step
-                                        .map { ExploredPath(it, curElem.index + 1, curPath, newFrom, newTo) }
-                                    queue.addAll(res)
+                                    // One pushed-down aggregation per sub-interval in which the grouping properties of the path do not change
+                                    val intervals = if (pushDownBy.isEmpty()) listOf(newFrom to newTo) else groupingIntervals(curPath, by, mapAlias, newFrom, newTo)
+                                    val ts = g.getTSM().getTS(r.toN, mode = TsMode.READ)
+                                    intervals.forEach { (f, t) ->
+                                        val filters = if (f == newFrom && t == newTo) pushDownFilter else pushDownFilters(curElem.index, curPath, f, t, match, mapAlias, mapWhere)
+                                        val res = ts
+                                            .getValues(pushDownBy, filters, isGroupBy) // push down the filters from the next step
+                                            .map { ExploredPath(it, curElem.index + 1, curPath, f, t) }
+                                        queue.addAll(res)
+                                    }
                                 } catch (e: Exception) {
                                     failure.compareAndSet(null, e)
                                 } finally {

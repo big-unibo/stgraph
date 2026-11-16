@@ -591,6 +591,33 @@ class TestKotlin {
     }
 
     @Test
+    fun `push down group by on temporal properties`() {
+        matrix { g ->
+            QueryMode.entries.forEach { mode ->
+                g.clear()
+                g.getTSM().clear()
+                val b1 = g.addNode(B, isTs = true)
+                val ts1 = g.getTSM().addTS(b1.id)
+                (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
+                val a1 = g.addNode(A)
+                g.addProperty(a1.id, "name", "x", PropType.STRING, from = 0, to = 2) // events 0, 1
+                g.addProperty(a1.id, "name", "y", PropType.STRING, from = 3, to = 4) // event 3 (event 2: no name)
+                g.addProperty(a1.id, "name", "x", PropType.STRING, from = 4, to = 4) // event 4 (event 5: no name)
+                g.addEdge(Foo, a1.id, b1.id)
+
+                // MATCH (a:A)-->(b:B)-->(c:C) RETURN a.name, sum/avg(c.value): each event with the name of its time
+                val pattern = listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c"))
+                val sum = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+                val avg = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.AVG))
+                assertEquals(setOf(listOf("x", 8.0), listOf("y", 4.0), listOf("null", 9.0)), query(g, pattern, by = sum, mode = mode).toSet())
+                assertEquals(setOf(listOf("x", 8.0 / 3), listOf("y", 4.0), listOf("null", 4.5)), query(g, pattern, by = avg, mode = mode).toSet())
+                // ... WHERE timestamp in [1, 4)
+                assertEquals(setOf(listOf("x", 2.0), listOf("y", 4.0), listOf("null", 3.0)), query(g, pattern, by = sum, from = 1, to = 4, mode = mode).toSet())
+            }
+        }
+    }
+
+    @Test
     fun `push down internal group by`() {
         matrix { g ->
             QueryMode.entries.forEach { mode ->
