@@ -61,7 +61,7 @@ interface TS : Serializable {
             // The interval as time filters, [from, to), as Query.pushDownFilters (no filter on an unbounded side)
             val time = listOfNotNull(
                 if (from != Long.MIN_VALUE) Filter(FROM_TIMESTAMP, Operators.GTE, from) else null,
-                if (to != Long.MAX_VALUE) Filter(TO_TIMESTAMP, Operators.LT, to) else null
+                if (to != Long.MAX_VALUE) Filter(TO_TIMESTAMP, if (from == to) Operators.LTE else Operators.LT, to) else null // [t, t]: the instant t
             )
             getValues(by, filters + time, isGroupBy) // the other filters still apply (they restrict every interval)
         }

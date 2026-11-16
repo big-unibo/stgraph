@@ -72,8 +72,8 @@ class AsterixDBTS(
         if (by.isEmpty() || intervals.size <= 1) super.getValues(by, filters, isGroupBy, intervals)
         else select(by, filters + listOfNotNull( // the events of all the intervals: from the start of the first one...
             intervals.first().first.takeIf { it != Long.MIN_VALUE }?.let { Filter(FROM_TIMESTAMP, Operators.GTE, it) },
-            intervals.last().second.takeIf { it != Long.MAX_VALUE }?.let { Filter(TO_TIMESTAMP, Operators.LT, it) } // ... to the end of the last one
-        ), isGroupBy, intervals.dropLast(1).map { it.second }) // ... split at the end of each interval but the last
+            intervals.last().let { (f, t) -> t.takeIf { it != Long.MAX_VALUE }?.let { Filter(TO_TIMESTAMP, if (f == t) Operators.LTE else Operators.LT, it) } } // ... to the end of the last one
+        ), isGroupBy, intervals.dropLast(1).map { (f, t) -> if (f == t) t + 1 else t }) // ... split at the end of each interval but the last (after t for the instant [t, t])
 
     /** [buckets]: the upper bounds of the intervals but the last, whose events are aggregated separately */
     private fun select(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, buckets: List<Long>): List<N> {

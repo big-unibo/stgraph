@@ -414,7 +414,7 @@ fun groupingIntervals(path: List<ElemP>, by: List<Aggregate>, mapAlias: Map<Stri
         }
     }
     // Consecutive bounds: the sub-intervals, covering [from, to) without overlaps (no grouping property changes inside one)
-    return bounds.toList().zipWithNext()
+    return bounds.toList().zipWithNext().map { instant(it, path, by, mapAlias) }
 }
 
 /**
@@ -453,7 +453,24 @@ fun filterIntervals(e: ElemP, step: Step?, from: Long, to: Long, timeaware: Bool
         .forEach { (f, t) -> // ... merged when consecutive (e.g., ML in [0, 2) and ML in [2, 4): a single path in [0, 4))
             if (valid.isNotEmpty() && valid.last().second == f) valid[valid.size - 1] = valid.last().first to t else valid += f to t
         }
-    return valid
+    // A sub-interval [t, t + 1) passing only thanks to a version valid in the instant t is the instant [t, t]
+    return valid.map { (f, t) -> if (t == f + 1 && passing.flatten().any { it.fromTimestamp == f && it.toTimestamp == f }) f to f else f to t }
+}
+
+/**
+ * [interval] as the instant [t, t] if it is [t, t + 1) and a grouping property of [path] (see groupingIntervals) has a
+ * version valid in the instant t; [interval] itself otherwise. The +1 of groupingIntervals and filterIntervals is only a
+ * way to separate the instant t from the next instants when splitting (with integer timestamps, [t, t + 1) contains t
+ * only): the resulting intervals use the instants as timeOverlap does, i.e., [t, t]
+ */
+private fun instant(interval: Pair<Long, Long>, path: List<ElemP>, by: List<Aggregate>, mapAlias: Map<String, Int>): Pair<Long, Long> {
+    val (f, t) = interval
+    if (t != f + 1) return interval
+    val isInstant = by.filter { it.operator == null && it.property != null }.any { a ->
+        val index = mapAlias[a.n]
+        index != null && index < path.size && path[index].getProps(name = a.property, fromTimestamp = f, toTimestamp = f).any { it.fromTimestamp == f && it.toTimestamp == f }
+    }
+    return if (isInstant) f to f else interval
 }
 
 fun pushDownBy(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggregate> {
@@ -471,7 +488,7 @@ fun pushDownBy(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggreg
 fun pushDownFilters(index: Int, curPath: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Filter> {
     val filters = mutableListOf<Filter>()
     if (from != Long.MIN_VALUE) filters += Filter(FROM_TIMESTAMP, Operators.GTE, from) // add the from filter
-    if (to != Long.MAX_VALUE) filters += Filter(TO_TIMESTAMP, Operators.LT, to) // add the to filter
+    if (to != Long.MAX_VALUE) filters += Filter(TO_TIMESTAMP, if (from == to) Operators.LTE else Operators.LT, to) // add the to filter ([t, t] is the instant t, as in timeOverlap)
     if (index + 1 < match.size) { // If there is another step
         val nextMatch = match[index + 1] ?: return filters // select it
         val nextAlias = nextMatch.alias // and its alias (if any)
@@ -653,7 +670,7 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                                             // Each partial aggregate continues as a path limited to the sub-interval of its events, found
                                             // by its first event (fromTimestamp): the projection (replaceTemporalProperties) then pairs it
                                             // with the only version of the grouping properties valid there
-                                            val (f, t) = if (intervals.size == 1) newFrom to newTo else intervals.first { n.fromTimestamp >= it.first && n.fromTimestamp < it.second }
+                                            val (f, t) = if (intervals.size == 1) newFrom to newTo else intervals.first { timeOverlap(it.first, it.second, n.fromTimestamp, n.fromTimestamp) }
                                             ExploredPath(n, curElem.index + 1, curPath, f, t)
                                         }
                                     queue.addAll(res)

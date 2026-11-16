@@ -611,7 +611,7 @@ class TestKotlin {
                 g.addProperty(a1.id, "name", "x", PropType.STRING, from = 4, to = 4) // event 4 (event 5: no name)
                 g.addEdge(Foo, a1.id, b1.id)
 
-                // Versions of a.name: x [0,2), gap [2,3), y [3,4), x at the single instant 4 (= [4,5)), gap [5, +inf)
+                // Versions of a.name: x [0,2), gap [2,3), y [3,4), x at the instant 4 ([4, 4], as in timeOverlap), gap after 4
                 // MATCH (a:A)-->(b:B)-->(c:C) RETURN a.name, sum/avg(c.value): each event with the name of its time
                 val pattern = listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c"))
                 val sum = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.SUM))
@@ -658,9 +658,11 @@ class TestKotlin {
                 ), true)
             }
             assertEquals(partials(one), partials(ts1.getValues(sum, emptyList(), true, intervals)))
-            // Consecutive intervals restricted by a time filter (events 1..4 only), with an empty interval [2, 2), which
-            // returns nothing: [1, 2) -> 2, [2, +inf) -> 3 + 4 + 5
-            assertEquals(setOf(1L to 2.0, 2L to 12.0), partials(ts1.getValues(sum, listOf(Filter(TO_TIMESTAMP, Operators.LT, 5L)), true, listOf(1L to 2L, 2L to 2L, 2L to Long.MAX_VALUE))))
+            // Consecutive intervals restricted by a time filter (events 1..4 only), with the instant [2, 2] (as in timeOverlap,
+            // the event at 2 only): [1, 2) -> 2, [2, 2] -> 3, [3, +inf) -> 4 + 5
+            assertEquals(setOf(1L to 2.0, 2L to 3.0, 3L to 9.0), partials(ts1.getValues(sum, listOf(Filter(TO_TIMESTAMP, Operators.LT, 5L)), true, listOf(1L to 2L, 2L to 2L, 3L to Long.MAX_VALUE))))
+            // An interval without events returns nothing: [6, 10)
+            assertEquals(setOf(0L to 21.0), partials(ts1.getValues(sum, emptyList(), true, listOf(Long.MIN_VALUE to 6L, 6L to 10L))))
             // A single interval: the usual request, the sum of all the events
             assertEquals(setOf(0L to 21.0), partials(ts1.getValues(sum, emptyList(), true, listOf(Long.MIN_VALUE to Long.MAX_VALUE))))
         }
@@ -708,6 +710,51 @@ class TestKotlin {
      * creates no further threads, and the threads are daemons (no query has to close the pool, and they do not keep the
      * JVM alive). Before, each search created a pool of new threads and closed it at the end.
      */
+    /**
+     * Instants as in timeOverlap: an element valid in [t, t] is valid in the instant t only, so a path through it reaches
+     * the events at t only, in both modes. Pushed down, the instant must become ts = t (ts >= t AND ts <= t), not the
+     * empty range ts >= t AND ts < t (Query.pushDownFilters); a filter passing only in an instant limits the path to
+     * [t, t] (Query.filterIntervals)
+     */
+    @Test
+    fun `instants as in timeOverlap`() {
+        matrix { g ->
+            QueryMode.entries.forEach { mode ->
+                g.clear()
+                g.getTSM().clear()
+                val b1 = g.addNode(B, isTs = true)
+                val ts1 = g.getTSM().addTS(b1.id)
+                (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
+                val sum = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+                val pattern = listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c"))
+
+                // An edge valid in the instant 2: only the event at 2 (value 3)
+                val a1 = g.addNode(A)
+                g.addEdge(Foo, a1.id, b1.id, from = 2, to = 2)
+                assertEquals(listOf(3.0), query(g, pattern, by = sum, mode = mode))
+                assertEquals(1, query(g, pattern, mode = mode).size)
+
+                // A filter passing only in the instant 4 (type = ML in [4, 4], HV in [0, 4) and [5, +inf)), on an edge valid
+                // always: only the event at 4 (value 5)
+                g.clear()
+                g.getTSM().clear()
+                val b2 = g.addNode(B, isTs = true)
+                val ts2 = g.getTSM().addTS(b2.id)
+                (0L..5L).forEach { ts2.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) }
+                val a2 = g.addNode(A)
+                g.addProperty(a2.id, "type", "HV", PropType.STRING, from = 0, to = 4)
+                g.addProperty(a2.id, "type", "ML", PropType.STRING, from = 4, to = 4)
+                g.addProperty(a2.id, "type", "HV", PropType.STRING, from = 5, to = Long.MAX_VALUE)
+                g.addEdge(Foo, a2.id, b2.id)
+                val ml = listOf(Step(A, alias = "a", properties = listOf(Filter("type", Operators.EQ, "ML"))), null, Step(B), null, Step(C, alias = "c"))
+                assertEquals(listOf(5.0), query(g, ml, by = sum, mode = mode))
+                assertEquals(1, query(g, ml, mode = mode).size)
+                // ... grouped by type, without the filter: the instant 4 is its own group (ML), the others HV
+                assertEquals(setOf(listOf("ML", 5.0), listOf("HV", 16.0)), query(g, pattern, by = listOf(Aggregate("a", property = "type")) + sum, mode = mode).toSet())
+            }
+        }
+    }
+
     @Test
     fun `queries share a bounded thread pool`() {
         val g = MemoryGraph()
