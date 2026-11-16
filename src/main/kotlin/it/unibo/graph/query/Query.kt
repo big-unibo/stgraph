@@ -13,7 +13,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import javax.management.Query
 import kotlin.math.max
 import kotlin.math.min
 
@@ -29,26 +28,13 @@ fun query(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), by: 
 @JvmName("queryJoin")
 fun query(g: Graph, match: List<List<Step?>>, where: List<Compare> = emptyList(), by: List<Aggregate> = emptyList(), from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE, timeaware: Boolean = true, threads: Int = 1, mode: QueryMode = QueryMode.OPTIMIZED): List<Any> {
     @Suppress("NAME_SHADOWING") val to = halfOpen(from, to) // an instant [t, t] as [t, t + 1)
-    val mapAliases: Map<String, Pair<Int, Int>> =
-        match // get the aliases for each pattern
-            .mapIndexed { patternIndex, pattern ->
-                pattern
-                    .mapIndexed { a, b -> Pair(a, b) }
-                    .filter { it.second?.alias != null } // Consider only the steps with aliases
-                    .associate { it.second?.alias!! to Pair(patternIndex, it.first) } // Pair(patternIndex, stepIndex)
-            }
-            .reduce { acc, map -> acc + map }
+    // The aliases of the patterns: alias -> (patternIndex, stepIndex)
+    val mapAliases: Map<String, Pair<Int, Int>> = match.mapIndexed { p, pattern -> buildAliasMap(pattern).mapValues { p to it.value } }.reduce { acc, m -> acc + m }
     val joinFilters = where.filter { mapAliases[it.first]!!.first != mapAliases[it.second]!!.first } // Take the filters that refer to different patterns (i.e., filters for joining the patterns)
     val pattern1 = search(g, match[0], (where - joinFilters).filter { mapAliases[it.first]!!.first == 0 }, from, to, timeaware, by = by, threads, mode) // compute the first pattern by removing all join filters and consider only the filters on the first pattern (i.e., patternIndex = 0)
-    var result =
-        if (match.size == 1) {
-            pattern1
-        } else {
-            join(g, pattern1, match, joinFilters, mapAliases, where, from, to, timeaware, by, threads, mode)
-        }
-
-    result = result.flatMap { row -> project(row, match, by, mapAliases, from, to, timeaware) } // PROJECTION on the properties of the aggregation
-    return aggregation(result, by, mapAliases, match)
+    val result = if (match.size == 1) pattern1 else join(g, pattern1, match, joinFilters, mapAliases, where, from, to, timeaware, by, threads, mode)
+    // PROJECTION on the properties of the aggregation, then AGGREGATION
+    return aggregation(result.flatMap { row -> project(row, match, by, mapAliases, from, to, timeaware) }, by, mapAliases, match)
 }
 
 /**
@@ -142,44 +128,28 @@ fun project(row: Path, match: List<List<Step?>>, by: List<Aggregate>, mapAliases
     return tuples.map { (elements, interval) -> Path(elements, interval.first, interval.second) }
 }
 
+/**
+ * The aggregation of [numbers] by [aggregationOperator]: values, or partial aggregates computed by TS as (value, count)
+ * pairs (e.g., AVG as (sum, count)). A value counts as (value, 1). The final aggregation ([lastAggregation]) returns the
+ * result, a partial one (e.g., MemoryTS) returns AVG and COUNT as pairs, to be combined later
+ */
 fun aggregateNumbers(numbers: List<Any>, aggregationOperator: AggOperator, lastAggregation: Boolean): Any {
-    val numbers = numbers.filter { it != null && it != "null" } // TODO: this is necessary to handle data grouped by in TS
-    if (numbers.first() is Number) {
-        val cNumbers = numbers.map { (it as Number).toDouble() }
-        return when (aggregationOperator) {
-            AggOperator.SUM -> cNumbers.sum()
-            // A partial count (lastAggregation = false, e.g., MemoryTS) as AsterixDBTS returns it, (count, count): the final
-            // aggregation sums the partial counts (Pair branch), instead of counting the partial aggregates
-            AggOperator.COUNT -> if (lastAggregation) cNumbers.count() else cNumbers.count().toDouble() to cNumbers.count()
-            AggOperator.MAX -> cNumbers.max()
-            AggOperator.MIN -> cNumbers.min()
-            AggOperator.AVG -> {
-                val v =
-                    cNumbers.fold(0.0 to 0) { (sum, count), num ->
-                        (sum + num) to (count + 1)
-                    }
-                if (lastAggregation) v.first / v.second else v
-            }
-            else -> throw IllegalArgumentException("Unsupported aggregation operator: $aggregationOperator")
+    val pairs = numbers.filter { it != null && it != "null" }.map { // TODO: "null" is necessary to handle data grouped by in TS
+        when (it) {
+            is Number -> it.toDouble() to 1
+            is Pair<*, *> -> (it.first as Number).toDouble() to (it.second as Number).toInt()
+            else -> throw IllegalArgumentException("Unsupported type of: $it")
         }
-    } else if (numbers.first() is Pair<*, *>) {
-        val cNumbers = numbers.map { it as Pair<Double, Int> }
-        return when (aggregationOperator) {
-            AggOperator.AVG -> {
-                val v = cNumbers.fold(0.0 to 0) { (sum, count), num ->
-                    (sum + num.first) to (count + num.second)
-                }
-                if (lastAggregation) v.first / v.second else v
-            }
-
-            AggOperator.SUM -> cNumbers.sumOf { it.first }
-            AggOperator.MAX -> cNumbers.maxOf { it.first }
-            AggOperator.MIN -> cNumbers.minOf { it.first } // the partial minimums (e.g., from AsterixDBTS), as MAX
-            AggOperator.COUNT -> cNumbers.sumOf { it.second }
-            else -> throw IllegalArgumentException("Unsupported aggregation operator: $aggregationOperator")
-        }
-    } else {
-        throw IllegalArgumentException("Unsupported type of: ${numbers.first()}")
+    }
+    val sum = pairs.sumOf { it.first }
+    val count = pairs.sumOf { it.second }
+    return when (aggregationOperator) {
+        AggOperator.SUM -> sum
+        AggOperator.COUNT -> if (lastAggregation) count else count.toDouble() to count
+        AggOperator.MAX -> pairs.maxOf { it.first }
+        AggOperator.MIN -> pairs.minOf { it.first }
+        AggOperator.AVG -> if (lastAggregation) sum / count else sum to count
+        else -> throw IllegalArgumentException("Unsupported aggregation operator: $aggregationOperator")
     }
 }
 
@@ -303,20 +273,11 @@ fun queryTSOpt(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long, matc
  * on several consecutive [intervals], in one request (each result in one of them)
  */
 fun getTSEvents(ts: TS, predicates: List<Filter>, aggregate: List<Aggregate>, isGroupBy: Boolean, intervals: List<Pair<Long, Long>>? = null): List<N> =
-    if (intervals == null) ts.getValues(aggregate, predicates, isGroupBy) else ts.getValues(aggregate, predicates, isGroupBy, intervals)
+    intervals?.let { ts.getValues(aggregate, predicates, isGroupBy, it) } ?: ts.getValues(aggregate, predicates, isGroupBy)
 
 /** GETAGGREGATE: the aggregation (Γ) on the events of the next step, which TS can compute */
-fun getAggregate(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggregate> {
-    val cby = mutableListOf<Aggregate>()
-    if (index + 1 < match.size) { // If there is another step
-        val nextMatch = match[index + 1] ?: return cby // select it
-        val nextAlias = nextMatch.alias // and its alias (if any)
-        if (nextAlias != null) { // If the alias is available
-            cby += by.filter { it.n == nextAlias }
-        }
-    }
-    return cby
-}
+fun getAggregate(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggregate> =
+    match.getOrNull(index + 1)?.alias?.let { alias -> by.filter { it.n == alias } } ?: emptyList()
 
 /** GETPREDICATES: the predicates (Θ) on the events of the next step, with the validity of the tuple and the bound values of the where clause */
 fun getPredicates(index: Int, curPath: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Filter> {
@@ -348,11 +309,9 @@ fun getPredicates(index: Int, curPath: List<ElemP>, from: Long, to: Long, match:
  */
 class ExploredPath(val e: ElemP, val index: Int, val path: List<ElemP>, val from: Long, val to: Long)
 
+/** The aliases of the steps of a pattern: alias -> stepIndex */
 fun buildAliasMap(match: List<Step?>): Map<String, Int> =
-    match
-        .mapIndexed { a, b -> Pair(a, b) }
-        .filter { it.second?.alias !== null }
-        .associate { it.second?.alias!! to it.first }
+    match.withIndex().mapNotNull { (i, step) -> step?.alias?.let { it to i } }.toMap()
 
 fun buildWhereMap(where: List<Compare>, mapAlias: Map<String, Int>): Map<String, Compare> =
     // All the comparisons are bound to the same alias, and only the last one would be kept: fail instead of ignoring them
@@ -364,11 +323,8 @@ fun buildWhereMap(where: List<Compare>, mapAlias: Map<String, Int>): Map<String,
         }
 
 /** The tuples of the first step: the nodes of the graph matching it (see extend), valid in [[from], [to]] */
-fun initializeQueue(g: Graph, from: Long, to: Long, match: List<Step?>, timeaware: Boolean): Queue<ExploredPath> {
-    val acc = ConcurrentLinkedQueue<ExploredPath>()
-    acc.addAll(g.getNodes().mapNotNull { extend(it, 0, emptyList(), from, to, match, timeaware) })
-    return acc
-}
+fun initializeQueue(g: Graph, from: Long, to: Long, match: List<Step?>, timeaware: Boolean): Queue<ExploredPath> =
+    ConcurrentLinkedQueue(g.getNodes().mapNotNull { extend(it, 0, emptyList(), from, to, match, timeaware) })
 
 /**
  * The condition of EXPAND (θ and the temporal condition), also for the first step: the tuple [path] (valid in [[from],

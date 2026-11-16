@@ -1021,6 +1021,28 @@ class TestKotlin {
     }
 
     /**
+     * aggregateNumbers on values and on partial aggregates as (value, count) pairs (e.g., AVG as (sum, count) from TS):
+     * a value counts as (value, 1). Partial aggregations return AVG and COUNT as pairs, final ones the result
+     */
+    @Test
+    fun `aggregate values and partial aggregates`() {
+        val values = listOf(1L, 2L, 6L, "null") // "null": no value (ignored)
+        assertEquals(9.0, aggregateNumbers(values, AggOperator.SUM, true))
+        assertEquals(3, aggregateNumbers(values, AggOperator.COUNT, true))
+        assertEquals(3.0, aggregateNumbers(values, AggOperator.AVG, true))
+        assertEquals(1.0, aggregateNumbers(values, AggOperator.MIN, true))
+        assertEquals(6.0, aggregateNumbers(values, AggOperator.MAX, true))
+        // Partial: (sum, count) for AVG and (count, count) for COUNT
+        assertEquals(9.0 to 3, aggregateNumbers(values, AggOperator.AVG, false))
+        assertEquals(3.0 to 3, aggregateNumbers(values, AggOperator.COUNT, false))
+        // Final aggregation of the partial aggregates: (9, 3) and (1, 1) -> AVG 10 / 4, COUNT 4
+        val partials = listOf(9.0 to 3, 1.0 to 1)
+        assertEquals(2.5, aggregateNumbers(partials, AggOperator.AVG, true))
+        assertEquals(4, aggregateNumbers(partials, AggOperator.COUNT, true))
+        assertEquals(10.0, aggregateNumbers(partials, AggOperator.SUM, true))
+    }
+
+    /**
      * Random graphs (property histories with gaps, edges with limited validity, events with two labels): the NAIVE and
      * OPTIMIZED modes must return the same result for grouping, filter, time window and join queries. NAIVE reads the
      * events one by one and resolves the properties at the timestamp of each event, so it is the reference: any pushdown
