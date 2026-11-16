@@ -74,6 +74,15 @@ private fun join(
     // Funzione ricorsiva locale
     fun rec(curMatch: MutableList<Step?>, index: Int, fromLimit: Long, toLimit: Long, row: Path, acc: MutableList<Path>) {
         if (index >= match[1].size) {
+            // The aggregation pushed down in the second pattern is not split by the versions of the grouping properties of
+            // the first one (see groupingIntervals): fail instead of grouping each partial aggregate with all of them
+            if (mode == QueryMode.OPTIMIZED && by.any { it.operator != null && mapAliases[it.n]?.first == 1 }) {
+                by.filter { it.operator == null && it.property != null && mapAliases[it.n]?.first == 0 }.forEach { a ->
+                    if (row.result[mapAliases[a.n]!!.second].getProps(name = a.property, fromTimestamp = fromLimit, toTimestamp = toLimit).size > 1) {
+                        throw UnsupportedOperationException("Grouping by ${a.n}.${a.property}, which changes in time, of the first pattern of a join, with an aggregation of the second one: use NAIVE")
+                    }
+                }
+            }
             val paths =
                 search(g, curMatch, (where - joinFilters).filter { mapAliases[it.first]!!.first == 1 }, fromLimit, toLimit, timeaware, by = by, threads, mode)
                     .map { Path(row.result + it.result, it.from, it.to) }
@@ -91,6 +100,8 @@ private fun join(
 
         val curJoinFilters = joinFilters.filter { step.alias == it.first || step.alias == it.second }
         if (curJoinFilters.isNotEmpty()) {
+            // Only one comparison per step would be applied: fail instead of ignoring the others
+            if (curJoinFilters.size > 1) throw UnsupportedOperationException("At most one join comparison (where) per step: $curJoinFilters")
             val curJoinFilter = curJoinFilters.first()
             val cAlias = if (step.alias != curJoinFilter.first) curJoinFilter.first else curJoinFilter.second
             val props = row.result[mapAliases[cAlias]!!.second].getProps(name = curJoinFilter.property, fromTimestamp = fromLimit, toTimestamp = toLimit, timeaware = timeaware)
@@ -178,6 +189,25 @@ fun intervalOuterJoin(listA: List<Elem>, listB: List<Elem>, timeaware: Boolean):
 }
 
 /**
+ * As intervalOuterJoin, on any number of lists (e.g., the versions of three grouping properties of the same element):
+ * one combination of the elements valid in each slice of the timeline (null where a list has none), and one for each
+ * instant [t, t] (as in timeOverlap)
+ */
+fun intervalOuterJoin(lists: List<List<Elem>>, timeaware: Boolean): Set<List<Elem?>> {
+    if (!timeaware) return lists.fold(listOf(listOf<Elem?>())) { acc, list -> acc.flatMap { c -> (list.ifEmpty { listOf(null) }).map { c + it } } }.toSet()
+    val boundaries = lists.flatten().flatMap { listOf(it.fromTimestamp, it.toTimestamp) }.toSortedSet().toList()
+    val slices = mutableSetOf<List<Elem?>>()
+    for (i in 0 until boundaries.size - 1) { // the slices of the timeline [boundaries[i], boundaries[i + 1])
+        slices += lists.map { list -> list.find { it.timeOverlap(timeaware, boundaries[i], boundaries[i + 1]) } }
+    }
+    boundaries.filter { b -> lists.any { list -> list.any { it.fromTimestamp == b && it.toTimestamp == b } } }.forEach { point -> // the instants
+        val combination = lists.map { list -> list.find { it.timeOverlap(timeaware, point, point) } }
+        if (combination.any { it != null }) slices += combination
+    }
+    return slices
+}
+
+/**
  * Replace properties if necessary
  */
 fun replaceTemporalProperties(row: Path, match: List<List<Step?>>, by: List<Aggregate>, mapAliases: Map<String, Pair<Int, Int>>, from: Long, to: Long, timeaware: Boolean): List<Path> {
@@ -222,9 +252,12 @@ fun replaceTemporalProperties(row: Path, match: List<List<Step?>>, by: List<Aggr
                     }
                 } else { // else, I need to replace these items
                     val props: List<Pair<Aggregate, List<P>>> = replace.map { it to elem.getProps(name = it.property, fromTimestamp = from, toTimestamp = to, timeaware = timeaware) } // For each aggregate, I can have multiple historical properties
-                    if (props.size > 2) throw IllegalArgumentException("Too many props: $props")
                     val replacements: List<ElemP> =
-                        if (props.size == 2) {
+                        if (props.size > 2) { // more than two grouping properties of the same element: their combinations in time
+                            intervalOuterJoin(props.map { it.second }, timeaware)
+                                .map { combination -> props.mapIndexed { i, (a, _) -> Pair(a, combination[i] as P?) } }
+                                .map { createVirtual(it, from, to, elem) }
+                        } else if (props.size == 2) {
                             intervalOuterJoin(props[0].second, props[1].second, timeaware)
                                 .map { listOf(Pair(props[0].first, it.first as P?), Pair(props[1].first, it.second as P?)) }
                                 .map { createVirtual(it, from, to, elem) }
@@ -256,7 +289,7 @@ fun replaceTemporalProperties(row: Path, match: List<List<Step?>>, by: List<Aggr
                          */
                         if (index + 1 < row.size) { // if this element is not the last
                             val nextElem = row[index + 1] // look ahead the next element
-                            val overlappingReplacements = replacements.filter { p -> !(p.fromTimestamp > nextElem.toTimestamp || p.toTimestamp < nextElem.fromTimestamp) } // find the overlapping properties
+                            val overlappingReplacements = replacements.filter { p -> p.timeOverlap(timeaware, nextElem.fromTimestamp, nextElem.toTimestamp) } // find the overlapping properties (half-open intervals and instants, as timeOverlap)
                             if (overlappingReplacements.isEmpty()) { // if there is no overlapping, push null down to the recursion
                                 rec(curRow + createVirtual(props.map { Pair(it.first, null) }, from, to, elem), index + 1, from, to)
                             } else {
@@ -488,6 +521,23 @@ fun pushDownBy(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggreg
     return cby
 }
 
+/**
+ * The versions of the property compared with the events of the next step (the where clause on its alias, pushed down by
+ * pushDownFilters), as intervals of [[from], [to]): one path per version, so that pushDownFilters binds a single value
+ * (e.g., m.value > a.threshold, a.threshold = 2 in [0, 3) and 5 in [3, MAX): [0, 3) with m.value > 2, [3, MAX) with
+ * m.value > 5). Nothing without versions (the comparison never holds, as in whereClause); [[from], [to]] itself without
+ * such a comparison
+ */
+fun compareIntervals(index: Int, curPath: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Pair<Long, Long>> {
+    val nextAlias = match.getOrNull(index + 1)?.alias ?: return listOf(from to to)
+    val c = mapWhere[nextAlias] ?: return listOf(from to to)
+    val other = mapAlias[(if (c.first == nextAlias) c.second else c.first).toString()] ?: return listOf(from to to)
+    if (other >= curPath.size) return listOf(from to to)
+    return curPath[other].getProps(name = c.property, fromTimestamp = from, toTimestamp = to)
+        .map { p -> max(from, p.fromTimestamp) to min(to, p.toTimestamp) } // the validity of each version, within the path
+        .sortedBy { it.first }
+}
+
 fun pushDownFilters(index: Int, curPath: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<Filter> {
     val filters = mutableListOf<Filter>()
     if (from != Long.MIN_VALUE) filters += Filter(FROM_TIMESTAMP, Operators.GTE, from) // add the from filter
@@ -543,7 +593,8 @@ fun buildAliasMap(match: List<Step?>): Map<String, Int> =
         .associate { it.second?.alias!! to it.first }
 
 fun buildWhereMap(where: List<Compare>, mapAlias: Map<String, Int>): Map<String, Compare> =
-    where
+    // All the comparisons are bound to the same alias, and only the last one would be kept: fail instead of ignoring them
+    if (where.size > 1) throw UnsupportedOperationException("At most one comparison (where) between the elements of the same pattern: $where") else where
         .associateBy {
             mapAlias
                 .filterKeys { it in where.flatMap { listOf(it.first, it.second) }.toSet() }
@@ -664,6 +715,13 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                     } else { // is edge...
                         val r = (curElem.e as R)
                         if (curElem.e.label.name == HasTS) { // ... to time series
+                            // A comparison between the events and a temporal property of the path, pushed down: one path per
+                            // version of the property (see compareIntervals), as for the filters. NAIVE compares each event
+                            val versions = if (mode == QueryMode.NAIVE) listOf(newFrom to newTo) else compareIntervals(curElem.index, curPath, newFrom, newTo, match, mapAlias, mapWhere)
+                            if (versions != listOf(newFrom to newTo)) {
+                                versions.forEach { (f, t) -> queue.add(ExploredPath(curElem.e, curElem.index, curElem.path, f, t)) }
+                                continue
+                            }
                             launched++
                             launch(executor) {
                                 val pushDownBy: List<Aggregate>

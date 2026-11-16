@@ -853,6 +853,106 @@ class TestKotlin {
         }
     }
 
+    /**
+     * replaceTemporalProperties with more than two grouping properties of the same element: one row per combination of
+     * the versions valid at the same time (null where a property has none), instead of failing with "Too many props".
+     * The look-ahead on the next element uses timeOverlap (half-open intervals and instants), as the rest of the query
+     */
+    @Test
+    fun `group by several temporal properties of the same element`() {
+        QueryMode.entries.forEach { mode ->
+            val g = MemoryGraph()
+            g.tsm = MemoryTSM(g)
+            g.clear()
+            val a = g.addNode(A)
+            val b = g.addNode(B)
+            g.addProperty(a.id, "p1", "x", PropType.STRING, from = 0, to = 2)
+            g.addProperty(a.id, "p1", "y", PropType.STRING, from = 2, to = 4)
+            g.addProperty(a.id, "p2", "u", PropType.STRING, from = 0, to = 4)
+            g.addProperty(a.id, "p3", "k", PropType.STRING, from = 1, to = 3)
+            g.addEdge(Foo, a.id, b.id)
+            val pattern = listOf(Step(A, alias = "a"), null, Step(B))
+            val keys = listOf(Aggregate("a", property = "p1"), Aggregate("a", property = "p2"), Aggregate("a", property = "p3"))
+            // MATCH (a:A)-->(b:B) RETURN a.p1, a.p2, a.p3: [0, 1) x u -, [1, 2) x u k, [2, 3) y u k, [3, 4) y u -
+            assertEquals(
+                setOf(listOf("x", "u", "null"), listOf("x", "u", "k"), listOf("y", "u", "k"), listOf("y", "u", "null")),
+                query(g, pattern, by = keys, mode = mode).toSet()
+            )
+            // An edge valid in [2, 4), then in the instant 2: only the versions of p1 valid with it (y), not x, which ends at 2
+            val c = g.addNode(C)
+            g.addEdge(Foo, a.id, c.id, from = 2, to = 4)
+            assertEquals(setOf("y"), query(g, listOf(Step(A, alias = "a"), null, Step(C)), by = listOf(Aggregate("a", property = "p1")), mode = mode).toSet())
+            val d = g.addNode(D)
+            g.addEdge(Foo, a.id, d.id, from = 2, to = 2)
+            assertEquals(setOf("y"), query(g, listOf(Step(A, alias = "a"), null, Step(D)), by = listOf(Aggregate("a", property = "p1")), mode = mode).toSet())
+            g.close()
+        }
+    }
+
+    /**
+     * A comparison between the events and a temporal property of the path, pushed down to the time series
+     * (compareIntervals, pushDownFilters): one path per version of the property, each with its own value, in both modes.
+     * Before, OPTIMIZED failed with "Too many property values in the same temporal range"
+     */
+    @Test
+    fun `compare events with temporal properties`() {
+        matrix { g ->
+            QueryMode.entries.forEach { mode ->
+                g.clear()
+                g.getTSM().clear()
+                val b1 = g.addNode(B, isTs = true)
+                val ts1 = g.getTSM().addTS(b1.id)
+                (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
+                val a1 = g.addNode(A)
+                g.addProperty(a1.id, VALUE, 2L, PropType.LONG, from = 0, to = 3) // the threshold of events 0, 1, 2
+                g.addProperty(a1.id, VALUE, 5L, PropType.LONG, from = 3, to = Long.MAX_VALUE) // ... of events 3, 4, 5
+                g.addEdge(Foo, a1.id, b1.id)
+                // MATCH (a:A)-->(b:B)-->(c:C) WHERE c.value > a.value RETURN c: 3 > 2 (event 2), 6 > 5 (event 5)
+                val pattern = listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c"))
+                val events = query(g, pattern, where = listOf(Compare("c", "a", VALUE, Operators.GT)), mode = mode)
+                assertEquals(setOf(3L, 6L), events.map { ((it as Path).result.last() as N).value }.toSet())
+                // ... WHERE timestamp in [3, 5): event 4 (5 > 5 does not hold), nothing
+                assertEquals(0, query(g, pattern, where = listOf(Compare("c", "a", VALUE, Operators.GT)), from = 3, to = 5, mode = mode).size)
+            }
+        }
+    }
+
+    /**
+     * Unsupported queries fail instead of returning wrong results: two comparisons between the elements of the same pattern
+     * (only the last one was applied), two join comparisons on the same step (only the first one was applied), and grouping
+     * by a property that changes in time of the first pattern of a join, with an aggregation of the second one pushed down
+     * (the partial aggregates would be grouped with every version). The last one works in NAIVE
+     */
+    @Test
+    fun `unsupported queries fail`() {
+        matrix { g ->
+            g.clear()
+            g.getTSM().clear()
+            val b1 = g.addNode(B, isTs = true)
+            val ts1 = g.getTSM().addTS(b1.id)
+            (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
+            g.addProperty(b1.id, "code", "p", PropType.STRING)
+            g.addProperty(b1.id, "w", "q", PropType.STRING)
+            val a1 = g.addNode(A)
+            g.addProperty(a1.id, "code", "p", PropType.STRING)
+            g.addProperty(a1.id, "w", "q", PropType.STRING)
+            g.addProperty(a1.id, "name", "x", PropType.STRING, from = 0, to = 3) // events 0, 1, 2
+            g.addProperty(a1.id, "name", "y", PropType.STRING, from = 3, to = Long.MAX_VALUE) // events 3, 4, 5
+            g.addEdge(Foo, a1.id, b1.id)
+            val two = listOf(Compare("a", "b", "code", Operators.EQ), Compare("a", "b", "w", Operators.EQ))
+            // Two comparisons in the same pattern
+            kotlin.test.assertFailsWith<UnsupportedOperationException> { query(g, listOf(Step(A, alias = "a"), null, Step(B, alias = "b")), where = two) }
+            // Two join comparisons on the same step
+            kotlin.test.assertFailsWith<UnsupportedOperationException> { query(g, listOf(listOf(Step(A, alias = "a")), listOf(Step(B, alias = "b"))), where = two) }
+            // Grouping by a.name (x, then y) of the first pattern, sum of the events of the second one
+            val join = listOf(listOf(Step(A, alias = "a")), listOf(Step(B, alias = "b"), null, Step(C, alias = "c")))
+            val where = listOf(Compare("a", "b", "code", Operators.EQ))
+            val by = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+            kotlin.test.assertFailsWith<UnsupportedOperationException> { query(g, join, where = where, by = by, mode = QueryMode.OPTIMIZED) }
+            assertEquals(setOf(listOf("x", 6.0), listOf("y", 15.0)), query(g, join, where = where, by = by, mode = QueryMode.NAIVE).toSet())
+        }
+    }
+
     @Test
     fun `queries share a bounded thread pool`() {
         val g = MemoryGraph()
