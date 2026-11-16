@@ -51,7 +51,7 @@ interface TS : Serializable {
      * interval. By default, one request per interval
      *
      * Used by Query.search to push down an aggregation split by the changes of the grouping properties (see
-     * Query.groupingIntervals): with [by] = sum(value) and [intervals] = [0, 2), [2, 4), it returns the sum of the events
+     * Query.projectBeforeTS): with [by] = sum(value) and [intervals] = [0, 2), [2, 4), it returns the sum of the events
      * in [0, 2) and the sum of those in [2, 4), each with fromTimestamp (and toTimestamp) = its first (and last) event, so
      * that the caller knows its interval. An interval without events returns nothing. A store that can aggregate all
      * the intervals in a single request (e.g., AsterixDBTS) overrides it.

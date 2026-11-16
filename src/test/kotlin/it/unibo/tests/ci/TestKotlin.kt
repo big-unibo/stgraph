@@ -592,7 +592,7 @@ class TestKotlin {
 
     /**
      * Grouping by a property whose value changes over time, while the aggregation is pushed down to the time series
-     * (Query.groupingIntervals). Each event must be grouped with the value of the property at its own timestamp, in both
+     * (the projection before the expansion towards TS, Query.projectBeforeTS). Each event must be grouped with the value of the property at its own timestamp, in both
      * modes. Before the fix, OPTIMIZED aggregated the whole series once, [0, 5], and that partial aggregate overlapped
      * the three versions of a.name, so the whole sum (21) was counted once per version.
      */
@@ -701,7 +701,7 @@ class TestKotlin {
     }
 
     /**
-     * Filtering on a property whose value changes over time (Query.filterIntervals): the path holds only while the
+     * Filtering on a property whose value changes over time (the selection after the projection, Query.select): the path holds only while the
      * property passes the filter, so only the events of those periods are returned, in both modes. Before the fix, a
      * node passed if any of its versions passed, and all the events (sum 21) were returned.
      */
@@ -746,7 +746,7 @@ class TestKotlin {
      * Instants as in timeOverlap: an element valid in [t, t] is valid in the instant t only, so a path through it reaches
      * the events at t only, in both modes. Pushed down, the instant must become ts = t (ts >= t AND ts <= t), not the
      * empty range ts >= t AND ts < t (Query.pushDownFilters); a filter passing only in an instant limits the path to
-     * [t, t] (Query.filterIntervals)
+     * [t, t] (Query.select)
      */
     @Test
     fun `instants as in timeOverlap`() {
@@ -788,12 +788,12 @@ class TestKotlin {
     }
 
     /**
-     * Compare.intervals: the maximal intervals in which a comparison between the temporal properties of two elements
-     * holds, pairing their versions valid at the same time (as the temporal property join). Consecutive intervals are
-     * merged, instants ([t, t], as in timeOverlap) are kept apart
+     * The projection of time-varying properties (Query.project, Algorithm 1 on any number of properties): the slices of
+     * time in which every property keeps the same version, with their versions (null where a property has none), instants
+     * ([t, t], as in timeOverlap) apart. The selection, the expansion towards TS with pushdown, and the join use it
      */
     @Test
-    fun `compare temporal properties of two elements`() {
+    fun `project temporal properties`() {
         val g = MemoryGraph()
         g.tsm = MemoryTSM(g)
         g.clear()
@@ -801,18 +801,24 @@ class TestKotlin {
         val b = g.addNode(B)
         g.addProperty(a.id, "v", 1L, PropType.LONG, from = 0, to = 2)
         g.addProperty(a.id, "v", 2L, PropType.LONG, from = 2, to = 4)
-        g.addProperty(a.id, "v", 5L, PropType.LONG, from = 4, to = 6)
-        g.addProperty(a.id, "v", 1L, PropType.LONG, from = 6, to = 6) // the instant 6
-        g.addProperty(a.id, "v", 5L, PropType.LONG, from = 7, to = Long.MAX_VALUE)
-        g.addProperty(b.id, "v", 3L, PropType.LONG) // always 3
+        g.addProperty(a.id, "v", 1L, PropType.LONG, from = 6, to = 6) // the instant 6, after a gap [4, 6)
+        g.addProperty(b.id, "v", 3L, PropType.LONG, from = 1) // always 3 from 1
+        fun slices(from: Long, to: Long) = project(listOf(a to "v", b to "v"), from, to).map { (slice, v) -> slice to v.map { it?.value } }
+        assertEquals(
+            listOf(
+                (Long.MIN_VALUE to 0L) to listOf(null, null), (0L to 1L) to listOf(1L, null), (1L to 2L) to listOf(1L, 3L),
+                (2L to 4L) to listOf(2L, 3L), (4L to 6L) to listOf(null, 3L), (6L to 6L) to listOf(1L, 3L), (7L to Long.MAX_VALUE) to listOf(null, 3L)
+            ),
+            slices(Long.MIN_VALUE, Long.MAX_VALUE)
+        )
+        // Within the tuple: [1, 3)
+        assertEquals(listOf((1L to 2L) to listOf(1L, 3L), (2L to 3L) to listOf(2L, 3L)), slices(1, 3))
+        // In an instant: one version each
+        assertEquals(listOf((6L to 6L) to listOf(1L, 3L)), slices(6, 6))
+        // Without properties: the whole tuple
+        assertEquals(listOf((0L to 5L) to emptyList<P?>()), project(emptyList(), 0, 5))
+        // isOk: some pair of versions valid at the same time satisfies a.v < b.v (1 < 3 in [1, 2)), within [4, 6) none
         val lt = Compare("a", "b", "v", Operators.LT)
-        // a.v < b.v: 1 and 2 in [0, 4) (merged), 1 in the instant 6
-        assertEquals(listOf(0L to 4L, 6L to 6L), lt.intervals(a, b, Long.MIN_VALUE, Long.MAX_VALUE))
-        // ... within [1, 5): [1, 4) only
-        assertEquals(listOf(1L to 4L), lt.intervals(a, b, 1, 5))
-        // a.v > b.v: 5 in [4, 6) and [7, MAX) (not consecutive: the instant 6 is between them)
-        assertEquals(listOf(4L to 6L, 7L to Long.MAX_VALUE), Compare("a", "b", "v", Operators.GT).intervals(a, b, Long.MIN_VALUE, Long.MAX_VALUE))
-        // isOk: at some time of the interval (before, only the last version added, 5, was compared: 5 < 3 never held)
         assertTrue(lt.isOk(a, b, timeaware = true))
         assertTrue(!lt.isOk(a, b, timeaware = true, from = 4, to = 6))
         assertTrue(lt.isOk(a, b, timeaware = false))
@@ -820,7 +826,7 @@ class TestKotlin {
     }
 
     /**
-     * A where clause comparing the temporal properties of two elements of the same path (Compare.isOk, whereIntervals):
+     * A where clause comparing the temporal properties of two elements of the same path (Compare.isOk, Query.select):
      * the path holds only while the comparison holds, so only the events of those periods are returned, in both modes
      */
     @Test
@@ -891,7 +897,7 @@ class TestKotlin {
 
     /**
      * A comparison between the events and a temporal property of the path, pushed down to the time series
-     * (compareIntervals, pushDownFilters): one path per version of the property, each with its own value, in both modes.
+     * (Query.projectBeforeTS, pushDownFilters): one path per version of the property, each with its own value, in both modes.
      * Before, OPTIMIZED failed with "Too many property values in the same temporal range"
      */
     @Test
@@ -919,9 +925,9 @@ class TestKotlin {
 
     /**
      * Unsupported queries fail instead of returning wrong results: two comparisons between the elements of the same pattern
-     * (only the last one was applied), two join comparisons on the same step (only the first one was applied), and grouping
-     * by a property that changes in time of the first pattern of a join, with an aggregation of the second one pushed down
-     * (the partial aggregates would be grouped with every version). The last one works in NAIVE
+     * (only the last one was applied) and two join comparisons on the same step (only the first one was applied).
+     * Grouping by a property that changes in time of the first pattern of a join, with an aggregation of the second one
+     * pushed down, is supported: the property is projected before the join (one search of the second pattern per version)
      */
     @Test
     fun `unsupported queries fail`() {
@@ -948,8 +954,9 @@ class TestKotlin {
             val join = listOf(listOf(Step(A, alias = "a")), listOf(Step(B, alias = "b"), null, Step(C, alias = "c")))
             val where = listOf(Compare("a", "b", "code", Operators.EQ))
             val by = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.SUM))
-            kotlin.test.assertFailsWith<UnsupportedOperationException> { query(g, join, where = where, by = by, mode = QueryMode.OPTIMIZED) }
-            assertEquals(setOf(listOf("x", 6.0), listOf("y", 15.0)), query(g, join, where = where, by = by, mode = QueryMode.NAIVE).toSet())
+            QueryMode.entries.forEach { mode -> // x: events 0, 1, 2 (1 + 2 + 3), y: events 3, 4, 5 (4 + 5 + 6)
+                assertEquals(setOf(listOf("x", 6.0), listOf("y", 15.0)), query(g, join, where = where, by = by, mode = mode).toSet())
+            }
         }
     }
 
@@ -981,7 +988,7 @@ class TestKotlin {
      * events one by one and resolves the properties at the timestamp of each event, so it is the reference: any pushdown
      * of OPTIMIZED (filters, time filters, aggregations, grouping intervals) must not change the result. The seeds are
      * fixed, so a failure is reproducible; the message names the seed and the query.
-     * Not covered: grouping by a temporal property of the other pattern of a join (not split).
+     * Not covered: grouping by a temporal property of the first pattern of a join (see unsupported queries fail).
      */
     @Test
     fun `naive and optimized agree on random graphs`() {
