@@ -590,6 +590,12 @@ class TestKotlin {
         }
     }
 
+    /**
+     * Grouping by a property whose value changes over time, while the aggregation is pushed down to the time series
+     * (Query.groupingIntervals). Each event must be grouped with the value of the property at its own timestamp, in both
+     * modes. Before the fix, OPTIMIZED aggregated the whole series once, [0, 5], and that partial aggregate overlapped
+     * the three versions of a.name, so the whole sum (21) was counted once per version.
+     */
     @Test
     fun `push down group by on temporal properties`() {
         matrix { g ->
@@ -605,18 +611,28 @@ class TestKotlin {
                 g.addProperty(a1.id, "name", "x", PropType.STRING, from = 4, to = 4) // event 4 (event 5: no name)
                 g.addEdge(Foo, a1.id, b1.id)
 
+                // Versions of a.name: x [0,2), gap [2,3), y [3,4), x at the single instant 4 (= [4,5)), gap [5, +inf)
                 // MATCH (a:A)-->(b:B)-->(c:C) RETURN a.name, sum/avg(c.value): each event with the name of its time
                 val pattern = listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c"))
                 val sum = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.SUM))
                 val avg = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.AVG))
+                // x: events 0, 1, 4 (values 1 + 2 + 5); y: event 3 (value 4); no name: events 2, 5 (values 3 + 6). The two
+                // versions named x fall in two sub-intervals: their partial aggregates are merged in the same group
                 assertEquals(setOf(listOf("x", 8.0), listOf("y", 4.0), listOf("null", 9.0)), query(g, pattern, by = sum, mode = mode).toSet())
+                // AVG from the merged (sum, count) of the partial aggregates: x = (3 + 5) / (2 + 1), not the average of averages
                 assertEquals(setOf(listOf("x", 8.0 / 3), listOf("y", 4.0), listOf("null", 4.5)), query(g, pattern, by = avg, mode = mode).toSet())
-                // ... WHERE timestamp in [1, 4)
+                // ... WHERE timestamp in [1, 4): the sub-intervals are clipped to the window (events 1, 2, 3 only)
                 assertEquals(setOf(listOf("x", 2.0), listOf("y", 4.0), listOf("null", 3.0)), query(g, pattern, by = sum, from = 1, to = 4, mode = mode).toSet())
             }
         }
     }
 
+    /**
+     * TS.getValues on several intervals (used by Query.search when a pushed-down aggregation is split): one partial
+     * aggregate per non-empty interval, each with the first timestamp of its events (fromTimestamp), equal to one request
+     * per interval. AsterixDB answers with one request (CASE on the timestamp in the GROUP BY), the other stores with one
+     * request per interval (the default of TS)
+     */
     @Test
     fun `push down aggregation on several intervals`() {
         matrix { g ->
@@ -626,12 +642,13 @@ class TestKotlin {
             val ts1 = g.getTSM().addTS(b1.id)
             (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
             val sum = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+            // (first timestamp, sum) of each partial aggregate: AsterixDB returns the value as a pair (sum, count)
             fun partials(nodes: List<N>) = nodes.map { n ->
                 val v = n.getProps(name = VALUE).first().value
                 n.fromTimestamp to ((if (v is Pair<*, *>) v.first else v) as Number).toDouble()
             }.toSet()
             val intervals = listOf(Long.MIN_VALUE to 2L, 2L to 4L, 4L to Long.MAX_VALUE)
-            // One partial aggregate per interval, with the first timestamp of its events
+            // One partial aggregate per interval, with the first timestamp of its events: 1 + 2, 3 + 4, 5 + 6
             assertEquals(setOf(0L to 3.0, 2L to 7.0, 4L to 11.0), partials(ts1.getValues(sum, emptyList(), true, intervals)))
             // The same as one request per interval
             val one = intervals.flatMap { (from, to) ->
@@ -641,12 +658,19 @@ class TestKotlin {
                 ), true)
             }
             assertEquals(partials(one), partials(ts1.getValues(sum, emptyList(), true, intervals)))
-            // Consecutive intervals restricted by a time filter, with an empty interval; a single interval
+            // Consecutive intervals restricted by a time filter (events 1..4 only), with an empty interval [2, 2), which
+            // returns nothing: [1, 2) -> 2, [2, +inf) -> 3 + 4 + 5
             assertEquals(setOf(1L to 2.0, 2L to 12.0), partials(ts1.getValues(sum, listOf(Filter(TO_TIMESTAMP, Operators.LT, 5L)), true, listOf(1L to 2L, 2L to 2L, 2L to Long.MAX_VALUE))))
+            // A single interval: the usual request, the sum of all the events
             assertEquals(setOf(0L to 21.0), partials(ts1.getValues(sum, emptyList(), true, listOf(Long.MIN_VALUE to Long.MAX_VALUE))))
         }
     }
 
+    /**
+     * Filtering on a property whose value changes over time (Query.filterIntervals): the path holds only while the
+     * property passes the filter, so only the events of those periods are returned, in both modes. Before the fix, a
+     * node passed if any of its versions passed, and all the events (sum 21) were returned.
+     */
     @Test
     fun `filter on temporal properties`() {
         matrix { g ->
@@ -665,17 +689,25 @@ class TestKotlin {
                 // MATCH (a:A {type: "ML"})-->(b:B)-->(c:C) RETURN sum(c.value): only the events while a is ML
                 val ml = listOf(Step(A, alias = "a", properties = listOf(Filter("type", Operators.EQ, "ML"))), null, Step(B), null, Step(C, alias = "c"))
                 val sum = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+                // a is ML in [0, 2) and [4, +inf): events 0, 1, 4, 5 (values 1 + 2 + 5 + 6); not 2, 3 (HV)
                 assertEquals(listOf(14.0), query(g, ml, by = sum, mode = mode))
+                // Without aggregation, the four events: the path of a is split into [0, 2) and [4, +inf)
                 assertEquals(4, query(g, ml, mode = mode).size)
+                // Grouping by the filtered property: a single group, ML
                 assertEquals(listOf(listOf("ML", 14.0)), query(g, ml, by = listOf(Aggregate("a", property = "type")) + sum, mode = mode))
-                // ... WHERE timestamp in [1, 5)
+                // ... WHERE timestamp in [1, 5): events 1 and 4 (values 2 + 5)
                 assertEquals(listOf(7.0), query(g, ml, by = sum, from = 1, to = 5, mode = mode))
-                // Without the filter, all the events
+                // Without the filter, all the events (1 + ... + 6)
                 assertEquals(listOf(21.0), query(g, listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c")), by = sum, mode = mode))
             }
         }
     }
 
+    /**
+     * The queries with the same number of threads share one pool (Query.searchPool): running the same query several times
+     * creates no further threads, and the threads are daemons (no query has to close the pool, and they do not keep the
+     * JVM alive). Before, each search created a pool of new threads and closed it at the end.
+     */
     @Test
     fun `queries share a bounded thread pool`() {
         val g = MemoryGraph()
@@ -687,7 +719,9 @@ class TestKotlin {
             g.getTSM().addTS(b.id).add(C, timestamp = 0, value = 1, location = POINT_IN_T0)
         }
         val pattern = listOf(Step(B), null, Step(C, alias = "c"))
+        // The same results as before, with one event per time series
         repeat(5) { assertEquals(4, search(g, pattern, threads = 3).size) }
+        // The same pool, every time
         assertTrue(searchPool(3) === searchPool(3))
         // At most 3 threads for all the queries with 3 threads, and they do not keep the JVM alive
         val workers = Thread.getAllStackTraces().keys.filter { it.name.startsWith("stgraph-search-3-") }
@@ -698,7 +732,12 @@ class TestKotlin {
 
     /**
      * Random graphs (property histories with gaps, edges with limited validity, events with two labels): the NAIVE and
-     * OPTIMIZED modes must return the same result for grouping, filter, time window and join queries
+     * OPTIMIZED modes must return the same result for grouping, filter, time window and join queries. NAIVE reads the
+     * events one by one and resolves the properties at the timestamp of each event, so it is the reference: any pushdown
+     * of OPTIMIZED (filters, time filters, aggregations, grouping intervals) must not change the result. The seeds are
+     * fixed, so a failure is reproducible; the message names the seed and the query.
+     * Not covered: MIN (no combination of its partial aggregates in aggregateNumbers) and COUNT (an Int in NAIVE, a
+     * Double from AsterixDB), and grouping by a temporal property of the other pattern of a join (not split).
      */
     @Test
     fun `naive and optimized agree on random graphs`() {
@@ -716,6 +755,7 @@ class TestKotlin {
                         t += length
                     }
                 }
+                // Three time series (B), each with 10 events at distinct timestamps in [0, 20), labelled C or D, values 0..9
                 val bs = (0 until 3).map { i ->
                     val b = g.addNode(B, isTs = true)
                     val ts = g.getTSM().addTS(b.id)
@@ -724,6 +764,8 @@ class TestKotlin {
                     g.addProperty(b.id, "code", listOf("p", "q").random(rnd), PropType.STRING)
                     b
                 }
+                // Two A nodes, with random histories of name and type, linked to a random subset of the time series by edges
+                // valid always or only in a random interval
                 repeat(2) {
                     val a = g.addNode(A)
                     history(a.id, "name", listOf("x", "y"))
@@ -734,6 +776,8 @@ class TestKotlin {
                     }
                 }
 
+                // (a:A)-->(b:B)-->(c), with or without the filter a.type = "ML", and the join of (a:A {type: "ML"}) with
+                // (b:B)-->(c) on a.code = b.code
                 val path = listOf(Step(A, alias = "a"), null, Step(B, alias = "b"), null, Step(alias = "c"))
                 val ml = listOf(Step(A, alias = "a", properties = listOf(Filter("type", Operators.EQ, "ML"))), null, Step(B, alias = "b"), null, Step(alias = "c"))
                 val join = listOf(listOf(Step(A, alias = "a", properties = listOf(Filter("type", Operators.EQ, "ML")))), listOf(Step(B, alias = "b"), null, Step(alias = "c")))
@@ -751,6 +795,7 @@ class TestKotlin {
                     "filter, rows" to { m -> listOf(query(g, ml, mode = m).size) },
                     "join, sum by b.name" to { m -> query(g, join, where = listOf(Compare("a", "b", property = "code", operator = Operators.EQ)), by = sum(Aggregate("b", property = "name")), mode = m) }
                 )
+                // Results as sets: the order of the rows is not defined
                 queries.forEach { (name, run) ->
                     assertEquals(run(QueryMode.NAIVE).toSet(), run(QueryMode.OPTIMIZED).toSet(), "seed $seed: $name")
                 }
