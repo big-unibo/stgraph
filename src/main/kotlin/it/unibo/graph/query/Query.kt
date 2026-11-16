@@ -322,27 +322,28 @@ fun temporalPropertyJoin(keys: List<Pair<ElemP, String>>, from: Long, to: Long):
 }
 
 /**
- * SELECTION (σ), the only evaluation of the predicates, on the properties of the element matched at the step of [cur]
- * (the filters of the step, and the comparison of the where clause with an element already in [path]), after their
- * temporal property join (π): the slices of [[from], [to]) in which they hold. The tuple holds only while its properties
+ * SELECTION (σ), the only evaluation of the predicates, on the properties of the last element of the tuple [cur] (the
+ * filters of its step, and the comparison of the where clause with an element already in the tuple), after their
+ * temporal property join (π): the slices of the validity of the tuple in which they hold. The tuple holds only while its properties
  * satisfy the predicate (continuous semantics), so it continues once per slice, or not at all. Without time
- * ([timeaware] = false), [[from], [to]] if some version of the properties satisfies it. [[from], [to]] itself without
+ * ([timeaware] = false), the whole validity if some version of the properties satisfies it. The whole validity without
  * predicates. The filters on the properties aggregated by the time series ([skip]: OPTIMIZED, already applied by TS
  * before aggregating, see queryTSOpt) are not evaluated on the partial aggregates
  */
-fun select(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>, timeaware: Boolean, skip: List<String?>): List<Pair<Long, Long>> {
+fun select(cur: ExploredPath, match: List<Step?>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>, timeaware: Boolean, skip: List<String?>): List<Pair<Long, Long>> {
+    val path = cur.path
     val step = match[cur.index]
     val filters = step?.properties.orEmpty().filter { it.property !in skip }
     val c = step?.alias?.let { mapWhere[it] } // the comparison of the where clause, with an element already in the path
-    if (filters.isEmpty() && c == null) return listOf(from to to) // no predicate
+    if (filters.isEmpty() && c == null) return listOf(cur.from to cur.to) // no predicate
     val compared = if (c == null) emptyList() else listOf(path[mapAlias[c.first.toString()]!!] to c.property, path[mapAlias[c.second.toString()]!!] to c.property)
     if (!timeaware) { // without time: some version of each property satisfies the predicate
         val holds = filters.all { f -> cur.e.getProps(name = f.property, timeaware = false).any { f.holds(it.value) } } &&
             (c == null || c.isOk(compared[0].first, compared[1].first, timeaware = false))
-        return if (holds) listOf(from to to) else emptyList()
+        return if (holds) listOf(cur.from to cur.to) else emptyList()
     }
     val n = filters.size
-    return temporalPropertyJoin(filters.map { cur.e to it.property } + compared, from, to)
+    return temporalPropertyJoin(filters.map { cur.e to it.property } + compared, cur.from, cur.to)
         .filter { (_, v) ->
             filters.indices.all { i -> v[i]?.let { p -> filters[i].holds(p.value) } ?: false } && // every filter (no version: false)
                 (c == null || (v[n] != null && v[n + 1] != null && c.holds(v[n]!!.value, v[n + 1]!!.value))) // ... and the comparison
@@ -355,10 +356,10 @@ private fun Filter.holds(v: Any): Boolean = runCatching { if (attrFirst) Compare
 
 /**
  * QUERYTS: the expansion of the tuple [path] (valid in [[from], [to]]) towards the events of the time series [ts]: every
- * event extends the tuple, and the next steps check them one by one (NAIVE)
+ * event satisfying the condition of the expansion (label and validity, see extend) extends the tuple (NAIVE)
  */
-fun queryTS(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long): List<ExploredPath> =
-    getTSEvents(ts, emptyList(), emptyList(), false).map { ExploredPath(it, index + 1, path, from, to) }
+fun queryTS(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, timeaware: Boolean): List<ExploredPath> =
+    getTSEvents(ts, emptyList(), emptyList(), false).mapNotNull { extend(it, index + 1, path, from, to, match, timeaware) }
 
 /**
  * QUERYTSOPT: the expansion of the tuple [path] (valid in [[from], [to]]) towards the time series [ts], pushing down the
@@ -370,7 +371,7 @@ fun queryTS(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long): List<E
  * to TS in one request, unless the comparison binds a different value in each of them. GetProjectedProperties is not
  * needed: the time series returns whole events
  */
-fun queryTSOpt(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, by: List<Aggregate>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>): List<ExploredPath> {
+fun queryTSOpt(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, by: List<Aggregate>, mapAlias: Map<String, Int>, mapWhere: Map<String, Compare>, timeaware: Boolean): List<ExploredPath> {
     val aggregate = getAggregate(index, by, match)
     val grouping = if (aggregate.isEmpty()) emptyList()
         else by.filter { it.operator == null && it.property != null }.mapNotNull { a -> mapAlias[a.n]?.takeIf { it < path.size }?.let { path[it] to a.property!! } }
@@ -380,10 +381,10 @@ fun queryTSOpt(ts: TS, index: Int, path: List<ElemP>, from: Long, to: Long, matc
     val slices = temporalPropertyJoin(grouping + listOfNotNull(compared), from, to).filter { compared == null || it.second.last() != null }.map { it.first }
     return if (slices.size > 1 && compared == null) {
         getTSEvents(ts, getPredicates(index, path, from, to, match, mapAlias, mapWhere), aggregate, by.isNotEmpty(), slices)
-            .map { n -> slices.first { timeOverlap(it.first, it.second, n.fromTimestamp, n.fromTimestamp) }.let { (f, t) -> ExploredPath(n, index + 1, path, f, t) } }
+            .mapNotNull { n -> slices.first { timeOverlap(it.first, it.second, n.fromTimestamp, n.fromTimestamp) }.let { (f, t) -> extend(n, index + 1, path, f, t, match, timeaware) } }
     } else {
         slices.flatMap { (f, t) ->
-            getTSEvents(ts, getPredicates(index, path, f, t, match, mapAlias, mapWhere), aggregate, by.isNotEmpty()).map { ExploredPath(it, index + 1, path, f, t) }
+            getTSEvents(ts, getPredicates(index, path, f, t, match, mapAlias, mapWhere), aggregate, by.isNotEmpty()).mapNotNull { extend(it, index + 1, path, f, t, match, timeaware) }
         }
     }
 }
@@ -432,7 +433,10 @@ fun getPredicates(index: Int, curPath: List<ElemP>, from: Long, to: Long, match:
     return filters // push down the filters from the next step
 }
 
-/** A tuple being extended at the step [index] by the element [e], after [path], valid in [[from], [to]] */
+/**
+ * A tuple ([path]) valid in [[from], [to]] (the intersection of the validity of its elements), whose last element [e]
+ * matches the step [index]: queued only once valid (see extend)
+ */
 class ExploredPath(val e: ElemP, val index: Int, val path: List<ElemP>, val from: Long, val to: Long)
 
 fun buildAliasMap(match: List<Step?>): Map<String, Int> =
@@ -450,41 +454,36 @@ fun buildWhereMap(where: List<Compare>, mapAlias: Map<String, Int>): Map<String,
                 .maxByOrNull { it.value }?.key!!
         }
 
-fun initializeQueue(g: Graph, from: Long, to: Long): Queue<ExploredPath> {
+/** The tuples of the first step: the nodes of the graph matching it (see extend), valid in [[from], [to]] */
+fun initializeQueue(g: Graph, from: Long, to: Long, match: List<Step?>, timeaware: Boolean): Queue<ExploredPath> {
     val acc = ConcurrentLinkedQueue<ExploredPath>()
-    // val acc = ArrayDeque<ExploredPath>()
-    acc.addAll(g.getNodes().map { ExploredPath(it, 0, emptyList(), from, to) })
+    acc.addAll(g.getNodes().mapNotNull { extend(it, 0, emptyList(), from, to, match, timeaware) })
     return acc
 }
 
 /**
- * Whether the element of [cur] can extend the tuple at its step: its label, and its validity overlapping that of the
- * tuple. Not a selection: the predicates on its properties are evaluated by the selection only (see select)
+ * The condition of EXPAND (θ and the temporal condition), also for the first step: the tuple [path] (valid in [[from],
+ * [to]]) extended by the element [e] at the step [index] if [e] has the label of the step (the label of the edge or of
+ * the node of the pattern) and its validity overlaps that of the tuple, valid in their intersection; null otherwise
  */
-fun matchesStep(cur: ExploredPath, match: List<Step?>, timeaware: Boolean): Boolean {
-    val step = match[cur.index]
-    return (step?.label == null || step.label == cur.e.label.name) && cur.e.timeOverlap(timeaware, cur.from, cur.to)
-}
-
-fun updatePath(cur: ExploredPath): Triple<Long, Long, List<ElemP>> {
-    val newFrom = max(cur.e.fromTimestamp, cur.from)
-    val newTo = min(cur.e.toTimestamp, cur.to)
-    val newPath = cur.path + cur.e
-    return Triple(newFrom, newTo, newPath)
+fun extend(e: ElemP, index: Int, path: List<ElemP>, from: Long, to: Long, match: List<Step?>, timeaware: Boolean): ExploredPath? {
+    val label = match.getOrNull(index)?.label
+    if (label != null && label != e.label.name || !e.timeOverlap(timeaware, from, to)) return null
+    return ExploredPath(e, index, path + e, max(from, e.fromTimestamp), min(to, e.toTimestamp))
 }
 
 fun isCompletePath(path: List<Elem>, match: List<Step?>): Boolean =
     path.size == match.size
 
-/** EXPAND from the node of [cur]: its edges (with the direction of the next step) */
-fun expand(cur: ExploredPath, path: List<ElemP>, from: Long, to: Long, match: List<Step?>): List<ExploredPath> {
+/**
+ * EXPAND from the node of the tuple [cur] (restricted to [[from], [to]] by the selection): its edges in the direction of
+ * the next step, extending the tuple if they satisfy the condition of the expansion (see extend)
+ */
+fun expand(cur: ExploredPath, from: Long, to: Long, match: List<Step?>, timeaware: Boolean): List<ExploredPath> {
     val nextStep = match.getOrNull(cur.index + 1)
     return (cur.e as N)
-        .getEdges(
-            direction = if (nextStep is EdgeStep) nextStep.direction else Direction.OUT,
-            includeHasTs = true
-        )
-        .map { ExploredPath(it, cur.index + 1, path, from, to) }
+        .getEdges(direction = if (nextStep is EdgeStep) nextStep.direction else Direction.OUT, includeHasTs = true)
+        .mapNotNull { extend(it, cur.index + 1, cur.path, from, to, match, timeaware) }
 }
 
 /**
@@ -517,7 +516,7 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
     val acc = mutableListOf<Path>()
     val mapAlias = buildAliasMap(match)
     val mapWhere = buildWhereMap(where, mapAlias)
-    val queue = initializeQueue(g, from, to)
+    val queue = initializeQueue(g, from, to, match, timeaware)
 
     // The executor is shared by the queries with the same number of threads (see searchPool): not closed
     runBlocking {
@@ -529,17 +528,15 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                     break
                 }
             } else {
-                val curElem = queue.poll()// .removeAt(0)
-                if (!matchesStep(curElem, match, timeaware)) continue
-                val (newFrom, newTo, curPath) = updatePath(curElem)
+                val curElem = queue.poll() // a valid tuple (see extend)
                 // SELECTION after the PROJECTION of the properties it reads (σ ∘ π, see select): one tuple per slice of time
                 // in which the filters of the step and the comparison of the where clause hold, none if they never hold
                 val skip = if (mode == QueryMode.OPTIMIZED) by.filter { it.operator != null }.map { it.property } else emptyList()
-                for ((tFrom, tTo) in select(curElem, curPath, newFrom, newTo, match, mapAlias, mapWhere, timeaware, skip)) {
-                    if (isCompletePath(curPath, match)) { // the tuple has completed the query plan
-                        acc.add(Path(curPath, tFrom, tTo))
+                for ((tFrom, tTo) in select(curElem, match, mapAlias, mapWhere, timeaware, skip)) {
+                    if (isCompletePath(curElem.path, match)) { // the tuple has completed the query plan
+                        acc.add(Path(curElem.path, tFrom, tTo))
                     } else if (curElem.index % 2 == 0) { // EXPAND from a node: its edges
-                        queue.addAll(expand(curElem, curPath, tFrom, tTo, match))
+                        queue.addAll(expand(curElem, tFrom, tTo, match, timeaware))
                     } else if (curElem.e.label.name == HasTS) { // EXPAND towards TS: QueryTS (NAIVE) or QueryTSOpt (OPTIMIZED)
                         val r = curElem.e as R
                         launched++
@@ -547,8 +544,8 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                             try {
                                 val ts = g.getTSM().getTS(r.toN, mode = TsMode.READ)
                                 queue.addAll(
-                                    if (mode == QueryMode.NAIVE) queryTS(ts, curElem.index, curPath, tFrom, tTo)
-                                    else queryTSOpt(ts, curElem.index, curPath, tFrom, tTo, match, by, mapAlias, mapWhere)
+                                    if (mode == QueryMode.NAIVE) queryTS(ts, curElem.index, curElem.path, tFrom, tTo, match, timeaware)
+                                    else queryTSOpt(ts, curElem.index, curElem.path, tFrom, tTo, match, by, mapAlias, mapWhere, timeaware)
                                 )
                             } catch (e: Exception) {
                                 failure.compareAndSet(null, e)
@@ -557,11 +554,11 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                                 wait.release()
                             }
                         }
-                    } else { // EXPAND from an edge: its node
+                    } else { // EXPAND from an edge: its node, if it satisfies the condition of the expansion
                         val r = curElem.e as R
                         val step = match[curElem.index]
                         val n = g.getNode(if (step is EdgeStep && step.direction === Direction.IN) r.fromN else r.toN)
-                        queue.add(ExploredPath(n, curElem.index + 1, curPath, tFrom, tTo))
+                        extend(n, curElem.index + 1, curElem.path, tFrom, tTo, match, timeaware)?.let { queue.add(it) }
                     }
                 }
             }
