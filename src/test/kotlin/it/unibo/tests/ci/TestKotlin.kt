@@ -988,13 +988,12 @@ class TestKotlin {
     }
 
     /**
-     * Join without its own pool: the tuples of the first pattern are joined by the calling thread, and the searches of
-     * the second pattern run on the shared pool (Query.searchPool), so a join with 2 threads uses at most 2 workers and
-     * creates no other pool. The join comparison binds each version of a.code: a (code 1 in [0, 5), 2 in [5, 10)) joins
-     * b1 (code 1) with the event at 1 and b2 (code 2) with the event at 6, not the events outside these versions
+     * Join (non-recursive): the join comparison binds each version of a.code, a (code 1 in [0, 5), 2 in [5, 10)) joins
+     * b1 (code 1) with the event at 1 and b2 (code 2) with the event at 6, not the events outside these versions. The
+     * tuples are joined concurrently on the pool of the join, closed at the end of the query (no thread left behind)
      */
     @Test
-    fun `join uses the shared thread pool`() {
+    fun `join binds each version of the compared property`() {
         val g = MemoryGraph()
         g.tsm = MemoryTSM(g)
         g.clear()
@@ -1016,8 +1015,8 @@ class TestKotlin {
             // The events valid with the version of a.code equal to the code of their b: 1 (b1) and 6 (b2)
             assertEquals(listOf(7.0), query(g, join, where = where, by = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM)), threads = 2, mode = mode))
         }
-        assertEquals(before, pools()) // no pool other than the shared one
-        assertTrue(Thread.getAllStackTraces().keys.count { it.name.startsWith("stgraph-search-2-") } <= 2)
+        Thread.sleep(100) // the threads of the closed pools terminate
+        assertTrue(pools() <= before, "the pool of the join is closed") // <=: threads of earlier tests may still be terminating
         g.close()
     }
 

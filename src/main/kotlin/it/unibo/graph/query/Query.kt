@@ -2,7 +2,9 @@ package it.unibo.graph.query
 
 import it.unibo.graph.interfaces.*
 import it.unibo.graph.utils.*
+import kotlinx.coroutines.async
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.*
@@ -52,9 +54,9 @@ fun query(g: Graph, match: List<List<Step?>>, where: List<Compare> = emptyList()
 /**
  * JOIN of the tuples of the first pattern ([pattern1]) with the second pattern (match[1]). For each tuple, the join
  * comparisons ([joinFilters]) become filters of the steps of the second pattern, one plan per version of the compared
- * properties of the tuple (with the validity of the version), and the second pattern is searched once per plan. No
- * recursion and no pool of its own: the tuples are joined one at a time by the calling thread, and the searches use the
- * shared pool (see searchPool), so a query never uses more than [threads] threads.
+ * properties of the tuple (with the validity of the version), and the second pattern is searched once per plan. The
+ * tuples are joined concurrently on a pool of [threads] threads of the join: not the shared one of search (see
+ * searchPool), since each task blocks while waiting for its searches.
  * E.g., a.name = b.name with a.name = x in [0, 2) and y in [2, 4): search b with name = x in [0, 2) and name = y in [2, 4)
  */
 private fun join(
@@ -72,7 +74,8 @@ private fun join(
     mode: QueryMode
 ): List<Path> {
     val where2 = (where - joinFilters).filter { mapAliases[it.first]!!.first == 1 } // the comparisons within the second pattern
-    return pattern1.flatMap { row ->
+    // One task per tuple: the plans and the searches of the second pattern for that tuple
+    fun joinRow(row: Path): List<Path> {
         // The plans of the second pattern for this tuple: (steps, from, to), one per combination of versions of the compared properties
         val plans = match[1].fold(listOf(Triple(listOf<Step?>(), max(from, row.from), min(to, row.to)))) { plans, step ->
             val c = joinFilters.filter { step != null && (step.alias == it.first || step.alias == it.second) }
@@ -93,11 +96,15 @@ private fun join(
         val grouping = if (mode == QueryMode.OPTIMIZED && by.any { it.operator != null && mapAliases[it.n]?.first == 1 })
             by.filter { it.operator == null && it.property != null && mapAliases[it.n]?.first == 0 }.map { row.result[mapAliases[it.n]!!.second] to it.property!! }
             else emptyList()
-        plans.flatMap { (steps, f, t) ->
+        return plans.flatMap { (steps, f, t) ->
             temporalPropertyJoin(grouping, f, t).flatMap { (slice, _) ->
                 search(g, steps, where2, slice.first, slice.second, timeaware, by = by, threads, mode).map { Path(row.result + it.result, it.from, it.to) }
             }
         }
+    }
+    // Closed at the end: its threads are not daemons, they would stay alive after the query
+    return Executors.newFixedThreadPool(threads).asCoroutineDispatcher().use { executor ->
+        runBlocking { pattern1.map { row -> async(executor) { joinRow(row) } }.awaitAll().flatten() }
     }
 }
 
@@ -398,8 +405,8 @@ private val searchPools = java.util.concurrent.ConcurrentHashMap<Int, kotlinx.co
 /**
  * The pool of [search] with [threads] threads, created at the first query with that number of threads. Bounded: at most
  * [threads] threads, whatever the number of queries (also concurrent ones, which share it). The threads are daemons:
- * the pool is never closed, and it does not keep the JVM alive. Also the joins use it, through search: join itself
- * runs on the calling thread (its tasks would wait for search, and could take all the threads of a shared pool)
+ * the pool is never closed, and it does not keep the JVM alive. Only search uses it: join keeps its own pool, since its
+ * tasks run search and wait for it (with a shared fixed pool, they could take all its threads and wait forever)
  */
 fun searchPool(threads: Int): kotlinx.coroutines.ExecutorCoroutineDispatcher = searchPools.computeIfAbsent(threads) { n ->
     val count = AtomicInteger() // the threads are named stgraph-search-<threads>-<i> (e.g., to find them in a thread dump)
