@@ -406,6 +406,27 @@ fun groupingIntervals(path: List<ElemP>, by: List<Aggregate>, mapAlias: Map<Stri
     return bounds.toList().zipWithNext()
 }
 
+/**
+ * The maximal sub-intervals of [[from], [to]) in which the properties of [e] pass the filters of [step] (except those on
+ * the properties in [skip], as matchesStep). A property valid in a single instant t is valid in [t, t + 1)
+ */
+fun filterIntervals(e: ElemP, step: Step?, from: Long, to: Long, timeaware: Boolean, skip: List<String?>): List<Pair<Long, Long>> {
+    val filters = step?.properties.orEmpty().filter { it.property !in skip }
+    if (!timeaware || from >= to || filters.isEmpty()) return listOf(from to to)
+    fun end(p: P) = if (p.fromTimestamp == p.toTimestamp && p.toTimestamp < Long.MAX_VALUE) p.toTimestamp + 1 else p.toTimestamp
+    val passing = filters.map { f ->
+        e.getProps(name = f.property, fromTimestamp = from, toTimestamp = to, timeaware = timeaware).filter { p ->
+            runCatching { if (f.attrFirst) Compare.apply(p.value, f.value, f.operator) else Compare.apply(f.value, p.value, f.operator) }.getOrDefault(false)
+        }
+    }
+    val bounds = (passing.flatten().flatMap { listOf(it.fromTimestamp, end(it)) }.filter { it in from..to } + from + to).toSortedSet().toList()
+    val valid = mutableListOf<Pair<Long, Long>>()
+    bounds.zipWithNext().filter { (f, t) -> passing.all { ps -> ps.any { it.fromTimestamp <= f && t <= end(it) } } }.forEach { (f, t) ->
+        if (valid.isNotEmpty() && valid.last().second == f) valid[valid.size - 1] = valid.last().first to t else valid += f to t // merge consecutive intervals
+    }
+    return valid
+}
+
 fun pushDownBy(index: Int, by: List<Aggregate>, match: List<Step?>): List<Aggregate> {
     val cby = mutableListOf<Aggregate>()
     if (index + 1 < match.size) { // If there is another step
@@ -539,6 +560,12 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                 val curElem = queue.poll()// .removeAt(0)
                 if (!matchesStep(curElem, match, by, timeaware, mapAlias, mapWhere, mode)) continue
                 val (newFrom, newTo, curPath) = updatePath(curElem)
+                // Continuous semantics: the path holds only while the filtered properties pass the filters, one path per interval
+                val valid = filterIntervals(curElem.e, match[curElem.index], newFrom, newTo, timeaware, if (mode == QueryMode.OPTIMIZED) by.filter { it.operator != null }.map { it.property } else emptyList())
+                if (valid != listOf(newFrom to newTo)) {
+                    valid.forEach { (f, t) -> queue.add(ExploredPath(curElem.e, curElem.index, curElem.path, f, t)) }
+                    continue
+                }
                 if (isCompletePath(curPath, match)) {
                     acc.add(Path(curPath, newFrom, newTo))
                 } else {

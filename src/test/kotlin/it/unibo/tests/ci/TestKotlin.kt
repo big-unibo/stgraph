@@ -648,6 +648,35 @@ class TestKotlin {
     }
 
     @Test
+    fun `filter on temporal properties`() {
+        matrix { g ->
+            QueryMode.entries.forEach { mode ->
+                g.clear()
+                g.getTSM().clear()
+                val b1 = g.addNode(B, isTs = true)
+                val ts1 = g.getTSM().addTS(b1.id)
+                (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
+                val a1 = g.addNode(A)
+                g.addProperty(a1.id, "type", "ML", PropType.STRING, from = 0, to = 2) // events 0, 1
+                g.addProperty(a1.id, "type", "HV", PropType.STRING, from = 2, to = 4) // events 2, 3
+                g.addProperty(a1.id, "type", "ML", PropType.STRING, from = 4, to = Long.MAX_VALUE) // events 4, 5
+                g.addEdge(Foo, a1.id, b1.id)
+
+                // MATCH (a:A {type: "ML"})-->(b:B)-->(c:C) RETURN sum(c.value): only the events while a is ML
+                val ml = listOf(Step(A, alias = "a", properties = listOf(Filter("type", Operators.EQ, "ML"))), null, Step(B), null, Step(C, alias = "c"))
+                val sum = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+                assertEquals(listOf(14.0), query(g, ml, by = sum, mode = mode))
+                assertEquals(4, query(g, ml, mode = mode).size)
+                assertEquals(listOf(listOf("ML", 14.0)), query(g, ml, by = listOf(Aggregate("a", property = "type")) + sum, mode = mode))
+                // ... WHERE timestamp in [1, 5)
+                assertEquals(listOf(7.0), query(g, ml, by = sum, from = 1, to = 5, mode = mode))
+                // Without the filter, all the events
+                assertEquals(listOf(21.0), query(g, listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c")), by = sum, mode = mode))
+            }
+        }
+    }
+
+    @Test
     fun `push down internal group by`() {
         matrix { g ->
             QueryMode.entries.forEach { mode ->
