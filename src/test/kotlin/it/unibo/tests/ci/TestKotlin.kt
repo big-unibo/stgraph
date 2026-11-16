@@ -618,6 +618,36 @@ class TestKotlin {
     }
 
     @Test
+    fun `push down aggregation on several intervals`() {
+        matrix { g ->
+            g.clear()
+            g.getTSM().clear()
+            val b1 = g.addNode(B, isTs = true)
+            val ts1 = g.getTSM().addTS(b1.id)
+            (0L..5L).forEach { ts1.add(C, timestamp = it, value = it + 1, location = POINT_IN_T0) } // values 1..6 at 0..5
+            val sum = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM))
+            fun partials(nodes: List<N>) = nodes.map { n ->
+                val v = n.getProps(name = VALUE).first().value
+                n.fromTimestamp to ((if (v is Pair<*, *>) v.first else v) as Number).toDouble()
+            }.toSet()
+            val intervals = listOf(Long.MIN_VALUE to 2L, 2L to 4L, 4L to Long.MAX_VALUE)
+            // One partial aggregate per interval, with the first timestamp of its events
+            assertEquals(setOf(0L to 3.0, 2L to 7.0, 4L to 11.0), partials(ts1.getValues(sum, emptyList(), true, intervals)))
+            // The same as one request per interval
+            val one = intervals.flatMap { (from, to) ->
+                ts1.getValues(sum, listOfNotNull(
+                    if (from != Long.MIN_VALUE) Filter(FROM_TIMESTAMP, Operators.GTE, from) else null,
+                    if (to != Long.MAX_VALUE) Filter(TO_TIMESTAMP, Operators.LT, to) else null
+                ), true)
+            }
+            assertEquals(partials(one), partials(ts1.getValues(sum, emptyList(), true, intervals)))
+            // Consecutive intervals restricted by a time filter, with an empty interval; a single interval
+            assertEquals(setOf(1L to 2.0, 2L to 12.0), partials(ts1.getValues(sum, listOf(Filter(TO_TIMESTAMP, Operators.LT, 5L)), true, listOf(1L to 2L, 2L to 2L, 2L to Long.MAX_VALUE))))
+            assertEquals(setOf(0L to 21.0), partials(ts1.getValues(sum, emptyList(), true, listOf(Long.MIN_VALUE to Long.MAX_VALUE))))
+        }
+    }
+
+    @Test
     fun `push down internal group by`() {
         matrix { g ->
             QueryMode.entries.forEach { mode ->

@@ -16,6 +16,9 @@ import java.io.BufferedWriter
 import java.io.PrintWriter
 
 @OptIn(DelicateCoroutinesApi::class)
+/** The interval of the partial aggregates of a request on several intervals (see AsterixDBTS.getValues) */
+private const val BUCKET = "stgraphBucket"
+
 class AsterixDBTS(
     override val g: Graph,
     val id: Long,
@@ -50,7 +53,18 @@ class AsterixDBTS(
         }
     }
 
-    override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean): List<N> {
+    override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean): List<N> = select(by, filters, isGroupBy, emptyList())
+
+    /** An aggregation on several [intervals] in one request: the events are also grouped by interval (CASE on the timestamp) */
+    override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, intervals: List<Pair<Long, Long>>): List<N> =
+        if (by.isEmpty() || intervals.size <= 1) super.getValues(by, filters, isGroupBy, intervals)
+        else select(by, filters + listOfNotNull(
+            intervals.first().first.takeIf { it != Long.MIN_VALUE }?.let { Filter(FROM_TIMESTAMP, Operators.GTE, it) },
+            intervals.last().second.takeIf { it != Long.MAX_VALUE }?.let { Filter(TO_TIMESTAMP, Operators.LT, it) }
+        ), isGroupBy, intervals.dropLast(1).map { it.second })
+
+    /** [buckets]: the upper bounds of the intervals but the last, whose events are aggregated separately */
+    private fun select(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, buckets: List<Long>): List<N> {
         var selectQuery: String
 
         val filters: List<Pair<String, Filter>> = (filters + Filter(TSID, Operators.EQ, id))
@@ -84,7 +98,8 @@ class AsterixDBTS(
 
         selectQuery =  "USE $dataverse;"
         if (by.isNotEmpty()) {
-            selectQuery +=  "SELECT ${(groupby + aggregators).joinToString(",")} FROM $dataset ${applyFilters(filters.map { it.second })} GROUP BY ${groupby.joinToString(","){ removeAlias(it).replace(".$VALUE", "") }}"
+            val bucket = if (buckets.isEmpty()) "" else ", CASE ${buckets.mapIndexed { i, b -> "WHEN $ID < $b THEN $i" }.joinToString(" ")} ELSE ${buckets.size} END AS $BUCKET"
+            selectQuery +=  "SELECT ${(groupby + aggregators + listOfNotNull(BUCKET.takeIf { buckets.isNotEmpty() })).joinToString(",")} FROM $dataset ${applyFilters(filters.map { it.second })} GROUP BY ${groupby.joinToString(","){ removeAlias(it).replace(".$VALUE", "") }}$bucket"
         } else {
             selectQuery += "SELECT * FROM $dataset ${applyFilters(filters.map { it.second })}"
             if (isGroupBy) {
@@ -108,6 +123,7 @@ class AsterixDBTS(
                             it.put(TYPE, PropType.NULL.ordinal)
                         })
                         json.remove(COUNT)
+                        json.remove(BUCKET)
                         jsonToNode(tsId = id, g = g, node = json)
                     }
             }

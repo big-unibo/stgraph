@@ -566,13 +566,13 @@ fun search(g: Graph, match: List<Step?>, where: List<Compare> = emptyList(), fro
                                     // One pushed-down aggregation per sub-interval in which the grouping properties of the path do not change
                                     val intervals = if (pushDownBy.isEmpty()) listOf(newFrom to newTo) else groupingIntervals(curPath, by, mapAlias, newFrom, newTo)
                                     val ts = g.getTSM().getTS(r.toN, mode = TsMode.READ)
-                                    intervals.forEach { (f, t) ->
-                                        val filters = if (f == newFrom && t == newTo) pushDownFilter else pushDownFilters(curElem.index, curPath, f, t, match, mapAlias, mapWhere)
-                                        val res = ts
-                                            .getValues(pushDownBy, filters, isGroupBy) // push down the filters from the next step
-                                            .map { ExploredPath(it, curElem.index + 1, curPath, f, t) }
-                                        queue.addAll(res)
-                                    }
+                                    val res = (if (intervals.size == 1) ts.getValues(pushDownBy, pushDownFilter, isGroupBy) else ts.getValues(pushDownBy, pushDownFilter, isGroupBy, intervals)) // push down the filters from the next step
+                                        .map { n ->
+                                            // ... each partial aggregate with the sub-interval of its events
+                                            val (f, t) = if (intervals.size == 1) newFrom to newTo else intervals.first { n.fromTimestamp >= it.first && n.fromTimestamp < it.second }
+                                            ExploredPath(n, curElem.index + 1, curPath, f, t)
+                                        }
+                                    queue.addAll(res)
                                 } catch (e: Exception) {
                                     failure.compareAndSet(null, e)
                                 } finally {

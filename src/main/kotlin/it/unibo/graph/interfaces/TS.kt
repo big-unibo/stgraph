@@ -2,6 +2,9 @@ package it.unibo.graph.interfaces
 
 import it.unibo.graph.query.Aggregate
 import it.unibo.graph.query.Filter
+import it.unibo.graph.query.Operators
+import it.unibo.graph.utils.FROM_TIMESTAMP
+import it.unibo.graph.utils.TO_TIMESTAMP
 import it.unibo.graph.utils.DUMMY_ID
 import it.unibo.graph.utils.LOCATION
 import it.unibo.graph.utils.NODE
@@ -42,5 +45,18 @@ interface TS : Serializable {
 
     fun add(n: N, isUpdate: Boolean, flush: Boolean = true): N
     fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean = false): List<N>
+
+    /**
+     * As [getValues], separately on each of the consecutive and sorted [intervals] of time: each result lies in one
+     * interval. By default, one request per interval
+     */
+    fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, intervals: List<Pair<Long, Long>>): List<N> =
+        intervals.flatMap { (from, to) ->
+            val time = listOfNotNull(
+                if (from != Long.MIN_VALUE) Filter(FROM_TIMESTAMP, Operators.GTE, from) else null,
+                if (to != Long.MAX_VALUE) Filter(TO_TIMESTAMP, Operators.LT, to) else null
+            )
+            getValues(by, filters + time, isGroupBy)
+        }
     fun get(id: Long): N
 }
