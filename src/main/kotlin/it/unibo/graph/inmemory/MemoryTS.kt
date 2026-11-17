@@ -23,7 +23,7 @@ class MemoryTS(override val g: Graph, val id: Long) : TS {
             filters.all { filter -> // For each node, check that it satisfies *all* filters
                 node.getProps(name = filter.property).any { property -> // Get all properties of the node with the name specified by the filter
                     // TODO: we assume the properties in a event to be only instantaneous
-                    assert(property.fromTimestamp == property.toTimestamp) { property.toString() } // Ensure the property is instantaneous (start and end timestamps are equal)
+                    assert(property.toTimestamp == property.fromTimestamp + 1) { property.toString() } // Ensure the property is instantaneous ([t, t + 1))
                     if (filter.attrFirst) { // Depending on the direction of the comparison, apply the operator
                         Compare.apply(property.value, filter.value, filter.operator) // Compare property value to filter value
                     } else {
@@ -43,7 +43,7 @@ class MemoryTS(override val g: Graph, val id: Long) : TS {
             val f = filteredValues
                 .map { n -> Path(listOf(n), n.fromTimestamp, n.toTimestamp) }  // Convert each node into a Path object containing the node and its time range
                 .flatMap { row -> // Expand temporal properties
-                    replaceTemporalProperties(row, emptyList(), by, mapOf(by.first().n to Pair(0, 0)), from = row.from, to = row.to, timeaware = true)
+                    project(row, emptyList(), by, mapOf(by.first().n to Pair(0, 0)), from = row.from, to = row.to, timeaware = true)
                 }
                 .groupBy { row -> // Group the paths by the values of the group-by attribute
                     groupby.map {

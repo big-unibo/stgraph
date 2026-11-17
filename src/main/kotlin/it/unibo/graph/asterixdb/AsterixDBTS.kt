@@ -72,8 +72,8 @@ class AsterixDBTS(
         if (by.isEmpty() || intervals.size <= 1) super.getValues(by, filters, isGroupBy, intervals)
         else select(by, filters + listOfNotNull( // the events of all the intervals: from the start of the first one...
             intervals.first().first.takeIf { it != Long.MIN_VALUE }?.let { Filter(FROM_TIMESTAMP, Operators.GTE, it) },
-            intervals.last().let { (f, t) -> t.takeIf { it != Long.MAX_VALUE }?.let { Filter(TO_TIMESTAMP, if (f == t) Operators.LTE else Operators.LT, it) } } // ... to the end of the last one
-        ), isGroupBy, intervals.dropLast(1).map { (f, t) -> if (f == t) t + 1 else t }) // ... split at the end of each interval but the last (after t for the instant [t, t])
+            intervals.last().second.takeIf { it != Long.MAX_VALUE }?.let { Filter(FROM_TIMESTAMP, Operators.LT, it) } // ... to the end of the last one
+        ), isGroupBy, intervals.dropLast(1).map { it.second }) // ... split at the end of each interval but the last
 
     /** [buckets]: the upper bounds of the intervals but the last, whose events are aggregated separately */
     private fun select(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, buckets: List<Long>): List<N> {
@@ -106,7 +106,7 @@ class AsterixDBTS(
                 .map { f -> "${(if (f.operator == AggOperator.AVG) AggOperator.SUM else f.operator)?.name}(${ replacePropertyName(f.property!!, alias = false) }) as ${f.property}" }.toMutableSet()
         if (!groupby.any { it == LABEL })
             aggregators += listOf("MIN($LABEL) as $LABEL")
-        aggregators += listOf("COUNT(*) as $COUNT", "MIN($ID) as $FROM_TIMESTAMP", "MAX($ID) as $TO_TIMESTAMP")
+        aggregators += listOf("COUNT(*) as $COUNT", "MIN($ID) as $FROM_TIMESTAMP", "MAX($ID) + 1 as $TO_TIMESTAMP")
 
         selectQuery =  "USE $dataverse;"
         if (by.isNotEmpty()) {

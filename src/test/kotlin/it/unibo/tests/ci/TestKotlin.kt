@@ -592,7 +592,7 @@ class TestKotlin {
 
     /**
      * Grouping by a property whose value changes over time, while the aggregation is pushed down to the time series
-     * (Query.groupingIntervals). Each event must be grouped with the value of the property at its own timestamp, in both
+     * (the projection before the expansion towards TS, Query.queryTSOpt). Each event must be grouped with the value of the property at its own timestamp, in both
      * modes. Before the fix, OPTIMIZED aggregated the whole series once, [0, 5], and that partial aggregate overlapped
      * the three versions of a.name, so the whole sum (21) was counted once per version.
      */
@@ -611,7 +611,7 @@ class TestKotlin {
                 g.addProperty(a1.id, "name", "x", PropType.STRING, from = 4, to = 4) // event 4 (event 5: no name)
                 g.addEdge(Foo, a1.id, b1.id)
 
-                // Versions of a.name: x [0,2), gap [2,3), y [3,4), x at the instant 4 ([4, 4], as in timeOverlap), gap after 4
+                // Versions of a.name: x [0,2), gap [2,3), y [3,4), x at the instant 4 ([4, 5)), gap after 4
                 // MATCH (a:A)-->(b:B)-->(c:C) RETURN a.name, sum/avg(c.value): each event with the name of its time
                 val pattern = listOf(Step(A, alias = "a"), null, Step(B), null, Step(C, alias = "c"))
                 val sum = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.SUM))
@@ -686,13 +686,13 @@ class TestKotlin {
             val one = intervals.flatMap { (from, to) ->
                 ts1.getValues(sum, listOfNotNull(
                     if (from != Long.MIN_VALUE) Filter(FROM_TIMESTAMP, Operators.GTE, from) else null,
-                    if (to != Long.MAX_VALUE) Filter(TO_TIMESTAMP, Operators.LT, to) else null
+                    if (to != Long.MAX_VALUE) Filter(FROM_TIMESTAMP, Operators.LT, to) else null
                 ), true)
             }
             assertEquals(partials(one), partials(ts1.getValues(sum, emptyList(), true, intervals)))
-            // Consecutive intervals restricted by a time filter (events 1..4 only), with the instant [2, 2] (as in timeOverlap,
-            // the event at 2 only): [1, 2) -> 2, [2, 2] -> 3, [3, +inf) -> 4 + 5
-            assertEquals(setOf(1L to 2.0, 2L to 3.0, 3L to 9.0), partials(ts1.getValues(sum, listOf(Filter(TO_TIMESTAMP, Operators.LT, 5L)), true, listOf(1L to 2L, 2L to 2L, 3L to Long.MAX_VALUE))))
+            // Consecutive intervals restricted by a time filter (events 1..4 only), with the instant 2 ([2, 3)): [1, 2) -> 2,
+            // [2, 3) -> 3, [3, +inf) -> 4 + 5
+            assertEquals(setOf(1L to 2.0, 2L to 3.0, 3L to 9.0), partials(ts1.getValues(sum, listOf(Filter(FROM_TIMESTAMP, Operators.LT, 5L)), true, listOf(1L to 2L, 2L to 3L, 3L to Long.MAX_VALUE))))
             // An interval without events returns nothing: [6, 10)
             assertEquals(setOf(0L to 21.0), partials(ts1.getValues(sum, emptyList(), true, listOf(Long.MIN_VALUE to 6L, 6L to 10L))))
             // A single interval: the usual request, the sum of all the events
@@ -701,7 +701,7 @@ class TestKotlin {
     }
 
     /**
-     * Filtering on a property whose value changes over time (Query.filterIntervals): the path holds only while the
+     * Filtering on a property whose value changes over time (the selection after the projection, Query.select): the path holds only while the
      * property passes the filter, so only the events of those periods are returned, in both modes. Before the fix, a
      * node passed if any of its versions passed, and all the events (sum 21) were returned.
      */
@@ -743,10 +743,9 @@ class TestKotlin {
      * JVM alive). Before, each search created a pool of new threads and closed it at the end.
      */
     /**
-     * Instants as in timeOverlap: an element valid in [t, t] is valid in the instant t only, so a path through it reaches
-     * the events at t only, in both modes. Pushed down, the instant must become ts = t (ts >= t AND ts <= t), not the
-     * empty range ts >= t AND ts < t (Query.pushDownFilters); a filter passing only in an instant limits the path to
-     * [t, t] (Query.filterIntervals)
+     * Instants: an element valid in [t, t] is valid in [t, t + 1) (see halfOpen), the instant t only, so a path through it
+     * reaches the events at t only, in both modes (pushed down: t <= ts < t + 1, Query.getPredicates); a filter passing
+     * only in an instant limits the path to it (Query.select)
      */
     @Test
     fun `instants as in timeOverlap`() {
@@ -788,12 +787,13 @@ class TestKotlin {
     }
 
     /**
-     * Compare.intervals: the maximal intervals in which a comparison between the temporal properties of two elements
-     * holds, pairing their versions valid at the same time (as the temporal property join). Consecutive intervals are
-     * merged, instants ([t, t], as in timeOverlap) are kept apart
+     * The temporal property join (Query.temporalPropertyJoin, Algorithm 1 on any number of properties): the slices of time
+     * in which every property keeps the same value, with their versions (null where a property has none), consecutive
+     * slices with the same values merged (an instant [t, t] is [t, t + 1), see halfOpen). The projection, the selection, the
+     * expansion towards TS with pushdown, and the join use it
      */
     @Test
-    fun `compare temporal properties of two elements`() {
+    fun `project temporal properties`() {
         val g = MemoryGraph()
         g.tsm = MemoryTSM(g)
         g.clear()
@@ -801,18 +801,29 @@ class TestKotlin {
         val b = g.addNode(B)
         g.addProperty(a.id, "v", 1L, PropType.LONG, from = 0, to = 2)
         g.addProperty(a.id, "v", 2L, PropType.LONG, from = 2, to = 4)
-        g.addProperty(a.id, "v", 5L, PropType.LONG, from = 4, to = 6)
-        g.addProperty(a.id, "v", 1L, PropType.LONG, from = 6, to = 6) // the instant 6
-        g.addProperty(a.id, "v", 5L, PropType.LONG, from = 7, to = Long.MAX_VALUE)
-        g.addProperty(b.id, "v", 3L, PropType.LONG) // always 3
+        g.addProperty(a.id, "v", 1L, PropType.LONG, from = 6, to = 6) // the instant 6 ([6, 7)), after a gap [4, 6)
+        g.addProperty(b.id, "v", 3L, PropType.LONG, from = 1) // always 3 from 1
+        fun slices(from: Long, to: Long) = temporalPropertyJoin(listOf(a to "v", b to "v"), from, to).map { (slice, v) -> slice to v.map { it?.value } }
+        assertEquals(
+            listOf(
+                (Long.MIN_VALUE to 0L) to listOf(null, null), (0L to 1L) to listOf(1L, null), (1L to 2L) to listOf(1L, 3L),
+                (2L to 4L) to listOf(2L, 3L), (4L to 6L) to listOf(null, 3L), (6L to 7L) to listOf(1L, 3L), (7L to Long.MAX_VALUE) to listOf(null, 3L)
+            ),
+            slices(Long.MIN_VALUE, Long.MAX_VALUE)
+        )
+        // Within the tuple: [1, 3)
+        assertEquals(listOf((1L to 2L) to listOf(1L, 3L), (2L to 3L) to listOf(2L, 3L)), slices(1, 3))
+        // In the instant 6: one version each
+        assertEquals(listOf((6L to 7L) to listOf(1L, 3L)), slices(6, 7))
+        // Without properties: the whole tuple
+        assertEquals(listOf((0L to 5L) to emptyList<P?>()), temporalPropertyJoin(emptyList(), 0, 5))
+        // Consecutive versions with the same value: one slice (1 in [0, 2) and 1 in [2, 4) -> [0, 4))
+        val c = g.addNode(C)
+        g.addProperty(c.id, "v", 1L, PropType.LONG, from = 0, to = 2)
+        g.addProperty(c.id, "v", 1L, PropType.LONG, from = 2, to = 4)
+        assertEquals(listOf(0L to 4L), temporalPropertyJoin(listOf(c to "v"), 0, 4).map { it.first })
+        // isOk: some pair of versions valid at the same time satisfies a.v < b.v (1 < 3 in [1, 2)), within [4, 6) none
         val lt = Compare("a", "b", "v", Operators.LT)
-        // a.v < b.v: 1 and 2 in [0, 4) (merged), 1 in the instant 6
-        assertEquals(listOf(0L to 4L, 6L to 6L), lt.intervals(a, b, Long.MIN_VALUE, Long.MAX_VALUE))
-        // ... within [1, 5): [1, 4) only
-        assertEquals(listOf(1L to 4L), lt.intervals(a, b, 1, 5))
-        // a.v > b.v: 5 in [4, 6) and [7, MAX) (not consecutive: the instant 6 is between them)
-        assertEquals(listOf(4L to 6L, 7L to Long.MAX_VALUE), Compare("a", "b", "v", Operators.GT).intervals(a, b, Long.MIN_VALUE, Long.MAX_VALUE))
-        // isOk: at some time of the interval (before, only the last version added, 5, was compared: 5 < 3 never held)
         assertTrue(lt.isOk(a, b, timeaware = true))
         assertTrue(!lt.isOk(a, b, timeaware = true, from = 4, to = 6))
         assertTrue(lt.isOk(a, b, timeaware = false))
@@ -820,7 +831,7 @@ class TestKotlin {
     }
 
     /**
-     * A where clause comparing the temporal properties of two elements of the same path (Compare.isOk, whereIntervals):
+     * A where clause comparing the temporal properties of two elements of the same path (Compare.isOk, Query.select):
      * the path holds only while the comparison holds, so only the events of those periods are returned, in both modes
      */
     @Test
@@ -854,9 +865,9 @@ class TestKotlin {
     }
 
     /**
-     * replaceTemporalProperties with more than two grouping properties of the same element: one row per combination of
+     * The projection (Query.project) on more than two grouping properties of the same element: one row per combination of
      * the versions valid at the same time (null where a property has none), instead of failing with "Too many props".
-     * The look-ahead on the next element uses timeOverlap (half-open intervals and instants), as the rest of the query
+     * The tuple is valid only with the versions valid with its other elements (e.g., an edge valid from 2)
      */
     @Test
     fun `group by several temporal properties of the same element`() {
@@ -891,7 +902,7 @@ class TestKotlin {
 
     /**
      * A comparison between the events and a temporal property of the path, pushed down to the time series
-     * (compareIntervals, pushDownFilters): one path per version of the property, each with its own value, in both modes.
+     * (Query.queryTSOpt, getPredicates): one path per version of the property, each with its own value, in both modes.
      * Before, OPTIMIZED failed with "Too many property values in the same temporal range"
      */
     @Test
@@ -919,9 +930,9 @@ class TestKotlin {
 
     /**
      * Unsupported queries fail instead of returning wrong results: two comparisons between the elements of the same pattern
-     * (only the last one was applied), two join comparisons on the same step (only the first one was applied), and grouping
-     * by a property that changes in time of the first pattern of a join, with an aggregation of the second one pushed down
-     * (the partial aggregates would be grouped with every version). The last one works in NAIVE
+     * (only the last one was applied) and two join comparisons on the same step (only the first one was applied).
+     * Grouping by a property that changes in time of the first pattern of a join, with an aggregation of the second one
+     * pushed down, is supported: the property is projected before the join (one search of the second pattern per version)
      */
     @Test
     fun `unsupported queries fail`() {
@@ -948,8 +959,9 @@ class TestKotlin {
             val join = listOf(listOf(Step(A, alias = "a")), listOf(Step(B, alias = "b"), null, Step(C, alias = "c")))
             val where = listOf(Compare("a", "b", "code", Operators.EQ))
             val by = listOf(Aggregate("a", property = "name"), Aggregate("c", property = VALUE, operator = AggOperator.SUM))
-            kotlin.test.assertFailsWith<UnsupportedOperationException> { query(g, join, where = where, by = by, mode = QueryMode.OPTIMIZED) }
-            assertEquals(setOf(listOf("x", 6.0), listOf("y", 15.0)), query(g, join, where = where, by = by, mode = QueryMode.NAIVE).toSet())
+            QueryMode.entries.forEach { mode -> // x: events 0, 1, 2 (1 + 2 + 3), y: events 3, 4, 5 (4 + 5 + 6)
+                assertEquals(setOf(listOf("x", 6.0), listOf("y", 15.0)), query(g, join, where = where, by = by, mode = mode).toSet())
+            }
         }
     }
 
@@ -976,12 +988,67 @@ class TestKotlin {
     }
 
     /**
+     * Join (non-recursive): the join comparison binds each version of a.code, a (code 1 in [0, 5), 2 in [5, 10)) joins
+     * b1 (code 1) with the event at 1 and b2 (code 2) with the event at 6, not the events outside these versions. The
+     * tuples are joined concurrently on the pool of the join, closed at the end of the query (no thread left behind)
+     */
+    @Test
+    fun `join binds each version of the compared property`() {
+        val g = MemoryGraph()
+        g.tsm = MemoryTSM(g)
+        g.clear()
+        g.getTSM().clear()
+        val a = g.addNode(A)
+        g.addProperty(a.id, "code", 1L, PropType.LONG, from = 0, to = 5)
+        g.addProperty(a.id, "code", 2L, PropType.LONG, from = 5, to = 10)
+        listOf(1L, 2L).forEach { code ->
+            val b = g.addNode(B, isTs = true)
+            g.addProperty(b.id, "code", code, PropType.LONG)
+            val ts = g.getTSM().addTS(b.id)
+            listOf(1L, 6L).forEach { t -> ts.add(C, timestamp = t, value = t, location = POINT_IN_T0) } // events at 1 and 6
+        }
+        val join = listOf(listOf(Step(A, alias = "a")), listOf(Step(B, alias = "b"), null, Step(C, alias = "c")))
+        val where = listOf(Compare("a", "b", "code", Operators.EQ))
+        val pools = { Thread.getAllStackTraces().keys.count { it.name.startsWith("pool-") } } // the threads of an unnamed pool
+        val before = pools()
+        QueryMode.entries.forEach { mode ->
+            // The events valid with the version of a.code equal to the code of their b: 1 (b1) and 6 (b2)
+            assertEquals(listOf(7.0), query(g, join, where = where, by = listOf(Aggregate("c", property = VALUE, operator = AggOperator.SUM)), threads = 2, mode = mode))
+        }
+        Thread.sleep(100) // the threads of the closed pools terminate
+        assertTrue(pools() <= before, "the pool of the join is closed") // <=: threads of earlier tests may still be terminating
+        g.close()
+    }
+
+    /**
+     * aggregateNumbers on values and on partial aggregates as (value, count) pairs (e.g., AVG as (sum, count) from TS):
+     * a value counts as (value, 1). Partial aggregations return AVG and COUNT as pairs, final ones the result
+     */
+    @Test
+    fun `aggregate values and partial aggregates`() {
+        val values = listOf(1L, 2L, 6L, "null") // "null": no value (ignored)
+        assertEquals(9.0, aggregateNumbers(values, AggOperator.SUM, true))
+        assertEquals(3, aggregateNumbers(values, AggOperator.COUNT, true))
+        assertEquals(3.0, aggregateNumbers(values, AggOperator.AVG, true))
+        assertEquals(1.0, aggregateNumbers(values, AggOperator.MIN, true))
+        assertEquals(6.0, aggregateNumbers(values, AggOperator.MAX, true))
+        // Partial: (sum, count) for AVG and (count, count) for COUNT
+        assertEquals(9.0 to 3, aggregateNumbers(values, AggOperator.AVG, false))
+        assertEquals(3.0 to 3, aggregateNumbers(values, AggOperator.COUNT, false))
+        // Final aggregation of the partial aggregates: (9, 3) and (1, 1) -> AVG 10 / 4, COUNT 4
+        val partials = listOf(9.0 to 3, 1.0 to 1)
+        assertEquals(2.5, aggregateNumbers(partials, AggOperator.AVG, true))
+        assertEquals(4, aggregateNumbers(partials, AggOperator.COUNT, true))
+        assertEquals(10.0, aggregateNumbers(partials, AggOperator.SUM, true))
+    }
+
+    /**
      * Random graphs (property histories with gaps, edges with limited validity, events with two labels): the NAIVE and
      * OPTIMIZED modes must return the same result for grouping, filter, time window and join queries. NAIVE reads the
      * events one by one and resolves the properties at the timestamp of each event, so it is the reference: any pushdown
      * of OPTIMIZED (filters, time filters, aggregations, grouping intervals) must not change the result. The seeds are
      * fixed, so a failure is reproducible; the message names the seed and the query.
-     * Not covered: grouping by a temporal property of the other pattern of a join (not split).
+     * Not covered: grouping by a temporal property of the first pattern of a join (see unsupported queries fail).
      */
     @Test
     fun `naive and optimized agree on random graphs`() {

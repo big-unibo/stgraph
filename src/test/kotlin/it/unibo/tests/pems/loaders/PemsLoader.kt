@@ -3,6 +3,7 @@ package it.unibo.tests.pems.loaders
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import it.unibo.graph.asterixdb.dateToTimestamp
+import it.unibo.graph.interfaces.halfOpen
 import it.unibo.graph.utils.getTime
 import it.unibo.stats.Loader
 import it.unibo.stats.PostgresConfig
@@ -192,7 +193,8 @@ abstract class AbstractPemsLoader(val size: String, postgres: PostgresConfig = P
                 SELECT DISTINCT i.incident_id, i.time_from::text AS time_from, i.time_to::text AS time_to, i.fwy, i.dir, i.mile, i.district_id, i.severity, i.description
                 FROM $SCHEMA.incident i JOIN $SCHEMA.station_in_segment s USING (fwy, dir, mile)
                 WHERE s.station_id = ANY(?) ORDER BY i.incident_id""", ids) {
-                PemsIncident(it.getLong("incident_id"), it.time("time_from", Long.MIN_VALUE), it.time("time_to", Long.MAX_VALUE),
+                val from = it.time("time_from", Long.MIN_VALUE)
+                PemsIncident(it.getLong("incident_id"), from, halfOpen(from, it.time("time_to", Long.MAX_VALUE)), // zero minutes: [t, t + 1)
                     it.getString("fwy"), it.getString("dir"), it.int("mile"), it.int("district_id"), it.getString("severity"), it.getString("description"))
             })
         }
