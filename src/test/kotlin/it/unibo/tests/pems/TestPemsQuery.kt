@@ -21,6 +21,7 @@ import it.unibo.tests.systems.Neo4JQuery
 import it.unibo.tests.systems.PGAgeQuery
 import it.unibo.tests.systems.queryTemplate
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import org.neo4j.driver.Session
 import java.sql.Connection
 
@@ -76,6 +77,27 @@ class PemsGraphixQuery(override val queryId: String, size: String) : GraphixQuer
 }
 
 class TestPemsQuery {
+    /**
+     * Expected cardinalities on xsmall, the dataset of the CI (datasets/original/pems/xsmall.dump): 1000 hourly events of
+     * lane 0 of station 3088051 (type ML, segment 50_W_37, a single version), from 2025-01-01, and 54 incidents on its
+     * segment, all without severity. The results:
+     * - Q1: (50_W_37, lane0_avg_occupancy, 3.27), (50_W_37, lane0_avg_speed, 69.57), (50_W_37, lane0_flow, 1204.31);
+     * - Q2: (50_W_37, lane0_flow, 1214.37), the only measure with values > 100;
+     * - Q3: (null, 69.17), on the 108 (event, incident) pairs in which the event falls in the incident;
+     * - Q4: (ML, 69.57), on the 333 lane0_avg_speed events.
+     */
+    private val expectedXSmall = mapOf("Q1" to 3, "Q2" to 1, "Q3" to 1, "Q4" to 1)
+
+    /** On xsmall, fails the test if [query] does not return the expected cardinality (any mode and number of threads) */
+    private fun checked(size: String, query: Querying): Querying =
+        if (size != "xsmall") query else object : Querying {
+            override val queryId = query.queryId
+            override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData =
+                query.runQuery(threads, queryMode).also {
+                    assertEquals(expectedXSmall.getValue(queryId), it.card, "Cardinality of $queryId on $size ($queryMode, $threads threads)")
+                }
+        }
+
     @Test
-    fun `query PeMS`() = pemsQueries.forEach { id -> TestConfig.runTest(dataset = "pems") { graph, _, _ -> PemsQuery(id, graph) } }
+    fun `query PeMS`() = pemsQueries.forEach { id -> TestConfig.runTest(dataset = "pems") { graph, size, _ -> checked(size, PemsQuery(id, graph)) } }
 }
