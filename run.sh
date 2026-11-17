@@ -12,6 +12,7 @@ else
 fi
 ./downloadDataset.sh smartbench xsmall.tar.gz
 ./downloadDataset.sh mimic x1692200.dump
+./downloadDataset.sh pems xsmall.dump
 docker compose up -d
 sleep 150
 ./gradlew
