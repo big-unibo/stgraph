@@ -8,16 +8,16 @@
 #   1. ./gradlew pemsCache --args="xsmall"   (on the whole PeMS: datasets.pems of test_config.yml)
 #   2. evaluation/pems_dump.sh [xsmall]      (needs psql and pg_dump, e.g., in the postgres:18 image)
 #   3. upload datasets/original/pems/xsmall.dump to https://big.csr.unibo.it/downloads/stgraph/pems/
-# The dump has only the schema pems_cleaned: the mimic-postgres of docker-compose.yaml restores it in the database of
-# MIMIC-IV (datasets/init-mimic-pg.sh).
-# Reads the PostgreSQL of PGHOST, PGPORT, PGUSER, PGPASSWORD (default: localhost, 5435, postgres, password), database
+# The dump has only the schema pems_cleaned: the mimic-postgres of docker-compose.yaml restores it in its database
+# pems, next to mimic-iv (datasets/init-mimic-pg.sh).
+# Reads the PostgreSQL of PGHOST, PGPORT, PGUSER, PGPASSWORD (default: localhost, 5434, postgres, password), database
 # PGDATABASE (default: pems), where it creates and then drops the scratch database pems_<size>. The tables are dumped
 # without constraints and indexes (pre-data and data only): the rows are a subset, the foreign keys may not hold.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SIZE="${1:-xsmall}"
-export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5435}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-password}"
+export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5434}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-password}"
 SOURCE="${PGDATABASE:-pems}"
 SCRATCH="pems_${SIZE}"
 S="pems_cleaned"

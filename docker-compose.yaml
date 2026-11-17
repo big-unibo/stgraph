@@ -51,7 +51,7 @@ services:
     ports:
       - "5434:5432"
     volumes:
-      # The dumps of MIMIC-IV and of PeMS (in its schema pems_cleaned), restored in the same database at the first start
+      # The dumps of MIMIC-IV and of PeMS, restored at the first start in the databases mimic-iv and pems
       - ./datasets/original/mimic:/dump/mimic:ro
       - ./datasets/original/pems:/dump/pems:ro
       - ./datasets:/docker-entrypoint-initdb.d:ro

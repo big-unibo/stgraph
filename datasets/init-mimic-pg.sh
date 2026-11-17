@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The dumps of the datasets in the same database, each in its schemas: one per folder of /dump (/dump/mimic, required;
-# /dump/pems, optional), the first custom-format dump found in it
+# The dumps of the datasets in the same PostgreSQL, one database each: the first custom-format dump of /dump/mimic
+# (required) in POSTGRES_DB (mimic-iv), the one of /dump/pems (optional) in the database pems
 DUMP_DIR="/dump"
-DATABASE="${POSTGRES_DB:-mimic-iv}"
 
 for DIR in "$DUMP_DIR"/mimic "$DUMP_DIR"/pems; do
+  if [[ "$DIR" == "$DUMP_DIR/mimic" ]]; then DATABASE="${POSTGRES_DB:-mimic-iv}"; else DATABASE="pems"; fi
   DUMP_FILE="$(
     find "$DIR" \
       -maxdepth 1 \
@@ -23,6 +23,8 @@ for DIR in "$DUMP_DIR"/mimic "$DUMP_DIR"/pems; do
   fi
 
   echo "Restoring ${DUMP_FILE} into database ${DATABASE}"
+  psql --username="$POSTGRES_USER" --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '${DATABASE}'" | grep -q 1 \
+    || psql --username="$POSTGRES_USER" --dbname=postgres -c "CREATE DATABASE \"${DATABASE}\""
 
   pg_restore \
     --username="$POSTGRES_USER" \
