@@ -8,6 +8,8 @@
 #   1. ./gradlew pemsCache --args="xsmall"   (on the whole PeMS: datasets.pems of test_config.yml)
 #   2. evaluation/pems_dump.sh [xsmall]      (needs psql and pg_dump, e.g., in the postgres:18 image)
 #   3. upload datasets/original/pems/xsmall.dump to https://big.csr.unibo.it/downloads/stgraph/pems/
+# The dump has only the schema pems_cleaned: the mimic-postgres of docker-compose.yaml restores it in the database of
+# MIMIC-IV (datasets/init-mimic-pg.sh).
 # Reads the PostgreSQL of PGHOST, PGPORT, PGUSER, PGPASSWORD (default: localhost, 5435, postgres, password), database
 # PGDATABASE (default: pems), where it creates and then drops the scratch database pems_<size>. The tables are dumped
 # without constraints and indexes (pre-data and data only): the rows are a subset, the foreign keys may not hold.
@@ -44,6 +46,6 @@ copy segment "SELECT * FROM $S.segment g WHERE EXISTS (SELECT 1 FROM $S.station_
 copy road_in_district "SELECT * FROM $S.road_in_district r WHERE EXISTS (SELECT 1 FROM $S.station_in_segment s WHERE s.fwy = r.fwy AND s.dir = r.dir AND $IN_STATIONS)"
 copy incident "SELECT * FROM $S.incident i WHERE EXISTS (SELECT 1 FROM $S.station_in_segment s WHERE s.fwy = i.fwy AND s.dir = i.dir AND s.mile = i.mile AND $IN_STATIONS)"
 
-pg_dump -Fc --no-owner --no-privileges -d "$SCRATCH" -f "$OUT"
+pg_dump -Fc --no-owner --no-privileges -d "$SCRATCH" -n "$S" -f "$OUT"
 psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE $SCRATCH"
 echo "Done: $OUT ($(du -h "$OUT" | cut -f1))"

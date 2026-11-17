@@ -51,26 +51,10 @@ services:
     ports:
       - "5434:5432"
     volumes:
-      - ./datasets/original/mimic:/dump:ro
+      # The dumps of MIMIC-IV and of PeMS (in its schema pems_cleaned), restored in the same database at the first start
+      - ./datasets/original/mimic:/dump/mimic:ro
+      - ./datasets/original/pems:/dump/pems:ro
       - ./datasets:/docker-entrypoint-initdb.d:ro
-
-  # The PostgreSQL of PeMS (datasets.pems), as mimic-postgres: restores the dump of datasets/original/pems (e.g., the
-  # xsmall.dump of the CI, see evaluation/pems_dump.sh) at its first start, with the same script
-  pems-postgres:
-    image: postgres:18
-    hostname: pems-postgres
-    container_name: pems-postgres
-    stop_grace_period: 5m
-    stop_signal: SIGINT
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: pems
-    ports:
-      - "5435:5432"
-    volumes:
-      - ./datasets/original/pems:/dump:ro
-      - ./datasets/init-mimic-pg.sh:/docker-entrypoint-initdb.d/init-pg.sh:ro
 
 volumes:
   asterixdb-data:

@@ -13,12 +13,13 @@ datasets:
     password: "password"
 
   # PeMS, hourly data (pems repository: schema pems_cleaned); sizes: measurements, xsmall 1K, small 1M, medium 10M,
-  # large 100M. Read once into datasets/original/pems/cache/<size> (./gradlew pemsCache), then from there
+  # large 100M. Read once into datasets/original/pems/cache/<size> (./gradlew pemsCache), then from there. By default,
+  # the mimic-postgres of docker-compose.yaml, where the dump of PeMS is restored in the schema pems_cleaned
   pems:
     sizes: [ "xsmall" ] # "small", "medium", "large"
     postgres_endpoint: "localhost"
-    port: 5435
-    database: "pems"
+    port: 5434
+    database: "mimic-iv"
     user: "postgres"
     password: "password"
 
