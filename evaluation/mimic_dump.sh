@@ -1,47 +1,52 @@
 #!/usr/bin/env bash
-# The reduced PostgreSQL dump of MIMIC-IV for the CI, as evaluation/pems_dump.sh for PeMS:
-# datasets/original/mimic/<size>.dump (default: x1692200), with only the rows that the ingestion of <size> reads, so
-# that mimicCache on the dump writes the same cache as on the whole MIMIC-IV:
-# - all the items (d_items);
-# - the events (chartevents_unique) of the time series (subject, item) of the cache.
-# Steps:
-#   1. ./gradlew mimicCache --args="x1692200"   (on the whole MIMIC-IV: datasets.mimic of test_config.yml, with the
-#      subjects of src/main/resources/mimic-iv_subjectids_tsids.csv, the short list in the CI, see run.sh)
-#   2. evaluation/mimic_dump.sh [x1692200]      (needs psql and pg_dump, e.g., in the postgres:18 image)
-#   3. upload datasets/original/mimic/x1692200.dump to https://big.csr.unibo.it/downloads/stgraph/mimic/
-# Reads the PostgreSQL of PGHOST, PGPORT, PGUSER, PGPASSWORD (default: localhost, 5434, postgres, password), database
-# PGDATABASE (default: mimic-iv), where it creates and then drops the scratch database mimic_<size>. The two tables are
-# dumped as plain tables (also if views in the source), without constraints and indexes, in the schema public.
+# The PostgreSQL dump of a size of MIMIC-IV, e.g., the x1692200 of the CI, from its local cache:
+#   1. ./gradlew mimicCache --args="<size>": the cache (datasets/original/mimic/cache/<limit>), read from the PostgreSQL
+#      of datasets.mimic in test_config.yml, for the subjects of src/main/resources/mimic-iv_subjectids_tsids.csv (the
+#      short list in the CI, see run.sh); skipped if the cache exists;
+#   2. loads the cache into the local mimic-postgres (docker-compose.yaml): database mimic-iv, tables d_items and
+#      chartevents_unique (replaced), with the columns that AbstractMimicIVLoader reads, so that mimicCache on it writes
+#      the same cache;
+#   3. dumps the two tables into datasets/original/mimic/<size>.dump (restored by mimic-postgres, see
+#      datasets/init-mimic-pg.sh).
+# Then upload the dump to https://big.csr.unibo.it/downloads/stgraph/mimic/.
+# The values go back as the loader reads them: the values rounded as in the cache, timestamps in UTC.
+#
+# Usage (from anywhere): evaluation/mimic_dump.sh [size] (default: x1692200)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SIZE="${1:-x1692200}"
-export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5434}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-password}"
-SOURCE="${PGDATABASE:-mimic-iv}"
-SCRATCH="mimic_${SIZE}"
-CACHE="datasets/original/mimic/cache/${SIZE#x}/events.csv.gz" # the cache is named by the limit (see mimicLimit)
+CACHE="datasets/original/mimic/cache/${SIZE#x}" # named by the limit (see mimicLimit)
 OUT="datasets/original/mimic/$SIZE.dump"
+CONTAINER="mimic-postgres"
+DB="mimic-iv"
+CSV="WITH (FORMAT csv, QUOTE E'\\x01', DELIMITER E'\\x02')" # a JSON line per row, as it is
 
-[[ -f "$CACHE" ]] || { echo "No $CACHE: run ./gradlew mimicCache --args=\"$SIZE\" first"; exit 1; }
-# The time series of the cache, as ('subject', 'item') values
-PAIRS="$(gzip -dc "$CACHE" | cut -d, -f1,2 | sort -u | sed "s/\([0-9]*\),\([0-9]*\)/('\1','\2')/" | paste -sd, -)"
-[[ -n "$PAIRS" ]] || { echo "No events in $CACHE"; exit 1; }
-echo "Time series of $SIZE: $(echo "$PAIRS" | tr -cd '(' | wc -c)"
+# 1. The cache
+./gradlew mimicCache --args="$SIZE"
 
-psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH\"" -c "CREATE DATABASE \"$SCRATCH\""
+# 2. The cache into the local PostgreSQL
+docker compose up -d "$CONTAINER"
+until docker exec "$CONTAINER" pg_isready -U postgres -q; do sleep 2; done
+sql() { docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
+sql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1 || sql -d postgres -c "CREATE DATABASE \"$DB\""
+sql -d "$DB" <<'SQL'
+DROP TABLE IF EXISTS public.d_items, public.chartevents_unique CASCADE;
+DROP SCHEMA IF EXISTS stage CASCADE;
+CREATE TABLE public.d_items (itemid int, label text, abbreviation text, category text, unitname text);
+CREATE TABLE public.chartevents_unique (subject_id int, itemid int, charttime timestamp, valuenum double precision);
+CREATE SCHEMA stage;
+CREATE TABLE stage.items (j jsonb);
+CREATE TABLE stage.events (subject_id int, itemid int, ts bigint, value bigint);
+SQL
+gzip -dc "$CACHE/items.jsonl.gz" | sql -d "$DB" -c "\\copy stage.items FROM STDIN $CSV"
+gzip -dc "$CACHE/events.csv.gz" | sql -d "$DB" -c "\\copy stage.events FROM STDIN WITH (FORMAT csv)"
+sql -d "$DB" <<'SQL'
+INSERT INTO public.d_items SELECT (j->>'itemid')::int, j->>'label', j->>'abbreviation', j->>'category', j->>'unitname' FROM stage.items;
+INSERT INTO public.chartevents_unique SELECT subject_id, itemid, to_timestamp(ts / 1000.0) AT TIME ZONE 'UTC', value FROM stage.events;
+DROP SCHEMA stage CASCADE;
+SQL
 
-# Creates the table [1] in the scratch database with the columns of [1] in the source, then copies the rows of [2].
-# The commands go through stdin (no limit on the length of the list of time series)
-copy() {
-  echo "Copying $1"
-  local columns
-  columns="$(psql -v ON_ERROR_STOP=1 -At -d "$SOURCE" -c "SELECT string_agg(quote_ident(attname) || ' ' || format_type(atttypid, atttypmod), ', ' ORDER BY attnum) FROM pg_attribute WHERE attrelid = '$1'::regclass AND attnum > 0 AND NOT attisdropped")"
-  psql -v ON_ERROR_STOP=1 -q -d "$SCRATCH" -c "CREATE TABLE public.$1 ($columns)"
-  printf '%s\n' "\\copy ($2) TO STDOUT" | psql -v ON_ERROR_STOP=1 -q -d "$SOURCE" | psql -v ON_ERROR_STOP=1 -q -d "$SCRATCH" -c "\\copy public.$1 FROM STDIN"
-}
-copy d_items "SELECT * FROM d_items"
-copy chartevents_unique "SELECT * FROM chartevents_unique WHERE (subject_id::text, itemid::text) IN (VALUES $PAIRS)" # as text: whatever the type of the ids
-
-pg_dump -Fc --no-owner --no-privileges -d "$SCRATCH" -t public.d_items -t public.chartevents_unique -f "$OUT"
-psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE \"$SCRATCH\""
+# 3. The dump, outside the container
+docker exec "$CONTAINER" pg_dump -U postgres -Fc --no-owner --no-privileges -d "$DB" -t public.d_items -t public.chartevents_unique > "$OUT"
 echo "Done: $OUT ($(du -h "$OUT" | cut -f1))"

@@ -1,55 +1,80 @@
 #!/usr/bin/env bash
-# The reduced PostgreSQL dump of PeMS for the CI, as x1692200.dump for MIMIC-IV: datasets/original/pems/<size>.dump
-# (default: xsmall), with only the rows of pems_cleaned that the ingestion of <size> reads, so that pemsCache on the dump
-# writes the same cache as on the whole PeMS:
-# - all the stations (the loader samples them, see AbstractPemsLoader.prepareCache);
-# - the hourly measurements, the versions, the segments, the roads and the incidents of the stations of the cache.
-# The rows are copied from the whole PeMS (SOURCE) into the local PostgreSQL (TARGET, the database pems of the
-# mimic-postgres of docker-compose.yaml, replaced), and the dump is made from there: the cache alone is not enough, its
-# values are already converted (rounded, occupancy x 100, timestamps in ms). TARGET then holds the same data as in the
-# CI, e.g., to check that pemsCache on it writes the same cache.
-# Steps:
-#   1. ./gradlew pemsCache --args="xsmall"   (on the whole PeMS: datasets.pems of test_config.yml)
-#   2. docker compose up -d mimic-postgres
-#   3. SOURCE=postgresql://postgres:<password>@<host>:5434/pems evaluation/pems_dump.sh [xsmall]
-#      (needs psql and pg_dump 18, e.g., in the postgres:18 image)
-#   4. upload datasets/original/pems/xsmall.dump to https://big.csr.unibo.it/downloads/stgraph/pems/
-# The dump has only the schema pems_cleaned: the mimic-postgres of docker-compose.yaml restores it in its database
-# pems, next to mimic-iv (datasets/init-mimic-pg.sh). SOURCE and TARGET are connection URIs (TARGET, default:
-# postgresql://postgres:password@localhost:5434/pems). The tables are copied without constraints and indexes (pre-data
-# and data only): the rows are a subset, the foreign keys may not hold.
+# The PostgreSQL dump of a size of PeMS, e.g., the xsmall of the CI, from its local cache:
+#   1. ./gradlew pemsCache --args="<size>": the cache (datasets/original/pems/cache/<size>), read from the PostgreSQL of
+#      datasets.pems in test_config.yml (skipped if the cache exists);
+#   2. loads the cache into the local mimic-postgres (docker-compose.yaml): database pems, schema pems_cleaned (replaced),
+#      with the columns that AbstractPemsLoader reads, so that pemsCache on it writes the same cache;
+#   3. dumps the schema into datasets/original/pems/<size>.dump (restored by mimic-postgres, see datasets/init-mimic-pg.sh).
+# Then upload the dump to https://big.csr.unibo.it/downloads/stgraph/pems/.
+# The values go back as the loader reads them: occupancy / 100 (+ 0.5 / 100, so that occupancy * 100 truncated is the
+# cached value), timestamps in UTC, Long.MIN_VALUE and Long.MAX_VALUE as null, the incidents of zero minutes ([t, t + 1)
+# in the cache) with time_to = time_from. Only the stations of the cache: on the dump, the loader picks them all.
+#
+# Usage (from anywhere): evaluation/pems_dump.sh [size] (default: xsmall)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SIZE="${1:-xsmall}"
-SOURCE="${SOURCE:?the whole PeMS, e.g., SOURCE=postgresql://postgres:<password>@<host>:5434/pems}"
-TARGET="${TARGET:-postgresql://postgres:password@localhost:5434/pems}"
-TARGET_DB="${TARGET##*/}"
-S="pems_cleaned"
-CACHE="datasets/original/pems/cache/$SIZE/stations.jsonl.gz"
+CACHE="datasets/original/pems/cache/$SIZE"
 OUT="datasets/original/pems/$SIZE.dump"
+CONTAINER="mimic-postgres"
+DB="pems"
+CSV="WITH (FORMAT csv, QUOTE E'\\x01', DELIMITER E'\\x02')" # a JSON line per row, as it is
 
-[[ -f "$CACHE" ]] || { echo "No $CACHE: run ./gradlew pemsCache --args=\"$SIZE\" first"; exit 1; }
-IDS="$(gzip -dc "$CACHE" | grep -o '"stationId":[0-9]*' | cut -d: -f2 | paste -sd, -)"
-[[ -n "$IDS" ]] || { echo "No stations in $CACHE"; exit 1; }
-echo "Stations of $SIZE: $IDS"
+# 1. The cache
+./gradlew pemsCache --args="$SIZE"
 
-# The local database, replaced: the schema and its tables, without constraints and indexes
-psql -v ON_ERROR_STOP=1 -d "${TARGET%/*}/postgres" -c "DROP DATABASE IF EXISTS \"$TARGET_DB\"" -c "CREATE DATABASE \"$TARGET_DB\""
-pg_dump -d "$SOURCE" -n "$S" --section=pre-data --no-owner --no-privileges | psql -q -v ON_ERROR_STOP=1 -d "$TARGET"
+# 2. The cache into the local PostgreSQL
+docker compose up -d "$CONTAINER"
+until docker exec "$CONTAINER" pg_isready -U postgres -q; do sleep 2; done
+sql() { docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
+sql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1 || sql -d postgres -c "CREATE DATABASE $DB"
+sql -d "$DB" <<'SQL'
+DROP SCHEMA IF EXISTS pems_cleaned CASCADE;
+DROP SCHEMA IF EXISTS stage CASCADE;
+CREATE SCHEMA pems_cleaned;
+CREATE TABLE pems_cleaned.station (station_id int, district_id int);
+CREATE TABLE pems_cleaned.measurement (station_id int, lane int, ts timestamp, resolution_min int, flow double precision, occupancy double precision, speed double precision);
+CREATE TABLE pems_cleaned.station_in_segment (station_id int, valid_from timestamp, valid_to timestamp, fwy text, dir text, mile int, abs_pm double precision, latitude double precision, longitude double precision, type text, lanes int, name text);
+CREATE TABLE pems_cleaned.segment (fwy text, dir text, mile int, from_pm double precision, to_pm double precision);
+CREATE TABLE pems_cleaned.road_in_district (district_id int, fwy text, dir text);
+CREATE TABLE pems_cleaned.incident (incident_id bigint, time_from timestamp, time_to timestamp, fwy text, dir text, mile int, district_id int, severity text, description text);
+CREATE SCHEMA stage;
+CREATE TABLE stage.events (station int, lane int, measure int, ts bigint, value bigint);
+CREATE TABLE stage.stations (j jsonb);
+CREATE TABLE stage.versions (j jsonb);
+CREATE TABLE stage.segments (j jsonb);
+CREATE TABLE stage.roads (j jsonb);
+CREATE TABLE stage.incidents (j jsonb);
+-- A timestamp in ms as the loader reads it back (UTC; the bounds as null)
+CREATE FUNCTION stage.ts(ms bigint) RETURNS timestamp LANGUAGE sql AS
+  $$ SELECT CASE WHEN ms IN (-9223372036854775808, 9223372036854775807) THEN NULL ELSE to_timestamp(ms / 1000.0) AT TIME ZONE 'UTC' END $$;
+SQL
+gzip -dc "$CACHE/events.csv.gz" | sql -d "$DB" -c "\\copy stage.events FROM STDIN WITH (FORMAT csv)"
+for f in stations versions segments roads incidents; do
+  gzip -dc "$CACHE/$f.jsonl.gz" | sql -d "$DB" -c "\\copy stage.$f FROM STDIN $CSV"
+done
+sql -d "$DB" <<'SQL'
+INSERT INTO pems_cleaned.station SELECT (j->>'stationId')::int, (j->>'districtId')::int FROM stage.stations;
+-- One row per station, lane and hour: flow, occupancy, speed (measures 0, 1, 2 of the cache; null if not cached)
+INSERT INTO pems_cleaned.measurement
+  SELECT station, lane, stage.ts(ts), 60, max(value) FILTER (WHERE measure = 0),
+         (max(value) FILTER (WHERE measure = 1) + 0.5) / 100.0, max(value) FILTER (WHERE measure = 2)
+  FROM stage.events GROUP BY station, lane, ts;
+INSERT INTO pems_cleaned.station_in_segment
+  SELECT (j->>'stationId')::int, stage.ts((j->>'from')::bigint), stage.ts((j->>'to')::bigint), j->>'fwy', j->>'dir', (j->>'mile')::int,
+         (j->>'absPm')::float8, (j->>'latitude')::float8, (j->>'longitude')::float8, j->>'type', (j->>'lanes')::int, j->>'name'
+  FROM stage.versions;
+INSERT INTO pems_cleaned.segment SELECT j->>'fwy', j->>'dir', (j->>'mile')::int, (j->>'fromPm')::float8, (j->>'toPm')::float8 FROM stage.segments;
+INSERT INTO pems_cleaned.road_in_district SELECT (j->>'districtId')::int, j->>'fwy', j->>'dir' FROM stage.roads;
+INSERT INTO pems_cleaned.incident
+  SELECT (j->>'incidentId')::bigint, stage.ts((j->>'from')::bigint),
+         stage.ts(CASE WHEN (j->>'to')::bigint = (j->>'from')::bigint + 1 THEN (j->>'from')::bigint ELSE (j->>'to')::bigint END),
+         j->>'fwy', j->>'dir', (j->>'mile')::int, (j->>'districtId')::int, j->>'severity', j->>'description'
+  FROM stage.incidents;
+DROP SCHEMA stage CASCADE;
+SQL
 
-# Copies the rows of [2] (a query on the whole PeMS) into the table [1] of the local database
-copy() {
-  echo "Copying $1"
-  psql -v ON_ERROR_STOP=1 -d "$SOURCE" -c "\\copy ($2) TO STDOUT" | psql -v ON_ERROR_STOP=1 -d "$TARGET" -c "\\copy $S.$1 FROM STDIN"
-}
-IN_STATIONS="s.station_id IN ($IDS)"
-copy station "SELECT * FROM $S.station"
-copy measurement "SELECT * FROM $S.measurement WHERE station_id IN ($IDS) AND resolution_min = 60"
-copy station_in_segment "SELECT * FROM $S.station_in_segment s WHERE $IN_STATIONS"
-copy segment "SELECT * FROM $S.segment g WHERE EXISTS (SELECT 1 FROM $S.station_in_segment s WHERE s.fwy = g.fwy AND s.dir = g.dir AND s.mile = g.mile AND $IN_STATIONS)"
-copy road_in_district "SELECT * FROM $S.road_in_district r WHERE EXISTS (SELECT 1 FROM $S.station_in_segment s WHERE s.fwy = r.fwy AND s.dir = r.dir AND $IN_STATIONS)"
-copy incident "SELECT * FROM $S.incident i WHERE EXISTS (SELECT 1 FROM $S.station_in_segment s WHERE s.fwy = i.fwy AND s.dir = i.dir AND s.mile = i.mile AND $IN_STATIONS)"
-
-pg_dump -Fc --no-owner --no-privileges -d "$TARGET" -n "$S" -f "$OUT"
+# 3. The dump, outside the container
+docker exec "$CONTAINER" pg_dump -U postgres -Fc --no-owner --no-privileges -d "$DB" -n pems_cleaned > "$OUT"
 echo "Done: $OUT ($(du -h "$OUT" | cut -f1))"
