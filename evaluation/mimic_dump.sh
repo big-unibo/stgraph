@@ -3,8 +3,9 @@
 #   1. ./gradlew mimicCache --args="<size>": the cache (datasets/original/mimic/cache/<limit>), read from the PostgreSQL
 #      of datasets.mimic in test_config.yml, for the subjects of src/main/resources/mimic-iv_subjectids_tsids.csv (the
 #      short list in the CI, see run.sh); skipped if the cache exists;
-#   2. loads the cache into the local mimic-postgres (docker-compose.yaml): database mimic-iv, tables d_items and
-#      chartevents_unique (replaced), with the columns that AbstractMimicIVLoader reads, so that mimicCache on it writes
+#   2. loads the cache into a temporary PostgreSQL container (postgres:18, removed at the end; not
+#      mimic-postgres, which needs the dumps to start): database mimic-iv, tables d_items and
+#      chartevents_unique, with the columns that AbstractMimicIVLoader reads, so that mimicCache on it writes
 #      the same cache;
 #   3. dumps the two tables into datasets/original/mimic/<size>.dump (restored by mimic-postgres, see
 #      datasets/init-mimic-pg.sh).
@@ -18,7 +19,7 @@ cd "$(dirname "$0")/.."
 SIZE="${1:-x1692200}"
 CACHE="datasets/original/mimic/cache/${SIZE#x}" # named by the limit (see mimicLimit)
 OUT="datasets/original/mimic/$SIZE.dump"
-CONTAINER="mimic-postgres"
+CONTAINER="stgraph-dump-mimic"
 DB="mimic-iv"
 CSV="WITH (FORMAT csv, QUOTE E'\\x01', DELIMITER E'\\x02')" # a JSON line per row, as it is
 
@@ -26,8 +27,11 @@ CSV="WITH (FORMAT csv, QUOTE E'\\x01', DELIMITER E'\\x02')" # a JSON line per ro
 ./gradlew mimicCache --args="$SIZE"
 
 # 2. The cache into the local PostgreSQL
-docker compose up -d "$CONTAINER"
-until docker exec "$CONTAINER" pg_isready -U postgres -q; do sleep 2; done
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+docker run -d --rm --name "$CONTAINER" -e POSTGRES_PASSWORD=password postgres:18 >/dev/null
+trap 'docker stop "$CONTAINER" >/dev/null 2>&1 || true' EXIT
+# Ready once it accepts TCP connections: only after its initialization
+until docker exec "$CONTAINER" psql -U postgres -h 127.0.0.1 -tAc "SELECT 1" >/dev/null 2>&1; do sleep 2; done
 sql() { docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
 sql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1 || sql -d postgres -c "CREATE DATABASE \"$DB\""
 sql -d "$DB" <<'SQL'

@@ -2,7 +2,8 @@
 # The PostgreSQL dump of a size of PeMS, e.g., the xsmall of the CI, from its local cache:
 #   1. ./gradlew pemsCache --args="<size>": the cache (datasets/original/pems/cache/<size>), read from the PostgreSQL of
 #      datasets.pems in test_config.yml (skipped if the cache exists);
-#   2. loads the cache into the local mimic-postgres (docker-compose.yaml): database pems, schema pems_cleaned (replaced),
+#   2. loads the cache into a temporary PostgreSQL container (postgres:18, removed at the end; not
+#      mimic-postgres, which needs the dumps to start): database pems, schema pems_cleaned,
 #      with the columns that AbstractPemsLoader reads, so that pemsCache on it writes the same cache;
 #   3. dumps the schema into datasets/original/pems/<size>.dump (restored by mimic-postgres, see datasets/init-mimic-pg.sh).
 # Then upload the dump to https://big.csr.unibo.it/downloads/stgraph/pems/.
@@ -17,7 +18,7 @@ cd "$(dirname "$0")/.."
 SIZE="${1:-xsmall}"
 CACHE="datasets/original/pems/cache/$SIZE"
 OUT="datasets/original/pems/$SIZE.dump"
-CONTAINER="mimic-postgres"
+CONTAINER="stgraph-dump-pems"
 DB="pems"
 CSV="WITH (FORMAT csv, QUOTE E'\\x01', DELIMITER E'\\x02')" # a JSON line per row, as it is
 
@@ -25,8 +26,11 @@ CSV="WITH (FORMAT csv, QUOTE E'\\x01', DELIMITER E'\\x02')" # a JSON line per ro
 ./gradlew pemsCache --args="$SIZE"
 
 # 2. The cache into the local PostgreSQL
-docker compose up -d "$CONTAINER"
-until docker exec "$CONTAINER" pg_isready -U postgres -q; do sleep 2; done
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+docker run -d --rm --name "$CONTAINER" -e POSTGRES_PASSWORD=password postgres:18 >/dev/null
+trap 'docker stop "$CONTAINER" >/dev/null 2>&1 || true' EXIT
+# Ready once it accepts TCP connections: only after its initialization
+until docker exec "$CONTAINER" psql -U postgres -h 127.0.0.1 -tAc "SELECT 1" >/dev/null 2>&1; do sleep 2; done
 sql() { docker exec -i "$CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
 sql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1 || sql -d postgres -c "CREATE DATABASE $DB"
 sql -d "$DB" <<'SQL'

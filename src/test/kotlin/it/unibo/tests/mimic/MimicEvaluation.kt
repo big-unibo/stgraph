@@ -126,6 +126,11 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             check(evaluation.download) { "No dump in datasets/original/mimic: run ./downloadDataset.sh mimic $size.dump, or set download: true" }
             downloadDataset("mimic", "$size.dump")
         }
+        // The PostgreSQL restores the dump of PeMS too (datasets/init-mimic-pg.sh): the one of the CI, if missing
+        if (evaluation.deploy && File("datasets/original/pems").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
+            check(evaluation.download) { "No dump in datasets/original/pems: run ./downloadDataset.sh pems xsmall.dump, or set download: true" }
+            downloadDataset("pems", "xsmall.dump")
+        }
         // Three successful connections in a row, as PGAge: PostgreSQL restarts at the end of its initialization (the
         // restore of the dump, up to hours on the large dumps)
         deployed(evaluation.deploy, "docker-compose.yaml", "mimic-postgres", readyChecks = 3, readyTimeoutMs = 6 * 60 * 60 * 1000L, env = environment, ready = ::sourceReady) { block() }

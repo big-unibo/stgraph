@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # The dumps of the datasets in the same PostgreSQL, one database each: the first custom-format dump of /dump/mimic
-# (if any) in POSTGRES_DB (mimic-iv), the one of /dump/pems (if any) in the database pems
+# (required) in POSTGRES_DB (mimic-iv), the one of /dump/pems (required) in the database pems
 DUMP_DIR="/dump"
 
 for DIR in "$DUMP_DIR"/mimic "$DUMP_DIR"/pems; do
@@ -17,8 +17,8 @@ for DIR in "$DUMP_DIR"/mimic "$DUMP_DIR"/pems; do
   )"
 
   if [[ -z "$DUMP_FILE" ]]; then
-    echo "No PostgreSQL custom-format dump found in ${DIR}" # e.g., before evaluation/<dataset>_dump.sh creates it
-    continue
+    echo "No PostgreSQL custom-format dump found in ${DIR}" # downloaded by run.sh (and by MimicEvaluation)
+    exit 1
   fi
 
   echo "Restoring ${DUMP_FILE} into database ${DATABASE}"
