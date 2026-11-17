@@ -28,9 +28,9 @@ INGESTION_ITERATIONS = int(os.environ.get("INGESTION_ITERATIONS", "1"))
 QUERY_ITERATIONS = int(os.environ.get("QUERY_ITERATIONS", "1"))
 
 query_map = {
-    "Q1HyGraph": queries.q1,
-    "Q2HyGraph": queries.q2,
-    "Q3HyGraph": queries.q3,
+    "Q1": queries.q1,
+    "Q2": queries.q2,
+    "Q3": queries.q3,
 }
 
 

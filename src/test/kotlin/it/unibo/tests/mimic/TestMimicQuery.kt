@@ -75,22 +75,19 @@ class TestMimicQuery {
      * SmartBench), with {FILTER} replaced by [mimicFilter] and, for PGAge, {GRAPH} by the graph
      */
 
-    /** A query on the Neo4j loaded by MimicIVNeo4J, on an open [session] (runner of it.unibo.tests.systems) */
-    abstract class QNeo4J(session: Session) : Neo4JQuery(session) {
-        override val queryId = this::class.simpleName.toString()
-        override fun statement() = queryTemplate("mimic", "neo4j", queryId.removeSuffix("Neo4J"), mapOf("FILTER" to mimicFilter))
+    /** The query [queryId] (Q1, Q2, Q3) on the Neo4j loaded by MimicIVNeo4J, on an open [session] (runner of it.unibo.tests.systems) */
+    class QNeo4J(override val queryId: String, session: Session) : Neo4JQuery(session) {
+        override fun statement() = queryTemplate("mimic", "neo4j", queryId, mapOf("FILTER" to mimicFilter))
     }
 
-    /** A query on the PostgreSQL loaded by MimicIVPGAge, on an open [connection] (see pgAgeConnection) */
-    abstract class QPgAge(val graph: String, connection: Connection) : PGAgeQuery(connection) {
-        override val queryId = this::class.simpleName.toString()
-        override fun statement() = queryTemplate("mimic", "pgage", queryId.removeSuffix("PGAge"), mapOf("FILTER" to mimicFilter, "GRAPH" to graph))
+    /** The query [queryId] (Q1, Q2, Q3) on the PostgreSQL loaded by MimicIVPGAge, on an open [connection] (see pgAgeConnection) */
+    class QPgAge(override val queryId: String, val graph: String, connection: Connection) : PGAgeQuery(connection) {
+        override fun statement() = queryTemplate("mimic", "pgage", queryId, mapOf("FILTER" to mimicFilter, "GRAPH" to graph))
     }
 
-    /** A query on the graph created by MimicIVGraphix */
-    abstract class QGraphix(size: String) : GraphixQuery("mimic_graphix_$size") {
-        override val queryId = this::class.simpleName.toString()
-        override fun statement() = queryTemplate("mimic", "graphix", queryId.removeSuffix("Graphix"), mapOf("FILTER" to mimicFilter))
+    /** The query [queryId] (Q1, Q2, Q3) on the graph created by MimicIVGraphix */
+    class QGraphix(override val queryId: String, size: String) : GraphixQuery("mimic_graphix_$size") {
+        override fun statement() = queryTemplate("mimic", "graphix", queryId, mapOf("FILTER" to mimicFilter))
     }
 
     class Q1(val graph: Graph, pId: Long = Long.MIN_VALUE, c: Long = Long.MIN_VALUE) : Q() {
@@ -110,12 +107,6 @@ class TestMimicQuery {
             )
         }
     }
-
-    class Q1Neo4J(session: Session) : QNeo4J(session)
-
-    class Q1PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
-
-    class Q1Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `get measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
@@ -141,12 +132,6 @@ class TestMimicQuery {
         }
     }
 
-    class Q2Neo4J(session: Session) : QNeo4J(session)
-
-    class Q2PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
-
-    class Q2Graphix(size: String) : QGraphix(size)
-
     @Test
     fun `get average measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
         checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q2(graph))
@@ -169,12 +154,6 @@ class TestMimicQuery {
             )
         }
     }
-
-    class Q3Neo4J(session: Session) : QNeo4J(session)
-
-    class Q3PGAge(graph: String, connection: Connection) : QPgAge(graph, connection)
-
-    class Q3Graphix(size: String) : QGraphix(size)
 
     @Test
     fun `filter and group by measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
@@ -224,9 +203,9 @@ fun main() {
         neo4jDriver(neo4jUri, TestMimicQuery.NEO4J_USER, TestMimicQuery.NEO4J_PASSWORD).use { driver ->
             driver.session().use { session ->
                 listOf(
-                    TestMimicQuery.Q1Neo4J(session),
-                    TestMimicQuery.Q2Neo4J(session),
-                    TestMimicQuery.Q3Neo4J(session)
+                    TestMimicQuery.QNeo4J("Q1", session),
+                    TestMimicQuery.QNeo4J("Q2", session),
+                    TestMimicQuery.QNeo4J("Q3", session)
                 ).forEach { query ->
                     println(query.javaClass.toString())
                     runQuery(query, "neo4j", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
@@ -236,9 +215,9 @@ fun main() {
 
         pgAgeConnection(TestMimicQuery.PGAGE_URL, TestMimicQuery.PGAGE_USER, TestMimicQuery.PGAGE_PASSWORD).use { connection ->
             listOf(
-                TestMimicQuery.Q1PGAge("mimic_$size", connection),
-                TestMimicQuery.Q2PGAge("mimic_$size", connection),
-                TestMimicQuery.Q3PGAge("mimic_$size", connection),
+                TestMimicQuery.QPgAge("Q1", "mimic_$size", connection),
+                TestMimicQuery.QPgAge("Q2", "mimic_$size", connection),
+                TestMimicQuery.QPgAge("Q3", "mimic_$size", connection),
             ).forEach { query ->
                 println(query.javaClass.toString())
                 runQuery(query, "pgage", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)
@@ -246,9 +225,9 @@ fun main() {
         }
 
         listOf(
-            TestMimicQuery.Q1Graphix(size.toString()),
-            TestMimicQuery.Q2Graphix(size.toString()),
-            TestMimicQuery.Q3Graphix(size.toString()),
+            TestMimicQuery.QGraphix("Q1", size.toString()),
+            TestMimicQuery.QGraphix("Q2", size.toString()),
+            TestMimicQuery.QGraphix("Q3", size.toString()),
         ).forEach { query ->
             println(query.javaClass.toString())
             runQuery(query, "graphix", threads = 1, numMachines = 1, "mimic", size.toString(), mode = QueryMode.OPTIMIZED)

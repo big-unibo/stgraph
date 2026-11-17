@@ -91,12 +91,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
                     queries("neo4j", numMachines = 1, queryIds) { queryId, _, _, _ ->
-                        when (queryId) {
-                            "Q1" -> TestMimicQuery.Q1Neo4J(session)
-                            "Q2" -> TestMimicQuery.Q2Neo4J(session)
-                            "Q3" -> TestMimicQuery.Q3Neo4J(session)
-                            else -> error("Unknown query: $queryId")
-                        }
+                        if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QNeo4J(queryId, session) else error("Unknown query: $queryId")
                     }
                 }
             }
@@ -113,12 +108,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             val graph = MimicIVPGAge.graphName(limit)
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
                 queries("pgage", numMachines = 1, queryIds) { queryId, _, _, _ ->
-                    when (queryId) {
-                        "Q1" -> TestMimicQuery.Q1PGAge(graph, connection)
-                        "Q2" -> TestMimicQuery.Q2PGAge(graph, connection)
-                        "Q3" -> TestMimicQuery.Q3PGAge(graph, connection)
-                        else -> error("Unknown query: $queryId")
-                    }
+                    if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QPgAge(queryId, graph, connection) else error("Unknown query: $queryId")
                 }
             }
         }
@@ -222,12 +212,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", 29002) }) {
             repeat(evaluation.ingestionIterations) { ingest("graphix", it) { MimicIVGraphix(size, postgres = postgres) } }
             queries("graphix", numMachines = 1, queryIds) { queryId, _, _, _ ->
-                when (queryId) {
-                    "Q1" -> TestMimicQuery.Q1Graphix(name)
-                    "Q2" -> TestMimicQuery.Q2Graphix(name)
-                    "Q3" -> TestMimicQuery.Q3Graphix(name)
-                    else -> error("Unknown query: $queryId")
-                }
+                if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QGraphix(queryId, name) else error("Unknown query: $queryId")
             }
         }
     }
