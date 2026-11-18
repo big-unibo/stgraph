@@ -1,1 +1,0 @@
-MATCH (p)-->(t)-->(m) WHERE p.c > 25000 TT FROM 0 TO {TTTO_PARAM} RETURN labels(m), avg(m.value);

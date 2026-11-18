@@ -107,9 +107,6 @@ defaults:
   # Appended to the model of the results (e.g., 4CPU: stgraph_4CPU, neo4j_4CPU): the configuration the runs measure
   # (CPU, memory, partitions...), to tell its results apart; empty: the bare model
   label:
-  # AeonG with its own temporal model (recorded as aeong_updates): a node per time series, updated by every event, the
-  # history queried by transaction time; false: the graph of Neo4j, a node per event (recorded as aeong)
-  aeong_updates: false
 
 # Only the listed runs: the tests of STGraph (CI) run the ones with stgraph among the approaches, ./gradlew
 # evaluateSpecificRuns runs all of them. Each run sets approaches (stgraph, neo4j, pgage, graphix, aeong,

@@ -38,8 +38,9 @@ import java.sql.DriverManager
  * - hygraph: ingestion and queries inside its container (evaluation/architectures/hygraph), on the CSV files of the
  *   import of Neo4j (datasets/dump/neo4j/mimic/<limit>), written first by MimicIVNeo4J if missing (not timed);
  * - aeong: ingestion and queries inside its container (evaluation/architectures/aeong), on the Cypher dump
- *   (datasets/dump/aeong/mimic/<limit>, the graph of MimicIVNeo4J), written first by MimicIVAeonG if missing (not
- *   timed), with the queries of evaluation/architectures/aeong/queries/mimic (those of Neo4j).
+ *   (datasets/dump/aeong/mimic/<limit>: the graph of MimicIVNeo4J, a node per time series updated by its measurements),
+ *   written first by MimicIVAeonG if missing (not timed), with the queries of evaluation/architectures/aeong/queries/mimic
+ *   (those of Neo4j on the whole history, by transaction time).
  */
 class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
     DatasetEvaluation(config, evaluation, "mimic", size) {
@@ -161,23 +162,20 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
      * query_mimic.sh runs the query files as they are: without all of them, the container only runs the ingestion
      */
     private fun aeong() {
-        val updates = evaluation.aeongUpdates
-        val dump = MimicIVAeonG.dumpFile(limit, updates)
-        if (evaluation.ingestionIterations > 0 && !MimicIVAeonG.dumpReady(limit, updates)) {
-            progress("aeong | $dataset $size: writing the Cypher dump${if (updates) " (updates)" else ""}")
-            MimicIVAeonG(limit, postgres = postgres, updates = updates).loadData()
+        val dump = MimicIVAeonG.dumpFile(limit)
+        if (evaluation.ingestionIterations > 0 && !MimicIVAeonG.dumpReady(limit)) {
+            progress("aeong | $dataset $size: writing the Cypher dump")
+            MimicIVAeonG(limit, postgres = postgres).loadData()
         }
         val queryFiles = listOf("q0", "q1", "q2", "q3")
         val folder = dump.absoluteFile.parentFile.apply { mkdirs() }
-        // With updates, the queries on the whole history: transaction time up to the last statement of the dump
-        val queries = if (!updates) "./queries/mimic" else File(folder, "queries").apply { mkdirs() }.also { dir ->
-            val last = File(dump.path.removeSuffix(".cypher") + ".tt").readLines().first { it.startsWith("last=") }.substringAfter("=")
-            queryFiles.forEach { q ->
-                File(dir, "$q.txt").writeText(File("evaluation/architectures/aeong/queries/mimic-updates/$q.txt").readText().replace("{TTTO_PARAM}", last))
-            }
-        }.path
-        val env = mapOf("AEONG_QUERIES" to queries, "AEONG_DATASETS" to folder.path, "AEONG_MODEL" to if (updates) "updates" else "events")
-        selfContained("aeong", limit.toString(), queryFiles, env, singlePhase = true)
+        // The queries on the whole history: transaction time up to the last statement of the dump
+        val queries = File(folder, "queries").apply { mkdirs() }
+        val last = MimicIVAeonG.lastStatement(limit)
+        queryFiles.forEach { q ->
+            File(queries, "$q.txt").writeText(File("evaluation/architectures/aeong/queries/mimic/$q.txt").readText().replace("{TTTO_PARAM}", last))
+        }
+        selfContained("aeong", limit.toString(), queryFiles, mapOf("AEONG_QUERIES" to queries.path, "AEONG_DATASETS" to folder.path), singlePhase = true)
     }
 
     private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }

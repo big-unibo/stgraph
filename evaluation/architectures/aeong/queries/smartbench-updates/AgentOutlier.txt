@@ -1,1 +1,0 @@
-MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor)-[:hasTemperature]-(temp:Temperature) TT FROM {TTFROM_PARAM} TO {TTTO_PARAM} WITH device, environment, MAX(temp.temperature) AS maxValue RETURN device, environment, maxValue;

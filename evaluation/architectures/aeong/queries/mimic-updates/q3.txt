@@ -1,1 +1,0 @@
-MATCH (p)-->(t)-->(m) WHERE p.c > 25000 AND m.value > 100 TT FROM 0 TO {TTTO_PARAM} RETURN m.abbreviation, avg(m.value);

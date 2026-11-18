@@ -1,5 +1,5 @@
 MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor)-[:hasTemperature]-(temp:Temperature)
-WHERE temp.timestamp >= {TSTAMPFROM_PARAM} AND temp.timestamp < {TSTAMPTO_PARAM}
+TT FROM {TTFROM_PARAM} TO {TTTO_PARAM}
 WITH environment, temp,
      // The WKT line of the environment (e.g., LINESTRING(34 0 0, 63 20 0)) as a list of [x, y]
      [c IN split(replace(replace(environment.location, 'LINESTRING(', ''), ')', ''), ',') | [v IN split(trim(c), ' ') WHERE v <> '' | toFloat(v)][0..2]] AS line,

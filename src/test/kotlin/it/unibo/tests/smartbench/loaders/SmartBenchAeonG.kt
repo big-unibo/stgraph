@@ -12,24 +12,20 @@ import java.nio.file.Paths
 /**
  * Writes SmartBench as the Cypher dump that AeonG loads (datasets/dump/aeong/smartbench/<size>/<size>.cypher, one
  * statement per line, each one a transaction of AeonG), with the graph of SmartBenchNeo4J (its nodes, properties and
- * relationships), so that the queries are the same; the timestamps of the events are epoch milliseconds (the windows
- * of time_constraints.yaml). The events are added as a time series database receives them: series by series, in
- * batches of [batchSize] (a batch per statement, written when full and at the end of each series). The indexes on the
- * ids of the nodes the statements match come first. Writing the dump is not timed: AeonG times its load (see
- * SmartBenchEvaluation).
- * With [updates], the temporal model of AeonG (datasets/dump/aeong-updates/smartbench/<size>): a Temperature node per
- * sensor, created by its first event and updated (SET) by each next one, one statement (one transaction, one version)
- * per event, the events of all the series in the order of their timestamps (as AeonG would receive them), so that the
- * transaction time follows the time of the events. <size>.tt maps the time to the transaction time: for each bound of
- * the windows of time_constraints.yaml of the size, the first statement of an event at or after it (last=<n>: the
- * number of statements), see SmartBenchEvaluation.aeongQueries
+ * relationships) and the temporal model of AeonG: a Temperature node per sensor (with its sensor id), created by its
+ * first event and updated (SET of id, timestamp, temperature, location) by each next one, one statement (one
+ * transaction, one version) per event, the events of all the series in the order of their timestamps (epoch ms), as
+ * AeonG would receive them, so that the transaction time follows the time of the events. The indexes on the ids of the
+ * nodes the statements match come first. <size>.tt maps the time to the transaction time: for each bound of the windows
+ * of time_constraints.yaml of the size, the first statement of an event at or after it (last=<n>: the number of
+ * statements), see SmartBenchEvaluation.aeongQueries. Writing the dump is not timed: AeonG times its load.
  */
-class SmartBenchAeonG(private val size: String, private val batchSize: Int = 10, private val updates: Boolean = false) {
+class SmartBenchAeonG(private val size: String) {
     private val mapper = jacksonObjectMapper()
     private val jsonPath: Path = Paths.get("datasets/original/smartbench/$size").toAbsolutePath()
 
     fun writeDump() {
-        val dump = dumpFile(size, updates).apply { parentFile.mkdirs() }
+        val dump = dumpFile(size).apply { parentFile.mkdirs() }
         var statements = 0L
         val bounds = sortedMapOf<Long, Long>() // a bound of the windows -> the first statement of an event at or after it
         windowBounds(size).forEach { bounds[it] = -1 }
@@ -58,7 +54,7 @@ class SmartBenchAeonG(private val size: String, private val batchSize: Int = 10,
                 }
             }
             val series = Files.list(jsonPath.resolve("timeseries")).use { it.sorted().toList() }
-            if (updates) {
+            run {
                 out.println("CREATE INDEX ON :Temperature(sensor);")
                 val created = HashSet<String>()
                 mergedEvents(series) { sensor, event ->
@@ -73,37 +69,10 @@ class SmartBenchAeonG(private val size: String, private val batchSize: Int = 10,
                     }
                 }
             }
-            // The events, series by series, in batches
-            for (file in if (updates) emptyList() else series) {
-                var sensor: String? = null
-                val rows = smartBenchReader(file).useLines { lines ->
-                    lines.filter { it.isNotBlank() }.map { line ->
-                        val obj: Map<String, Any> = mapper.readValue(line)
-                        if (sensor == null) sensor = (obj["sensor"] as Map<*, *>)["id"] as String
-                        linkedMapOf(
-                            "id" to obj["id"]!!.toString(),
-                            "timestamp" to dateToTimestamp(obj["timestamp"] as String),
-                            "temperature" to ((obj["payload"] as Map<*, *>)["temperature"] as Number).toDouble(),
-                            "location" to obj["location"]!!.toString()
-                        )
-                    }.toList()
-                }
-                val sensors = nodesById[sensor ?: continue].orEmpty().filter { it.first == "Sensor" }
-                for (batch in rows.chunked(batchSize)) {
-                    for ((_, sensorId) in sensors) {
-                        out.println(
-                            "MATCH (s:Sensor {id: $sensorId}) UNWIND ${literal(batch)} AS r CREATE (s)-[:hasTemperature]->" +
-                                "(:Temperature {id: r.id, timestamp: r.timestamp, temperature: r.temperature, location: r.location});"
-                        )
-                    }
-                }
-            }
         }
-        if (updates) {
-            File(dump.path.removeSuffix(".cypher") + ".tt").writeText(
-                bounds.entries.joinToString("") { (bound, statement) -> "$bound=${if (statement < 0) statements + 1 else statement}\n" } + "last=$statements\n"
-            )
-        }
+        File(dump.path.removeSuffix(".cypher") + ".tt").writeText(
+            bounds.entries.joinToString("") { (bound, statement) -> "$bound=${if (statement < 0) statements + 1 else statement}\n" } + "last=$statements\n"
+        )
         File(dump.path + ".done").writeText(DUMP_VERSION)
     }
 
@@ -147,13 +116,13 @@ class SmartBenchAeonG(private val size: String, private val batchSize: Int = 10,
     }
 
     companion object {
-        /** The version of the dumps: one written by an older SmartBenchAeonG (or downloaded, of the old evaluation) is written again */
-        const val DUMP_VERSION = "neo4j-graph-batches"
+        /** The version of the dumps: one written by an older SmartBenchAeonG (another model) is written again */
+        const val DUMP_VERSION = "updates"
 
-        fun dumpFile(size: String, updates: Boolean = false) = File("datasets/dump/${if (updates) "aeong-updates" else "aeong"}/smartbench/$size/$size.cypher")
+        fun dumpFile(size: String) = File("datasets/dump/aeong/smartbench/$size/$size.cypher")
 
         /** Whether the dump of [size] is complete and of this version */
-        fun dumpReady(size: String, updates: Boolean = false) = File(dumpFile(size, updates).path + ".done").let { it.isFile && it.readText() == DUMP_VERSION }
+        fun dumpReady(size: String) = File(dumpFile(size).path + ".done").let { it.isFile && it.readText() == DUMP_VERSION }
 
         /** The bounds (from and to) of the windows of time_constraints.yaml of [size], of every selectivity and query */
         fun windowBounds(size: String): Set<Long> = listOf("equal", "increased", "scaled").flatMap { selectivity ->
@@ -164,7 +133,7 @@ class SmartBenchAeonG(private val size: String, private val batchSize: Int = 10,
 
         /** The transaction time of the bounds of the windows in the dump of [size] (see [SmartBenchAeonG]): bound -> statement, last */
         fun transactionTimes(size: String): Map<String, Long> =
-            File(dumpFile(size, true).path.removeSuffix(".cypher") + ".tt").readLines().filter { "=" in it }
+            File(dumpFile(size).path.removeSuffix(".cypher") + ".tt").readLines().filter { "=" in it }
                 .associate { it.substringBefore("=") to it.substringAfter("=").toLong() }
 
         /** [value] as a Cypher literal (strings in single quotes, lists, maps) */
