@@ -40,7 +40,7 @@ import java.sql.DriverManager
  *   import of Neo4j (datasets/dump/neo4j/mimic/<limit>), written first by MimicIVNeo4J if missing (not timed);
  * - aeong: ingestion and queries inside its container (evaluation/architectures/aeong), on the Cypher dump
  *   (datasets/dump/aeong/mimic/<limit>: the graph of MimicIVNeo4J, a node per time series updated by its measurements),
- *   written first by MimicIVAeonG if missing (not timed), with the queries of evaluation/architectures/aeong/queries/mimic
+ *   written first by MimicIVAeonG if missing (not timed), with the queries of src/test/resources/queries/mimic/aeong
  *   (those of Neo4j on the whole history, by transaction time).
  */
 class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
@@ -174,7 +174,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         aeong(limit.toString(), queryFiles, dump, env, ::aeongTransactionTimes) { tt ->
             // The queries on the whole history: transaction time up to the one of the last statement of the dump
             queryFiles.forEach { q ->
-                File(queries, "$q.txt").writeText(File("evaluation/architectures/aeong/queries/mimic/$q.txt").readText().replace("{TTTO_PARAM}", tt.getValue("last").toString()))
+                File(queries, "$q.txt").writeText(MimicEvaluation::class.java.classLoader.getResource("queries/mimic/aeong/$q.txt")!!.readText().replace("{TTTO_PARAM}", tt.getValue("last").toString()))
             }
         }
     }

@@ -147,8 +147,8 @@ AeonG loads a Cypher dump with the graph of Neo4j and its own temporal model, wr
 the data of the other systems: `datasets/dump/aeong/mimic/<limit>/` (MimicIVAeonG) and
 `datasets/dump/aeong/smartbench/<size>/` (SmartBenchAeonG), on every size. A node per time series, created by its first
 event and updated by each next one: one statement (one transaction, one version of the node) per event, the SmartBench
-events in the order of their timestamps. Its queries, those of Neo4j (`evaluation/architectures/aeong/queries/mimic/`:
-`q1`-`q3` are Q1-Q3, `q0` a warm-up; `evaluation/architectures/aeong/queries/smartbench/`), read the history by
+events in the order of their timestamps. Its queries, those of Neo4j (`src/test/resources/queries/mimic/aeong/`:
+`q1`-`q3` are Q1-Q3, `q0` a warm-up; `src/test/resources/queries/smartbench/aeong/`), read the history by
 transaction time (`TT FROM ... TO ...`), the logical clock of AeonG, which advances with every transaction: its container
 runs the ingestion alone, then serves the loaded database (`AEONG_MODE=serve`, Bolt on port 7690), where the evaluation
 measures the transaction time of each bound of the time windows (the first event at or after it) and of the last

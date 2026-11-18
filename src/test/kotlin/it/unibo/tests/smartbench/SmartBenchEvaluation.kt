@@ -136,7 +136,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
      * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables,
      * with the sizes, the dataset and the time windows (TimeWindows) of the other systems. AeonG loads its
      * Cypher dump, written by SmartBenchAeonG from the dataset of the other systems (not timed) when missing, and runs
-     * its queries (queries/smartbench) with the time window of the query as transaction time, measured on the loaded
+     * its queries (src/test/resources/queries/smartbench/aeong) with the time window of the query as transaction time, measured on the loaded
      * database (see [aeongTransactionTimes] and [aeongQueries])
      */
     private fun selfContained(system: String) {
@@ -187,7 +187,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             val windowed = TimeWindows.windowed(queryId)
             val from = if (windowed) tt.getValue(TimeWindows.of(queryId, size).from.toString()) else 0L
             val to = if (windowed) maxOf(tt.getValue(TimeWindows.of(queryId, size).to.toString()) - 1, 0L) else tt.getValue("last")
-            val query = File("evaluation/architectures/aeong/queries/smartbench/$queryId.txt").readLines()
+            val query = TestSmartBenchCompetitorsQuery.queryText("aeong", queryId).lines()
                 .map { it.replace(Regex("//.*$"), "").trim() }.filter { it.isNotEmpty() }.joinToString(" ")
                 .replace("{TTFROM_PARAM}", from.toString()).replace("{TTTO_PARAM}", to.toString())
             File(folder, "${files[queryId] ?: queryId}.txt").writeText(query + "\n")

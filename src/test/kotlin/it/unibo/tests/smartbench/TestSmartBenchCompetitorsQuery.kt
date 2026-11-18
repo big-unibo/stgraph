@@ -22,11 +22,16 @@ class TestSmartBenchCompetitorsQuery {
         /** The SmartBench queries, in the order of the Python evaluation */
         val queryIds = listOf("EnvironmentCoverage", "EnvironmentAggregate", "MaintenanceOwners", "EnvironmentOutlier", "AgentOutlier", "AgentHistory")
 
+        /** The template of the query [queryId] of [system] (src/test/resources/queries/smartbench/<system>) */
+        fun queryText(system: String, queryId: String): String {
+            val path = "queries/smartbench/$system/$queryId.txt"
+            return TestSmartBenchCompetitorsQuery::class.java.classLoader.getResource(path)?.readText()?.trim()
+                ?: error("Query not found in the classpath: $path")
+        }
+
         /** The text of the query [queryId] of [system] on [size], with its time window (TimeWindows) */
         fun queryText(system: String, queryId: String, size: String): String {
-            val path = "queries/smartbench/$system/$queryId.txt"
-            val template = TestSmartBenchCompetitorsQuery::class.java.classLoader.getResource(path)?.readText()?.trim()
-                ?: error("Query not found in the classpath: $path")
+            val template = queryText(system, queryId)
             if (!TimeWindows.windowed(queryId)) return template
             val window = TimeWindows.of(queryId, size)
             return template.replace("{TSTAMPFROM_PARAM}", window.from.toString()).replace("{TSTAMPTO_PARAM}", window.to.toString())
