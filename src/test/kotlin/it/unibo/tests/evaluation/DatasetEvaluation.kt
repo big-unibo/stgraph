@@ -10,7 +10,7 @@ import it.unibo.stats.Loader
 import it.unibo.stats.QueryResultData
 import it.unibo.stats.Querying
 import it.unibo.stats.SetupConfig
-import it.unibo.stats.TestConfig
+import it.unibo.stats.QUERY_WINDOWS
 import it.unibo.stats.loadDataset
 import it.unibo.stats.runQuery
 import it.unibo.tests.systems.GraphixClient
@@ -31,9 +31,6 @@ abstract class DatasetEvaluation(
 
     /** The data folders of the systems for this size and their resources, as the variables of their compose files */
     protected val environment: Map<String, String> = evaluation.environment(dataset, size)
-
-    /** Whether the queries of the dataset have the time windows of time_constraints.yaml */
-    protected open val timeWindows = true
 
     /** Ingestion and queries of [system] */
     abstract fun run(system: String)
@@ -94,9 +91,9 @@ abstract class DatasetEvaluation(
     }
 
     /**
-     * Runs every query of [queryIds] [queryIterations][EvaluationConfig.queryIterations] times, on every time window of
-     * each selectivity (as the Python evaluation), with each mode and number of threads, recorded as [model] (with the
-     * label of the run); [build] returns null to skip a run
+     * Runs every query of [queryIds] [queryIterations][EvaluationConfig.queryIterations] times (each one with its time
+     * window, see the queries), with each mode and number of threads, recorded as [model] (with the label of the run);
+     * [build] returns null to skip a run
      */
     protected fun queries(
         model: String,
@@ -104,53 +101,34 @@ abstract class DatasetEvaluation(
         queryIds: List<String>,
         threads: List<Int> = listOf(1),
         modes: List<QueryMode> = listOf(QueryMode.OPTIMIZED),
-        build: (queryId: String, selectivity: String, rangeIndex: Int, mode: QueryMode) -> Querying?
+        build: (queryId: String, mode: QueryMode) -> Querying?
     ) {
         val recorded = evaluation.model(model)
         for (iteration in 0 until evaluation.queryIterations) {
             for (queryId in queryIds) {
-                for ((selectivity, rangeIndex) in windows(queryId)) {
-                    for (mode in modes) {
-                        for (thread in threads) {
-                            val query = build(queryId, selectivity, rangeIndex, mode) ?: continue
-                            val run = "query | $recorded | $dataset $size | $queryId ($selectivity, window $rangeIndex, " +
-                                "iteration ${iteration + 1}/${evaluation.queryIterations}, $mode, $thread thread(s))"
-                            progress("$run: started")
-                            // The time and the cardinality recorded by runQuery, to print them
-                            var elapsed = 0L
-                            var cardinality = 0
-                            val timed = object : Querying {
-                                override val queryId = query.queryId
-                                override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
-                                    val begin = System.currentTimeMillis()
-                                    return query.runQuery(threads, queryMode).also {
-                                        elapsed = System.currentTimeMillis() - begin
-                                        cardinality = it.card
-                                    }
+                for (mode in modes) {
+                    for (thread in threads) {
+                        val query = build(queryId, mode) ?: continue
+                        val run = "query | $recorded | $dataset $size | $queryId (iteration ${iteration + 1}/${evaluation.queryIterations}, $mode, $thread thread(s))"
+                        progress("$run: started")
+                        // The time and the cardinality recorded by runQuery, to print them
+                        var elapsed = 0L
+                        var cardinality = 0
+                        val timed = object : Querying {
+                            override val queryId = query.queryId
+                            override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
+                                val begin = System.currentTimeMillis()
+                                return query.runQuery(threads, queryMode).also {
+                                    elapsed = System.currentTimeMillis() - begin
+                                    cardinality = it.card
                                 }
                             }
-                            resetPort()
-                            runQuery(timed, recorded, thread, numMachines, dataset, size, mode, iteration, selectivity, rangeIndex, configuration = evaluation.configuration(model))
-                            progress("$run: $elapsed ms, $cardinality results")
                         }
+                        resetPort()
+                        runQuery(timed, recorded, thread, numMachines, dataset, size, mode, iteration, configuration = evaluation.configuration(model))
+                        progress("$run: $elapsed ms, $cardinality results")
                     }
                 }
-            }
-        }
-    }
-
-    /**
-     * The time windows of [queryId] on [size]: (selectivity, range index). Without time windows, a single run, recorded
-     * as the tests record it ("increased", 0)
-     */
-    private fun windows(queryId: String): List<Pair<String, Int>> {
-        if (!timeWindows) return listOf("increased" to 0)
-        return evaluation.selectivities.flatMap { selectivity ->
-            try {
-                TestConfig.loadTemporalRanges(selectivity, queryId, size).keys.sorted().map { selectivity to it }
-            } catch (e: IllegalArgumentException) {
-                progress("query | $queryId | $dataset $size: no time window for $selectivity, skipped")
-                emptyList()
             }
         }
     }
@@ -190,7 +168,7 @@ abstract class DatasetEvaluation(
             "INGESTION_ITERATIONS" to evaluation.ingestionIterations.toString(),
             "QUERY_ITERATIONS" to evaluation.queryIterations.toString(),
             "THREAD" to "1",
-            "QUERY_SELECTIVITY" to evaluation.selectivities.joinToString(","),
+            "QUERY_SELECTIVITY" to QUERY_WINDOWS, // recorded as the querySelectivity of the runs
             "QUERIES" to queryIds.joinToString(",")
         ) + environment + extraEnv
         val run = "$system | $dataset $size (size $containerSize in its container)"

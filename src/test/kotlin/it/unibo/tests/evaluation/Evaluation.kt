@@ -85,7 +85,7 @@ private fun logParameters(run: String, evaluation: EvaluationConfig, sizes: Map<
     progress("  datasets: " + sizes.entries.joinToString("; ") { (dataset, s) -> "$dataset (sizes: ${s.joinToString()})" })
     progress("  ingestion: ${evaluation.ingestionIterations} iteration(s)")
     progress(
-        "  queries: ${evaluation.queryIterations} iteration(s), selectivities: ${evaluation.selectivities.joinToString()}, " +
+        "  queries: ${evaluation.queryIterations} iteration(s), " +
             "ids: ${evaluation.queryIds.ifEmpty { listOf("all") }.joinToString()}"
     )
     progress("  STGraph: setups ${evaluation.setups.joinToString()}, threads ${evaluation.threads.joinToString()}, modes ${evaluation.modes.joinToString()}")

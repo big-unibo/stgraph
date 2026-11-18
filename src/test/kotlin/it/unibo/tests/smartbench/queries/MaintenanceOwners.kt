@@ -6,12 +6,12 @@ import it.unibo.graph.query.*
 import it.unibo.graph.utils.*
 import it.unibo.stats.QueryResultData
 import it.unibo.stats.Querying
-import it.unibo.stats.TestConfig
 import kotlin.system.measureTimeMillis
 
-class MaintenanceOwners(val graph: Graph, val size: String, selectivity: String = "increased", rangeIndex: Int = 0) : Querying {
+class MaintenanceOwners(val graph: Graph, val size: String) : Querying {
     override val queryId = "MaintenanceOwners"
-    val temporalConstraints = TestConfig.loadTemporalRanges(selectivity, queryId, size)[rangeIndex]!!
+    /** The time window of the query on the size (TimeWindows) */
+    val temporalConstraints = TimeWindows.of(queryId, size)
     override fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData {
         val tA = temporalConstraints.from
         val tB = temporalConstraints.to

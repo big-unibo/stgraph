@@ -96,8 +96,6 @@ defaults:
     iterations: 1
   queries:
     iterations: 10
-    # Selectivities of time_constraints.yaml: each query runs on every time window of each one
-    selectivities: [ "increased" ]
     # Query ids (empty: all)
     ids: [ ]
   # Downloads the missing datasets (from the same URLs as downloadDataset.sh)

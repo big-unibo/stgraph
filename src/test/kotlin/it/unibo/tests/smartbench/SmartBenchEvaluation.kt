@@ -3,7 +3,6 @@ package it.unibo.tests.smartbench
 import it.unibo.graph.query.QueryMode
 import it.unibo.stats.Config
 import it.unibo.stats.SetupConfig
-import it.unibo.stats.TestConfig
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
@@ -53,15 +52,15 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     /** The queries of TestSmartBenchQuery, on the data loaded by SmartBenchDataLoader */
     private fun stgraphQueries(setup: SetupConfig, numMachines: Int) =
         withStgraph(setup, "datasets/dump/$dataset/$size/", "${dataset}_$size") { graph ->
-            queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { queryId, selectivity, rangeIndex, mode ->
+            queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { queryId, mode ->
                 // As TestSmartBenchQuery: NAIVE is skipped on the large sizes, except for the queries without time window
                 val naiveOnLarge = size.contains("large") && mode == QueryMode.NAIVE
                 when (queryId) {
                     "EnvironmentCoverage" -> EnvironmentCoverage(graph)
-                    "EnvironmentAggregate" -> if (naiveOnLarge) null else EnvironmentAggregate(graph, size, selectivity, rangeIndex)
-                    "MaintenanceOwners" -> if (naiveOnLarge) null else MaintenanceOwners(graph, size, selectivity, rangeIndex)
-                    "EnvironmentOutlier" -> if (naiveOnLarge) null else EnvironmentOutlier(graph, size, selectivity, rangeIndex)
-                    "AgentOutlier" -> if (naiveOnLarge) null else AgentOutlier(graph, size, selectivity, rangeIndex)
+                    "EnvironmentAggregate" -> if (naiveOnLarge) null else EnvironmentAggregate(graph, size)
+                    "MaintenanceOwners" -> if (naiveOnLarge) null else MaintenanceOwners(graph, size)
+                    "EnvironmentOutlier" -> if (naiveOnLarge) null else EnvironmentOutlier(graph, size)
+                    "AgentOutlier" -> if (naiveOnLarge) null else AgentOutlier(graph, size)
                     "AgentHistory" -> AgentHistory(graph)
                     else -> error("Unknown query: $queryId")
                 }
@@ -108,7 +107,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { SmartBenchNeo4J(size, NEO4J_URI, csvImport = ::neo4jImport) } }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
-                    queries("neo4j", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QNeo4J(queryId, size, session, selectivity, rangeIndex) }
+                    queries("neo4j", numMachines = 1, queryIds) { queryId, _ -> QNeo4J(queryId, size, session) }
                 }
             }
         }
@@ -119,7 +118,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
         deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
             repeat(evaluation.ingestionIterations) { ingest("pgage", it) { SmartBenchPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD) } }
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
-                queries("pgage", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QPGAge(queryId, size, connection, selectivity, rangeIndex) }
+                queries("pgage", numMachines = 1, queryIds) { queryId, _ -> QPGAge(queryId, size, connection) }
             }
         }
     }
@@ -128,13 +127,13 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
         download("datasets/original/smartbench/$size", "smartbench")
         deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
             repeat(evaluation.ingestionIterations) { ingest("graphix", it) { SmartBenchGraphix(size, port = GRAPHIX_PORT) } }
-            queries("graphix", numMachines = 1, queryIds) { queryId, selectivity, rangeIndex, _ -> QGraphix(queryId, size, selectivity, rangeIndex) }
+            queries("graphix", numMachines = 1, queryIds) { queryId, _ -> QGraphix(queryId, size) }
         }
     }
 
     /**
      * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables,
-     * with the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems. AeonG loads its
+     * with the sizes, the dataset and the time windows (TimeWindows) of the other systems. AeonG loads its
      * Cypher dump, written by SmartBenchAeonG from the dataset of the other systems (not timed) when missing, and runs
      * its queries (queries/smartbench) with the time window of the run as transaction time (see [aeongQueries])
      */
@@ -157,22 +156,18 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     /**
      * The queries of AeonG for this size (datasets/dump/aeong/smartbench/<size>/queries), as its scripts read them (one
      * statement per line, without comments; the names of its files, e.g., q2 for EnvironmentAggregate), with the time
-     * window of the run as transaction time (TT FROM ... TO ...): from the first statement of an event at or after its
-     * start to the last one before its end (<size>.tt of the dump, see SmartBenchAeonG); the whole history for the
-     * queries without a window (EnvironmentCoverage, AgentHistory). One selectivity, with one window per query, as its
-     * scripts run them
+     * window of the query on the size (TimeWindows) as transaction time (TT FROM ... TO ...): from the first statement of
+     * an event at or after its start to the last one before its end (<size>.tt of the dump, see SmartBenchAeonG); the
+     * whole history for the queries without a window (EnvironmentCoverage, AgentHistory)
      */
     private fun aeongQueries(): String {
-        val selectivity = evaluation.selectivities.singleOrNull() ?: error("AeonG runs one selectivity at a time: ${evaluation.selectivities}")
         val folder = File(SmartBenchAeonG.dumpFile(size).absoluteFile.parentFile, "queries").apply { mkdirs() }
         val tt = SmartBenchAeonG.transactionTimes(size)
         val files = mapOf("EnvironmentAggregate" to "q2", "MaintenanceOwners" to "q3", "EnvironmentOutlier" to "q4", "AgentOutlier" to "q5")
         for (queryId in TestSmartBenchCompetitorsQuery.queryIds) {
-            val window = TestConfig.loadTemporalRanges(selectivity, queryId, size).values.singleOrNull()
-                ?: error("AeonG runs one time window per query: $queryId on $size ($selectivity)")
-            val windowed = queryId !in listOf("EnvironmentCoverage", "AgentHistory")
-            val from = if (windowed) tt.getValue(window.from.toString()) else 0L
-            val to = if (windowed) tt.getValue(window.to.toString()) - 1 else tt.getValue("last")
+            val windowed = TimeWindows.windowed(queryId)
+            val from = if (windowed) tt.getValue(TimeWindows.of(queryId, size).from.toString()) else 0L
+            val to = if (windowed) tt.getValue(TimeWindows.of(queryId, size).to.toString()) - 1 else tt.getValue("last")
             val query = File("evaluation/architectures/aeong/queries/smartbench/$queryId.txt").readLines()
                 .map { it.replace(Regex("//.*$"), "").trim() }.filter { it.isNotEmpty() }.joinToString(" ")
                 .replace("{TTFROM_PARAM}", from.toString()).replace("{TTTO_PARAM}", to.toString())

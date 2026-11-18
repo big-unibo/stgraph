@@ -30,8 +30,6 @@ data class EvaluationConfig(
     val modes: List<QueryMode>,
     val ingestionIterations: Int,
     val queryIterations: Int,
-    /** Selectivities of time_constraints.yaml: each query runs on every time window of each one */
-    val selectivities: List<String>,
     /** Query ids to run (empty: all) */
     val queryIds: List<String>,
     /** Downloads the missing datasets */
@@ -187,8 +185,6 @@ data class EvaluationConfig(
                 modes = strings("modes")?.map { QueryMode.valueOf(it) } ?: listOf(QueryMode.OPTIMIZED),
                 ingestionIterations = int("ingestion", "iterations") ?: 1,
                 queryIterations = int("queries", "iterations") ?: 1,
-                selectivities = strings(section(map, "queries"), "selectivities") ?: strings(section(defaults, "queries"), "selectivities")
-                    ?: listOf("increased"),
                 queryIds = strings(section(map, "queries"), "ids") ?: strings(section(defaults, "queries"), "ids") ?: emptyList(),
                 download = boolean("download") ?: true,
                 deploy = boolean("deploy") ?: true,

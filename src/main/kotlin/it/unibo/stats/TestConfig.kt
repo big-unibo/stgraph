@@ -4,7 +4,6 @@ import it.unibo.graph.asterixdb.AsterixDBTSM
 import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.interfaces.Graph
 import it.unibo.graph.query.QueryMode
-import it.unibo.graph.utils.TimeRange
 import it.unibo.graph.utils.resetPort
 import java.util.logging.Logger
 import org.yaml.snakeyaml.Yaml
@@ -16,35 +15,6 @@ import kotlin.collections.get
 class TestConfig {
     companion object {
         val logger = Logger.getLogger(this::class.java.toString())
-
-        fun loadTemporalRanges(
-            constraintType: String,
-            queryName: String,
-            datasetSize: String
-        ): Map<Int, TimeRange> {
-            val resourcePath = "time_constraints.yaml"
-            val inputStream = this::class.java.classLoader.getResourceAsStream(resourcePath) ?: throw IllegalArgumentException("$resourcePath not found in classpath")
-            val yamlText = inputStream.bufferedReader().use { it.readText() }
-            val yamlMap = Yaml().load<Map<String, Any>>(yamlText) ?: emptyMap()
-
-            val temporalConstraints = yamlMap["temporalConstraints"] as? Map<*, *>
-                ?: throw IllegalArgumentException("'temporalConstraints' not found in YAML")
-            val constraintMap = temporalConstraints[constraintType] as? Map<*, *>
-                ?: throw IllegalArgumentException("Constraint type '$constraintType' not found in YAML")
-            val queryMap = constraintMap[queryName] as? Map<*, *>
-                ?: throw IllegalArgumentException("Query '$queryName' not found under '$constraintType'")
-            val datasetMap = queryMap[datasetSize] as? Map<*, *>
-                ?: throw IllegalArgumentException("Dataset size '$datasetSize' not found under '$queryName'")
-
-            return datasetMap.entries.associate { (k, v) ->
-                val index = k.toString().toInt()
-                val raw = v as List<*>
-                index to TimeRange(
-                    from = raw[0].toString().toLong(),
-                    to = raw[1].toString().toLong()
-                )
-            }
-        }
 
         fun normalizeSize(size: Any): String {
             return when (size) {

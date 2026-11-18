@@ -27,7 +27,6 @@ import java.sql.DriverManager
  * the local copy of the data, or the PostgreSQL of datasets.pems if missing (see AbstractPemsLoader)
  */
 class PemsEvaluation(config: Config, evaluation: EvaluationConfig, size: String) : DatasetEvaluation(config, evaluation, "pems", size) {
-    override val timeWindows = false
     private val postgres = config.datasets.getValue(dataset).postgres
     private val queryIds = evaluation.queryIds.ifEmpty { pemsQueries }
 
@@ -35,20 +34,20 @@ class PemsEvaluation(config: Config, evaluation: EvaluationConfig, size: String)
         when (system) {
             "stgraph" -> stgraph("stgraph", { threads, setup -> PemsSTGraph(size, threads, setup.host, setup.controllerIPs, postgres) }) { setup, numMachines ->
                 withStgraph(setup, "datasets/dump/$dataset/$size/", "${dataset}_$size") { graph ->
-                    queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { id, _, _, _ -> PemsQuery(id, graph) }
+                    queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { id, _ -> PemsQuery(id, graph) }
                 }
             }
             "neo4j" -> deployed(evaluation.deploy, NEO4J_COMPOSE, env = environment, ready = ::neo4jReady) {
                 repeat(evaluation.ingestionIterations) { ingest("neo4j", it) { PemsNeo4J(size, NEO4J_URI, null, null, postgres = postgres, csvImport = ::neo4jImport) } }
-                neo4jDriver(NEO4J_URI).use { driver -> driver.session().use { session -> queries("neo4j", 1, queryIds) { id, _, _, _ -> PemsNeo4JQuery(id, session) } } }
+                neo4jDriver(NEO4J_URI).use { driver -> driver.session().use { session -> queries("neo4j", 1, queryIds) { id, _ -> PemsNeo4JQuery(id, session) } } }
             }
             "pgage" -> deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
                 repeat(evaluation.ingestionIterations) { ingest("pgage", it) { PemsPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD, postgres) } }
-                pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { c -> queries("pgage", 1, queryIds) { id, _, _, _ -> PemsPGAgeQuery(id, PemsPGAge.graphName(size), c) } }
+                pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { c -> queries("pgage", 1, queryIds) { id, _ -> PemsPGAgeQuery(id, PemsPGAge.graphName(size), c) } }
             }
             "graphix" -> deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", 29002) }) {
                 repeat(evaluation.ingestionIterations) { ingest("graphix", it) { PemsGraphix(size, postgres = postgres) } }
-                queries("graphix", 1, queryIds) { id, _, _, _ -> PemsGraphixQuery(id, size) }
+                queries("graphix", 1, queryIds) { id, _ -> PemsGraphixQuery(id, size) }
             }
             else -> error("$system is not evaluated on $dataset")
         }

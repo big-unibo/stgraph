@@ -44,7 +44,6 @@ import java.sql.DriverManager
  */
 class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
     DatasetEvaluation(config, evaluation, "mimic", size) {
-    override val timeWindows = false
 
     private val limit = mimicLimit(size)
     /** The size in the dump of STGraph and in the dataverses: "full" for all the events (as MimicIVSTGraph) */
@@ -71,7 +70,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     /** As TestMimicQuery: NAIVE is skipped on the full dataset */
     private fun stgraphQueries(setup: SetupConfig, numMachines: Int) =
         withStgraph(setup, "datasets/dump/$dataset/$name/", "${dataset}_$name") { graph ->
-            queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { queryId, _, _, mode ->
+            queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { queryId, mode ->
                 if (mode == QueryMode.NAIVE && name == "full") null
                 else when (queryId) {
                     "Q1" -> TestMimicQuery.Q1(graph)
@@ -91,7 +90,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
-                    queries("neo4j", numMachines = 1, queryIds) { queryId, _, _, _ ->
+                    queries("neo4j", numMachines = 1, queryIds) { queryId, _ ->
                         if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QNeo4J(queryId, session) else error("Unknown query: $queryId")
                     }
                 }
@@ -108,7 +107,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             }
             val graph = MimicIVPGAge.graphName(limit)
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
-                queries("pgage", numMachines = 1, queryIds) { queryId, _, _, _ ->
+                queries("pgage", numMachines = 1, queryIds) { queryId, _ ->
                     if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QPgAge(queryId, graph, connection) else error("Unknown query: $queryId")
                 }
             }
@@ -214,7 +213,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     private fun graphix() {
         deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", 29002) }) {
             repeat(evaluation.ingestionIterations) { ingest("graphix", it) { MimicIVGraphix(size, postgres = postgres) } }
-            queries("graphix", numMachines = 1, queryIds) { queryId, _, _, _ ->
+            queries("graphix", numMachines = 1, queryIds) { queryId, _ ->
                 if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QGraphix(queryId, name) else error("Unknown query: $queryId")
             }
         }

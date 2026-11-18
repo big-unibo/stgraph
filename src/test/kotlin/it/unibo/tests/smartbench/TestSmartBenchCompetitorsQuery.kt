@@ -1,7 +1,7 @@
 package it.unibo.tests.smartbench
 
 import it.unibo.tests.smartbench.loaders.pgageGraph
-import it.unibo.stats.TestConfig
+import it.unibo.tests.smartbench.queries.TimeWindows
 import it.unibo.tests.systems.GraphixQuery
 import it.unibo.tests.systems.Neo4JQuery
 import it.unibo.tests.systems.PGAgeQuery
@@ -13,8 +13,8 @@ import java.sql.Connection
  * The SmartBench queries of the competitors (Neo4j, PGAge, Graphix), with the same query ids as STGraph
  * (TestSmartBenchQuery). Not tests, since the CI covers STGraph only: they run in the evaluation (SmartBenchEvaluation).
  *
- * Each query is a template, src/test/resources/queries/smartbench/<system>/<queryId>.txt: as in the Python evaluation,
- * {TSTAMPFROM_PARAM} and {TSTAMPTO_PARAM} become the time window [rangeIndex] of [selectivity] in time_constraints.yaml.
+ * Each query is a template, src/test/resources/queries/smartbench/<system>/<queryId>.txt: {TSTAMPFROM_PARAM} and
+ * {TSTAMPTO_PARAM} become the time window of the query on the size (TimeWindows, as the queries of STGraph).
  * The runners (connections, timing) are the ones of it.unibo.tests.systems, shared with MIMIC-IV.
  */
 class TestSmartBenchCompetitorsQuery {
@@ -22,14 +22,13 @@ class TestSmartBenchCompetitorsQuery {
         /** The SmartBench queries, in the order of the Python evaluation */
         val queryIds = listOf("EnvironmentCoverage", "EnvironmentAggregate", "MaintenanceOwners", "EnvironmentOutlier", "AgentOutlier", "AgentHistory")
 
-        /** The text of the query [queryId] of [system] on [size], with the time window [rangeIndex] of [selectivity] */
-        fun queryText(system: String, queryId: String, size: String, selectivity: String = "increased", rangeIndex: Int = 0): String {
+        /** The text of the query [queryId] of [system] on [size], with its time window (TimeWindows) */
+        fun queryText(system: String, queryId: String, size: String): String {
             val path = "queries/smartbench/$system/$queryId.txt"
             val template = TestSmartBenchCompetitorsQuery::class.java.classLoader.getResource(path)?.readText()?.trim()
                 ?: error("Query not found in the classpath: $path")
-            if (!template.contains("{TSTAMPFROM_PARAM}") && !template.contains("{TSTAMPTO_PARAM}")) return template
-            val window = TestConfig.loadTemporalRanges(selectivity, queryId, size)[rangeIndex]
-                ?: error("No time window $rangeIndex for $queryId on $size ($selectivity)")
+            if (!TimeWindows.windowed(queryId)) return template
+            val window = TimeWindows.of(queryId, size)
             return template.replace("{TSTAMPFROM_PARAM}", window.from.toString()).replace("{TSTAMPTO_PARAM}", window.to.toString())
         }
     }
@@ -38,11 +37,9 @@ class TestSmartBenchCompetitorsQuery {
     class QNeo4J(
         override val queryId: String,
         size: String,
-        session: Session,
-        selectivity: String = "increased",
-        rangeIndex: Int = 0
+        session: Session
     ) : Neo4JQuery(session) {
-        private val text = queryText("neo4j", queryId, size, selectivity, rangeIndex)
+        private val text = queryText("neo4j", queryId, size)
 
         override fun statement() = text
     }
@@ -51,20 +48,18 @@ class TestSmartBenchCompetitorsQuery {
     class QPGAge(
         override val queryId: String,
         size: String,
-        connection: Connection,
-        selectivity: String = "increased",
-        rangeIndex: Int = 0
+        connection: Connection
     ) : PGAgeQuery(connection) {
         // {GRAPH}: the graph of the size, whose schema holds the table measurements (see SmartBenchPGAge)
-        private val text = queryText("pgage", queryId, size, selectivity, rangeIndex).replace("{GRAPH}", pgageGraph(size))
+        private val text = queryText("pgage", queryId, size).replace("{GRAPH}", pgageGraph(size))
 
         override fun statement() = text
     }
 
     /** A query on the graph created by SmartBenchGraphix */
-    class QGraphix(override val queryId: String, size: String, selectivity: String = "increased", rangeIndex: Int = 0) :
+    class QGraphix(override val queryId: String, size: String) :
         GraphixQuery("smartbench_graphix_$size") {
-        private val text = queryText("graphix", queryId, size, selectivity, rangeIndex)
+        private val text = queryText("graphix", queryId, size)
 
         override fun statement() = text
 

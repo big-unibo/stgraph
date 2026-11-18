@@ -9,6 +9,9 @@ private const val resultPath = "results/dt_graph/query_time"
 private val resultFolder = File(resultPath)
 private val statisticsFile = File(resultFolder, "query_statistics.csv")
 
+/** The time windows of the queries, recorded as their querySelectivity: one per query and size, growing with the size */
+const val QUERY_WINDOWS = "increased"
+
 class QueryResultData(val timeMs: Long, val card: Int)
 interface Querying {
     val queryId: String
@@ -17,13 +20,13 @@ interface Querying {
 
 /**
  * Runs [querying] and appends its statistics to the query statistics. [iteration], [querySelectivity] and
- * [temporalRangeIndex] identify the run within an evaluation: the repetition, and the time window of
- * time_constraints.yaml (the queries without a window ignore it); [configuration]: the configuration of the system (conf
+ * [temporalRangeIndex] identify the run within an evaluation: the repetition, and the time windows (QUERY_WINDOWS: one
+ * per query and size, see it.unibo.tests.smartbench.queries.TimeWindows); [configuration]: the configuration of the system (conf
  * or conf-free, see evaluation/README.md), empty when not known (e.g., the tests)
  */
 fun runQuery(
     querying: Querying, model: String, threads: Int, numMachines: Int, dataset: String, size: String, mode: QueryMode,
-    iteration: Int = 0, querySelectivity: String = "increased", temporalRangeIndex: Int = 0, configuration: String = ""
+    iteration: Int = 0, querySelectivity: String = QUERY_WINDOWS, temporalRangeIndex: Int = 0, configuration: String = ""
 ) {
     if (!resultFolder.exists()) resultFolder.mkdirs()
 

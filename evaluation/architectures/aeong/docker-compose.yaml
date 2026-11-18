@@ -20,9 +20,6 @@ services:
       - QUERIES
     volumes:
       - ../../../results/aeong:/home/AeonG/tests/results/aeong/
-      # The time windows of the other systems (the queries come with their window, see SmartBenchEvaluation.aeongQueries:
-      # the scripts of the image only loop over the windows of the size)
-      - ../../../src/main/resources/time_constraints.yaml:/vol/time_constraints.yaml:ro
       # AEONG_QUERIES: the query files of the dataset (those of ./queries/mimic and ./queries/smartbench with the
       # transaction time of the run, written by the evaluation next to the dump). Read-only and copied by the command, as
       # the scripts of the image rewrite them for each time window
@@ -37,7 +34,15 @@ services:
       - /bin/bash
       - -c
       - |
-        cp /vol/time_constraints.yaml /home/AeonG/tests/experiments/
+        # The scripts of the image loop over the time windows of time_constraints.yaml for the size: the queries come with
+        # their window (SmartBenchEvaluation.aeongQueries), so a single placeholder window per query, run once
+        {
+          echo "temporalConstraints:"
+          echo "  $$QUERY_SELECTIVITY:"
+          for Q in EnvironmentCoverage EnvironmentAggregate MaintenanceOwners EnvironmentOutlier AgentOutlier AgentHistory; do
+            printf '    %s:\n      %s:\n        0: [ 0, 0 ]\n' "$$Q" "$$DATASET_SIZE"
+          done
+        } > /home/AeonG/tests/experiments/time_constraints.yaml
         mkdir -p /home/AeonG/tests/results/temporal_query
         cp /vol/queries/*.txt /home/AeonG/tests/results/temporal_query/
         # For the queries without a time window (EnvironmentCoverage, AgentHistory) replace_timestamp.sh of the image

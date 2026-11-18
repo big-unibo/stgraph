@@ -20,7 +20,6 @@ import it.unibo.tests.synth.queries.ScalabilityFilterProp
  */
 class SynthEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
     DatasetEvaluation(config, evaluation, "synth", size) {
-    override val timeWindows = false
 
     /** The query families of TestSynthQuery: their ids are "<family>_foo_<threshold>" */
     private val families: Map<String, (Graph, Int) -> Querying> = linkedMapOf(
@@ -45,7 +44,7 @@ class SynthEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             val byId = SynthDataLoader.ids.flatMap { threshold ->
                 selected.map { (family, build) -> "${family}_foo_$threshold" to { build(graph, threshold) } }
             }.toMap()
-            queries("stgraph", numMachines, byId.keys.toList(), evaluation.threads, evaluation.modes) { queryId, _, _, _ ->
+            queries("stgraph", numMachines, byId.keys.toList(), evaluation.threads, evaluation.modes) { queryId, _ ->
                 byId.getValue(queryId)()
             }
         }

@@ -6,22 +6,40 @@ import queries
 import os
 from time import time
 import sys
-import yaml
 import logging
 
-# --- RESOURCE LOADING ---
-def get_temporal_constraints(selectivity, logger):
-    """
-    Parses the YAML file and returns constraints for the selected selectivity level.
-    """
-    yaml_path = os.path.join(RESOURCES_DIR,  "time_constraints.yaml")
-    try:
-        with open(yaml_path, "r") as f:
-            data = yaml.safe_load(f)
-        return data["temporalConstraints"][selectivity]
-    except (FileNotFoundError, KeyError) as e:
-        logger.error(f"Critical error loading YAML constraints: {e}")
-        sys.exit(1)
+# The time window of each query on each dataset size, as the other systems (TimeWindows in the Kotlin evaluation,
+# it.unibo.tests.smartbench.queries); EnvironmentCoverage and AgentHistory have none
+TIME_WINDOWS = {
+    "EnvironmentAggregate": {
+        "xsmall": (1510700400000, 1511564400000),
+        "small": (1510700400000, 1511564400000),
+        "medium": (1510700400000, 1511858400000),
+        "large": (1531087200000, 1536847200000),
+        "extralarge": (1531087200000, 1539727200000),
+    },
+    "MaintenanceOwners": {
+        "xsmall": (1510700400000, 1513000000000),
+        "small": (1510700400000, 1513000000000),
+        "medium": (1510700400000, 1513708800000),
+        "large": (1510700400000, 1525674800000),
+        "extralarge": (1510700400000, 1533164400000),
+    },
+    "EnvironmentOutlier": {
+        "xsmall": (1510700400000, 1512000000000),
+        "small": (1510700400000, 1512000000000),
+        "medium": (1510700400000, 1512566400000),
+        "large": (1510700400000, 1519916400000),
+        "extralarge": (1510700400000, 1524524400000),
+    },
+    "AgentOutlier": {
+        "xsmall": (1510095600000, 1513000000000),
+        "small": (1510095600000, 1513000000000),
+        "medium": (1510095600000, 1513929600000),
+        "large": (1510095600000, 1529157600000),
+        "extralarge": (1510095600000, 1538607600000),
+    },
+}
 
 
 def setup_logger(logger_name, log_level=logging.INFO):
@@ -40,7 +58,7 @@ def setup_logger(logger_name, log_level=logging.INFO):
     return logger
 
 
-# The resources mounted by the compose file (outside the code folder): time windows and datasets
+# The resources mounted by the compose file (outside the code folder): the datasets
 RESOURCES_DIR = os.path.join("/", "home", "hygraph", "resources")
 
 # .env parameters setup
@@ -76,7 +94,6 @@ def append(path, row):
 
 logger = setup_logger("HyGraph_SmartBench_QueryEvaluator")
 
-TIME_CONSTRAINTS = get_temporal_constraints(QUERY_SELECTIVITY, logger)
 
 resources_path = os.path.join(
     RESOURCES_DIR,
@@ -154,25 +171,24 @@ for query_iteration in range(QUERY_ITERATIONS):
     print(f"Query iteration {query_iteration+1}/{QUERY_ITERATIONS}")
 
     for query_name, query in query_map.items():
-        # The time windows of the query on this size (the constraints were read before the name of the query existed)
-        query_constraints = TIME_CONSTRAINTS.get(query_name, {}).get(RESULT_SIZE, {})
-        for idx, time_range in query_constraints.items():
-            result, elapsed_time = query(hygraph, (time_range[0], time_range[1]))
-            append(query_stats_path, {
-                "test_id": str(uuid4()),
-                "queryid": query_name,
-                "model": MODEL,
-                "dataset": DATASET,
-                "datasetSize": RESULT_SIZE,
-                "threads": 1,
-                "elapsedTime": round(elapsed_time * 1000),
-                "numMachines": 1,
-                "cardinality": len(result),
-                "queryMode": "OPTIMIZED",
-                "iteration": query_iteration,
-                "querySelectivity": QUERY_SELECTIVITY,
-                "temporalRangeIndex": idx,
-            })
+        # The time window of the query on the size of the evaluation (temporalRangeIndex 0)
+        window = TIME_WINDOWS[query_name][RESULT_SIZE] if query_name in TIME_WINDOWS else None
+        result, elapsed_time = query(hygraph, window)
+        append(query_stats_path, {
+            "test_id": str(uuid4()),
+            "queryid": query_name,
+            "model": MODEL,
+            "dataset": DATASET,
+            "datasetSize": RESULT_SIZE,
+            "threads": 1,
+            "elapsedTime": round(elapsed_time * 1000),
+            "numMachines": 1,
+            "cardinality": len(result),
+            "queryMode": "OPTIMIZED",
+            "iteration": query_iteration,
+            "querySelectivity": QUERY_SELECTIVITY,
+            "temporalRangeIndex": 0,
+        })
 
 
 print("Evaluation completed.")

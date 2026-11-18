@@ -50,7 +50,6 @@ The repository contains:
 |   |-- labels.yaml                     Domain label definitions loaded by Label.kt
 |   |-- logback.xml                     Logging configuration
 |   |-- test_config.example.yml         Example benchmark matrix; copy to test_config.yml before benchmark runs
-|   |-- time_constraints.yaml           Temporal ranges used by benchmark queries
 `-- src/test/kotlin/it/unibo/tests/
     |-- ci/                             Fast regression tests for graph, TS, temporal, and query behavior
     |-- evaluation/                     Evaluation against the competitors (./gradlew evaluate)
@@ -149,7 +148,7 @@ The config defines:
 - `specificRuns.runs`: the runs to execute; the tests ingest and query STGraph on the datasets of the runs with `stgraph` among their `approaches`, `./gradlew evaluateSpecificRuns` executes all of them;
 - `evaluation`: every combination of its parameters, `./gradlew evaluate` (see [Reproducing The Results](#reproducing-the-results)).
 
-Temporal benchmark ranges are loaded from `src/main/resources/time_constraints.yaml`. Label metadata is loaded from `src/main/resources/labels.yaml`.
+Each SmartBench query has one time window per dataset size, the same for every system (`TimeWindows` in `src/test/kotlin/it/unibo/tests/smartbench/queries`). Label metadata is loaded from `src/main/resources/labels.yaml`.
 
 ## Reproducing The Artifact Locally
 
@@ -169,7 +168,7 @@ It:
 
 ## Reproducing The Results
 
-The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. Every system runs in a container, without CPU or memory limits unless the `resources` section of `test_config.yml` sets them (the single-core comparison of the paper: `cpus: 1` for each; AeonG and HyGraph are always limited to one core, shared with their client), and is configured with the least parallelism it allows. One system at a time, the evaluation downloads the data, starts the system, loads the data, runs the queries on the time windows of `time_constraints.yaml` and stops the system:
+The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. Every system runs in a container, without CPU or memory limits unless the `resources` section of `test_config.yml` sets them (the single-core comparison of the paper: `cpus: 1` for each; AeonG and HyGraph are always limited to one core, shared with their client), and is configured with the least parallelism it allows. One system at a time, the evaluation downloads the data, starts the system, loads the data, runs the queries (each on its time window for the size) and stops the system:
 
 ```bash
 ./gradlew evaluate               # every combination of the evaluation section of test_config.yml

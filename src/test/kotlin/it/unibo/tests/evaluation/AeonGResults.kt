@@ -1,5 +1,6 @@
 package it.unibo.tests.evaluation
 
+import it.unibo.stats.QUERY_WINDOWS
 import java.io.File
 import java.util.UUID
 import kotlin.math.roundToLong
@@ -55,7 +56,7 @@ internal object AeonGResults {
                 "datasetSize" to size, "threads" to (r["threads"] ?: 1), "elapsedTime" to r["elapsedTime"]?.toDoubleOrNull()?.roundToLong(),
                 "numMachines" to 1, "cardinality" to -1, "queryMode" to "OPTIMIZED",
                 "iteration" to ((r["iteration"]?.toIntOrNull() ?: 1) - 1), // from 1 in AeonG
-                "querySelectivity" to (r["querySelectivity"]?.takeIf { it.isNotBlank() && it != "None" } ?: "increased"),
+                "querySelectivity" to (r["querySelectivity"]?.takeIf { it.isNotBlank() && it != "None" } ?: QUERY_WINDOWS),
                 "temporalRangeIndex" to (Regex("\\d+").find(r["temporalRangeIndex"].orEmpty())?.value ?: "0"),
                 "configuration" to configuration
             )

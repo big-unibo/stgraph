@@ -3,7 +3,7 @@ package it.unibo.tests.smartbench.loaders
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import it.unibo.graph.asterixdb.dateToTimestamp
-import it.unibo.stats.TestConfig
+import it.unibo.tests.smartbench.queries.TimeWindows
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -17,7 +17,7 @@ import java.nio.file.Paths
  * transaction, one version) per event, the events of all the series in the order of their timestamps (epoch ms), as
  * AeonG would receive them, so that the transaction time follows the time of the events. The indexes on the ids of the
  * nodes the statements match come first. <size>.tt maps the time to the transaction time: for each bound of the windows
- * of time_constraints.yaml of the size, the first statement of an event at or after it (last=<n>: the number of
+ * of the queries on the size (TimeWindows), the first statement of an event at or after it (last=<n>: the number of
  * statements), see SmartBenchEvaluation.aeongQueries. Writing the dump is not timed: AeonG times its load.
  */
 class SmartBenchAeonG(private val size: String) {
@@ -124,12 +124,8 @@ class SmartBenchAeonG(private val size: String) {
         /** Whether the dump of [size] is complete and of this version */
         fun dumpReady(size: String) = File(dumpFile(size).path + ".done").let { it.isFile && it.readText() == DUMP_VERSION }
 
-        /** The bounds (from and to) of the windows of time_constraints.yaml of [size], of every selectivity and query */
-        fun windowBounds(size: String): Set<Long> = listOf("equal", "increased", "scaled").flatMap { selectivity ->
-            listOf("EnvironmentCoverage", "EnvironmentAggregate", "MaintenanceOwners", "EnvironmentOutlier", "AgentOutlier", "AgentHistory").flatMap { query ->
-                runCatching { TestConfig.loadTemporalRanges(selectivity, query, size).values.flatMap { listOf(it.from, it.to) } }.getOrDefault(emptyList())
-            }
-        }.toSet()
+        /** The bounds (from and to) of the time windows of the queries on [size] (TimeWindows) */
+        fun windowBounds(size: String): Set<Long> = TimeWindows.of(size).flatMap { listOf(it.from, it.to) }.toSet()
 
         /** The transaction time of the bounds of the windows in the dump of [size] (see [SmartBenchAeonG]): bound -> statement, last */
         fun transactionTimes(size: String): Map<String, Long> =
