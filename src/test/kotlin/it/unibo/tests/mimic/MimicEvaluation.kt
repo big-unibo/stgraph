@@ -3,7 +3,6 @@ package it.unibo.tests.mimic
 import it.unibo.graph.query.QueryMode
 import it.unibo.stats.Config
 import it.unibo.stats.SetupConfig
-import it.unibo.tests.evaluation.AeonGTransactionTimes
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
@@ -171,7 +170,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         val folder = dump.absoluteFile.parentFile.apply { mkdirs() }
         val queries = File(folder, "queries").apply { mkdirs() }
         val env = mapOf("AEONG_QUERIES" to queries.path, "AEONG_DATASETS" to folder.path)
-        aeong(limit.toString(), queryFiles, dump, env, ::aeongTransactionTimes) { tt ->
+        aeong(limit.toString(), queryFiles, dump, env) { tt ->
             // The queries on the whole history: transaction time up to the one of the last statement of the dump
             queryFiles.forEach { q ->
                 File(queries, "$q.txt").writeText(MimicEvaluation::class.java.classLoader.getResource("queries/mimic/aeong/$q.txt")!!.readText().replace("{TTTO_PARAM}", tt.getValue("last").toString()))
@@ -179,20 +178,6 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         }
     }
 
-    /**
-     * The transaction time of the last statement of the loaded database of AeonG (see AeonGTransactionTimes): the dump
-     * numbers the measurements in the order of its statements, so the first time as of which the node of the last
-     * measurement (the greatest measurement_id) has it
-     */
-    private fun aeongTransactionTimes(search: AeonGTransactionTimes.Search): Map<String, Long> {
-        val lastMeasurement = search.value("MATCH (n) RETURN max(n.measurement_id)")
-        check(lastMeasurement > 0) { "The database of AeonG has no measurements: is its dump (${MimicIVAeonG.dumpFile(limit)}) empty?" }
-        val label = search.text("MATCH (n) WHERE n.measurement_id = $lastMeasurement RETURN labels(n)[0]").replace("`", "``")
-        val series = search.text("MATCH (n) WHERE n.measurement_id = $lastMeasurement RETURN n.series_id")
-        val start = 2 * MimicIVAeonG.lastStatement(limit).toLong() // a transaction starts and commits
-        val last = search.first(start) { t -> search.value("MATCH (n:`$label` {series_id: '$series'}) TT AS $t RETURN max(n.measurement_id)") >= lastMeasurement }
-        return mapOf("last" to last)
-    }
 
     private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }
 

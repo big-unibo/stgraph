@@ -150,11 +150,11 @@ event and updated by each next one: one statement (one transaction, one version 
 events in the order of their timestamps. Its queries, those of Neo4j (`src/test/resources/queries/mimic/aeong/`:
 `q1`-`q3` are Q1-Q3, `q0` a warm-up; `src/test/resources/queries/smartbench/aeong/`), read the history by
 transaction time (`TT FROM ... TO ...`), the logical clock of AeonG, which advances with every transaction: its container
-runs the ingestion alone, then serves the loaded database (`AEONG_MODE=serve`, Bolt on port 7690), where the evaluation
-measures the transaction time of each bound of the time windows (the first event at or after it) and of the last
-statement (`TT AS t` and a binary search, not timed), and then runs the queries alone with those times (the whole
-history for MIMIC-IV and for the queries without a window). The times are cached next to the dump (`<size>.aeong`,
-`<limit>.aeong`) for the runs of the queries alone, until the next ingestion. Its results, recorded by its container in a
+records each required boundary node's `transaction_ts` during ingestion, then runs the queries with those times
+(the whole history for MIMIC-IV and for the queries without a window). Only boundary nodes are looked up; there is
+no post-ingestion timestamp search or calibration container. Boundary lookups are excluded from ingestion timing.
+The times are saved next to the dump (`<size>.aeong`, `<limit>.aeong`) for query-only runs and replaced on ingestion.
+Its results, recorded by its container in a
 temporary folder, are added to `results/dt_graph/` as those of the other systems (`model` aeong, the configuration of
 `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
 

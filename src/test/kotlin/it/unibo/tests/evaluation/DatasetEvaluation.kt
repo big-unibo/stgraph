@@ -164,7 +164,15 @@ abstract class DatasetEvaluation(
         val composeFile = "evaluation/architectures/$system/docker-compose.yaml"
         // AeonG records the results of the run in a temporary folder, added to results/dt_graph (see AeonGResults)
         val aeongResults = if (system == "aeong") java.nio.file.Files.createTempDirectory("aeong-results").toFile() else null
-        val env = containerEnv(containerSize, queryIds, extraEnv) + listOfNotNull(aeongResults?.let { "AEONG_RESULTS" to it.absolutePath })
+        val env = mapOf(
+            "DATASET" to dataset,
+            "DATASET_SIZE" to containerSize,
+            "INGESTION_ITERATIONS" to evaluation.ingestionIterations.toString(),
+            "QUERY_ITERATIONS" to evaluation.queryIterations.toString(),
+            "THREAD" to "1",
+            "QUERY_SELECTIVITY" to QUERY_WINDOWS, // recorded as the querySelectivity of the runs
+            "QUERIES" to queryIds.joinToString(",")
+        ) + environment + extraEnv + listOfNotNull(aeongResults?.let { "AEONG_RESULTS" to it.absolutePath })
         val run = "$system | $dataset $size (size $containerSize in its container)"
         progress("$run: inside its container, started")
         try {
@@ -179,37 +187,27 @@ abstract class DatasetEvaluation(
         progress("$run: done, results in results/dt_graph")
     }
 
-    /** The environment of the container of AeonG or HyGraph (see [selfContained]) */
-    protected fun containerEnv(containerSize: String, queryIds: List<String>, extraEnv: Map<String, String> = emptyMap()) = mapOf(
-        "DATASET" to dataset,
-        "DATASET_SIZE" to containerSize,
-        "INGESTION_ITERATIONS" to evaluation.ingestionIterations.toString(),
-        "QUERY_ITERATIONS" to evaluation.queryIterations.toString(),
-        "THREAD" to "1",
-        "QUERY_SELECTIVITY" to QUERY_WINDOWS, // recorded as the querySelectivity of the runs
-        "QUERIES" to queryIds.joinToString(",")
-    ) + environment + extraEnv
-
     /**
      * AeonG on the Cypher [dump] (its folder: AEONG_DATASETS of [extraEnv], with AEONG_QUERIES), in two runs of its
-     * container: the ingestion alone, then the queries alone on the loaded database, with their transaction times
-     * (AeonGTransactionTimes: measured by [measure] on the loaded database after the ingestion, or cached since the last
-     * one) written into the query files by [writeQueries]
+     * container: the ingestion, which records the transaction times of the dump in <dump>.aeong (see
+     * evaluation/architectures/aeong/ingest_boundaries.py), then the queries, written by [writeQueries] with those times
      */
     protected fun aeong(
         containerSize: String,
         queryIds: List<String>,
         dump: File,
         extraEnv: Map<String, String>,
-        measure: (AeonGTransactionTimes.Search) -> Map<String, Long>,
         writeQueries: (Map<String, Long>) -> Unit
     ) {
         if (evaluation.ingestionIterations > 0) {
-            AeonGTransactionTimes.invalidate(dump)
             selfContained("aeong", containerSize, queryIds, extraEnv + ("QUERY_ITERATIONS" to "0"), singlePhase = true)
         }
         if (evaluation.queryIterations > 0) {
-            writeQueries(AeonGTransactionTimes.of(dump, containerEnv(containerSize, queryIds, extraEnv), measure))
+            val times = File(dump.path.removeSuffix(".cypher") + ".aeong")
+            check(times.isFile) { "Missing $times: run AeonG ingestion to record the transaction times" }
+            writeQueries(times.readLines().filter { "=" in it }.associate {
+                it.substringBefore("=") to it.substringAfter("=").toLong()
+            })
             selfContained("aeong", containerSize, queryIds, extraEnv + ("INGESTION_ITERATIONS" to "0"), singlePhase = true)
         }
     }

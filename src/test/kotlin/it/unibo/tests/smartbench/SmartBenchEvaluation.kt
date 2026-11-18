@@ -3,7 +3,6 @@ package it.unibo.tests.smartbench
 import it.unibo.graph.query.QueryMode
 import it.unibo.stats.Config
 import it.unibo.stats.SetupConfig
-import it.unibo.tests.evaluation.AeonGTransactionTimes
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
@@ -136,8 +135,8 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
      * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables,
      * with the sizes, the dataset and the time windows (TimeWindows) of the other systems. AeonG loads its
      * Cypher dump, written by SmartBenchAeonG from the dataset of the other systems (not timed) when missing, and runs
-     * its queries (src/test/resources/queries/smartbench/aeong) with the time window of the query as transaction time, measured on the loaded
-     * database (see [aeongTransactionTimes] and [aeongQueries])
+     * its queries (src/test/resources/queries/smartbench/aeong) with the transaction times captured during ingestion
+     * (see [aeongQueries])
      */
     private fun selfContained(system: String) {
         // HyGraph records in results/dt_graph as the other systems: the model (with the label of the run) and the size
@@ -154,40 +153,23 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
         val dump = SmartBenchAeonG.dumpFile(size)
         val queries = File(dump.absoluteFile.parentFile, "queries").apply { mkdirs() }
         val env = mapOf("AEONG_DATASETS" to dump.absoluteFile.parentFile.path, "AEONG_QUERIES" to queries.path)
-        aeong(size, queryIds, dump, recorded + env, ::aeongTransactionTimes) { aeongQueries(queries, it) }
-    }
-
-    /**
-     * The transaction times of the loaded database of AeonG (see AeonGTransactionTimes): for each bound of the time
-     * windows on the size, the time of the first event at or after it (the first time as of which a Temperature node has
-     * a timestamp at or after the bound); last, the time of the last statement (the first time as of which every
-     * Temperature node with the last timestamp has it)
-     */
-    private fun aeongTransactionTimes(search: AeonGTransactionTimes.Search): Map<String, Long> {
-        val start = 2 * SmartBenchAeonG.transactionTimes(size).getValue("last") // a transaction starts and commits
-        val lastTimestamp = search.value("MATCH (n:Temperature) RETURN max(n.timestamp)")
-        check(lastTimestamp > 0) { "The database of AeonG has no measurements: is its dump (${SmartBenchAeonG.dumpFile(size)}) empty?" }
-        val atLast = search.value("MATCH (n:Temperature) WHERE n.timestamp = $lastTimestamp RETURN count(n)")
-        val last = search.first(start) { t -> search.value("MATCH (n:Temperature) WHERE n.timestamp = $lastTimestamp TT AS $t RETURN count(n)") >= atLast }
-        return SmartBenchAeonG.windowBounds(size).associate { bound ->
-            bound.toString() to search.first(last + 1) { t -> t > last || search.value("MATCH (n:Temperature) TT AS $t RETURN max(n.timestamp)") >= bound }
-        } + ("last" to last)
+        aeong(size, queryIds, dump, recorded + env) { aeongQueries(queries, it) }
     }
 
     /**
      * Writes the queries of AeonG for this size into [folder] (datasets/dump/aeong/smartbench/<size>/queries), as its
      * scripts read them (one statement per line, without comments; the names of its files, e.g., q2 for
      * EnvironmentAggregate), with the time window of the query on the size (TimeWindows) as transaction time (TT FROM
-     * ... TO ...), from the transaction times [tt] of the loaded database (see [aeongTransactionTimes]): from the first
-     * event at or after its start to the last one before its end; the whole history for the queries without a window
-     * (EnvironmentCoverage, AgentHistory)
+     * ... TO ...), from the transaction times [tt] recorded by the ingestion (ingest_boundaries.py): from the first event
+     * at or after its start to the last one before its end (TT FROM a TO b reads the versions that start before b); the
+     * whole history for the queries without a window (EnvironmentCoverage, AgentHistory)
      */
     private fun aeongQueries(folder: File, tt: Map<String, Long>) {
         val files = mapOf("EnvironmentAggregate" to "q2", "MaintenanceOwners" to "q3", "EnvironmentOutlier" to "q4", "AgentOutlier" to "q5")
         for (queryId in TestSmartBenchCompetitorsQuery.queryIds) {
             val windowed = TimeWindows.windowed(queryId)
             val from = if (windowed) tt.getValue(TimeWindows.of(queryId, size).from.toString()) else 0L
-            val to = if (windowed) maxOf(tt.getValue(TimeWindows.of(queryId, size).to.toString()) - 1, 0L) else tt.getValue("last")
+            val to = tt.getValue(if (windowed) TimeWindows.of(queryId, size).to.toString() else "last")
             val query = TestSmartBenchCompetitorsQuery.queryText("aeong", queryId).lines()
                 .map { it.replace(Regex("//.*$"), "").trim() }.filter { it.isNotEmpty() }.joinToString(" ")
                 .replace("{TTFROM_PARAM}", from.toString()).replace("{TTTO_PARAM}", to.toString())
