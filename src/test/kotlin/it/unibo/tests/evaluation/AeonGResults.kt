@@ -31,8 +31,8 @@ internal object AeonGResults {
     /** Appends the results of AeonG in [folder] (a run) to results/dt_graph, recorded as [model] on [dataset] [size] */
     fun export(folder: File, model: String, dataset: String, size: String, configuration: String) {
         val ingestion = rows(File(folder, "ingestion_time/ingestion_statistics.csv")).map { r ->
-            // Seconds (the timestamps of AeonG) or milliseconds
-            fun ms(key: String) = r[key]?.toDoubleOrNull()?.let { if (it < 1e11) it * 1000 else it }?.roundToLong()
+            // Microseconds (the timestamps of create_database.sh of AeonG), seconds or milliseconds
+            fun ms(key: String) = r[key]?.toDoubleOrNull()?.let { if (it > 1e14) it / 1000 else if (it < 1e11) it * 1000 else it }?.roundToLong()
             val start = ms("startTimestamp")
             val end = ms("endTimestamp")
             val elapsed = if (start != null && end != null) end - start else r["elapsedTime"]?.toDoubleOrNull()?.roundToLong() ?: -1
