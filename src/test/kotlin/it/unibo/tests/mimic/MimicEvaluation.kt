@@ -186,6 +186,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
      */
     private fun aeongTransactionTimes(search: AeonGTransactionTimes.Search): Map<String, Long> {
         val lastMeasurement = search.value("MATCH (n) RETURN max(n.measurement_id)")
+        check(lastMeasurement > 0) { "The database of AeonG has no measurements: is its dump (${MimicIVAeonG.dumpFile(limit)}) empty?" }
         val label = search.text("MATCH (n) WHERE n.measurement_id = $lastMeasurement RETURN labels(n)[0]").replace("`", "``")
         val series = search.text("MATCH (n) WHERE n.measurement_id = $lastMeasurement RETURN n.series_id")
         val start = 2 * MimicIVAeonG.lastStatement(limit).toLong() // a transaction starts and commits

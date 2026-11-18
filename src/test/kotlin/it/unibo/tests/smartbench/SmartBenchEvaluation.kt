@@ -166,6 +166,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     private fun aeongTransactionTimes(search: AeonGTransactionTimes.Search): Map<String, Long> {
         val start = 2 * SmartBenchAeonG.transactionTimes(size).getValue("last") // a transaction starts and commits
         val lastTimestamp = search.value("MATCH (n:Temperature) RETURN max(n.timestamp)")
+        check(lastTimestamp > 0) { "The database of AeonG has no measurements: is its dump (${SmartBenchAeonG.dumpFile(size)}) empty?" }
         val atLast = search.value("MATCH (n:Temperature) WHERE n.timestamp = $lastTimestamp RETURN count(n)")
         val last = search.first(start) { t -> search.value("MATCH (n:Temperature) WHERE n.timestamp = $lastTimestamp TT AS $t RETURN count(n)") >= atLast }
         return SmartBenchAeonG.windowBounds(size).associate { bound ->
