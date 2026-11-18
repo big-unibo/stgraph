@@ -35,17 +35,9 @@ for DSET in "${DSETS[@]}"; do
             export THREAD="$EVALTHREAD"
             for SELECTIVITY in "${QUERY_SELECTIVITIES[@]}"; do
                 export QUERY_SELECTIVITY="$SELECTIVITY"
-                # The output of HyGraph goes to a log in results/hygraph/logs (the folder results of the repository),
-                # printed only if the run fails
-                LOG_DIR="results/hygraph/logs"
-                mkdir -p "$LOG_DIR"
-                LOG="$LOG_DIR/${DATASET}_${DATASET_SIZE}_${THREAD}_${QUERY_SELECTIVITY}.log"
-                echo "Running HyGraph on $DATASET $DATASET_SIZE (threads $THREAD, selectivity $QUERY_SELECTIVITY), output in $LOG"
-                if ! python3 "src/$DATASET/evaluate_hygraph.py" > "$LOG" 2>&1; then
-                    echo "HyGraph failed, last lines of $LOG:"
-                    tail -n 50 "$LOG"
-                    exit 1
-                fi
+                # The output of HyGraph goes to the output of the container (no log file)
+                echo "Running HyGraph on $DATASET $DATASET_SIZE (threads $THREAD, selectivity $QUERY_SELECTIVITY)"
+                python3 "src/$DATASET/evaluate_hygraph.py"
             done
         done
     done
