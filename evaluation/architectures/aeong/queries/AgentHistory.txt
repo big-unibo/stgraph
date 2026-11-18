@@ -1,1 +1,0 @@
-MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor {name: "Thermometer3"})-[:hasTemperature]-(temp:Temperature) WHERE temp.temperature > 0 RETURN DISTINCT device, environment;

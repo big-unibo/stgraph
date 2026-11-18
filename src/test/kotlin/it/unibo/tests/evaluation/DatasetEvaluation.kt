@@ -194,12 +194,15 @@ abstract class DatasetEvaluation(
             "QUERIES" to queryIds.joinToString(",")
         ) + environment + extraEnv
         val run = "$system | $dataset $size (size $containerSize in its container)"
+        // AeonG records its results in results/aeong: those of this run go to results/dt_graph too (see AeonGResults)
+        val aeongBefore = if (system == "aeong") AeonGResults.testIds() else emptySet()
         progress("$run: inside its container, started")
         try {
             runCommand(listOf("docker", "compose", "-f", composeFile, "up", "--abort-on-container-exit", "--exit-code-from", system), env)
         } finally {
             runCommand(listOf("docker", "compose", "-f", composeFile, "down"), env)
         }
+        if (system == "aeong") AeonGResults.export(aeongBefore, evaluation.model(system), dataset, size, evaluation.configuration(system))
         progress("$run: done, results in results/$system")
     }
 

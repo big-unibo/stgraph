@@ -38,8 +38,8 @@ import java.sql.DriverManager
  * - hygraph: ingestion and queries inside its container (evaluation/architectures/hygraph), on the CSV files of the
  *   import of Neo4j (datasets/dump/neo4j/mimic/<limit>), written first by MimicIVNeo4J if missing (not timed);
  * - aeong: ingestion and queries inside its container (evaluation/architectures/aeong), on the Cypher dump
- *   (datasets/dump/aeong/mimic/<limit>), written first by MimicIVAeonG if missing (not timed); only the ingestion until
- *   its query files are in evaluation/architectures/aeong/queries/mimic.
+ *   (datasets/dump/aeong/mimic/<limit>, the graph of MimicIVNeo4J), written first by MimicIVAeonG if missing (not
+ *   timed), with the queries of evaluation/architectures/aeong/queries/mimic (those of Neo4j).
  */
 class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String) :
     DatasetEvaluation(config, evaluation, "mimic", size) {
@@ -161,8 +161,8 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
      * query_mimic.sh runs the query files as they are: without all of them, the container only runs the ingestion
      */
     private fun aeong() {
-        val dump = File("datasets/dump/aeong/mimic/$limit/$limit.cypher")
-        if (evaluation.ingestionIterations > 0 && (!dump.exists() || dump.length() == 0L)) {
+        val dump = MimicIVAeonG.dumpFile(limit)
+        if (evaluation.ingestionIterations > 0 && !MimicIVAeonG.dumpReady(limit)) {
             progress("aeong | $dataset $size: writing the Cypher dump")
             MimicIVAeonG(limit, postgres = postgres).loadData()
         }

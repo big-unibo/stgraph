@@ -65,12 +65,14 @@ volumes:
 #  graphix: { cpus: 1, conf: evaluation/architectures/graphix/conf }
 #  neo4j: { cpus: 1, conf: evaluation/architectures/neo4j/conf }
 #  pgage: { cpus: 1, conf: evaluation/architectures/pgage/conf }
+#  aeong: { cpus: 1, conf: evaluation/architectures/aeong/conf }
 # and free (20 cores, no memory limit, the defaults of the systems in conf-free/; AsterixDB and Graphix with two
 # partitions, so their data in another folder than the one of conf/, see volumes):
 #  asterixdb: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/stgraph/conf-free }
 #  graphix: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/graphix/conf-free }
 #  neo4j: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/neo4j/conf-free }
 #  pgage: { cpus: 20, cpuset: "0-19", shm: 1g, conf: evaluation/architectures/pgage/conf-free }
+#  aeong: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/aeong/conf-free }
 resources:
   asterixdb:
   graphix:

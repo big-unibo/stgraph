@@ -2,111 +2,88 @@ package it.unibo.tests.mimic.loaders
 
 import it.unibo.stats.PostgresConfig
 import it.unibo.tests.smartbench.loaders.TSRecord
-import org.neo4j.driver.AuthTokens
-import org.neo4j.driver.Driver
-import org.neo4j.driver.GraphDatabase
-import org.neo4j.driver.Session
 import java.io.File
 
-
+/**
+ * Writes MIMIC-IV as the Cypher dump that AeonG loads (datasets/dump/aeong/mimic/<limit>/<limit>.cypher, one statement
+ * per line, each one a transaction of AeonG), with the graph of MimicIVNeo4J, so that the queries are the same:
+ * - (:Person {person_id, subject_id, rnd, pId, c})-[:HAS_PARAMETERS]->(:TimeSeries {ts_id}), a time series per person;
+ * - (:TimeSeries)-[:HAS_EVENT]->(:<abbreviation> {measurement_id, ts_id, category, abbreviation, itemid, timestamp, value,
+ *   unitname (if any)}).
+ * The measurements are added as a time series database receives them: in batches of [batchSize] (a batch per statement,
+ * written when full and at the end of each time series), not in a single statement. The indexes on the ids of the
+ * nodes the statements match come first. Writing the dump is not timed: AeonG times its load (see MimicEvaluation).
+ */
 class MimicIVAeonG(
     limit: Long,
-    postgres: PostgresConfig = PostgresConfig()
+    postgres: PostgresConfig = PostgresConfig(),
+    private val batchSize: Int = 10
 ) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
 
-    private val baseDir = File("datasets/dump/aeong/mimic/$limit").apply {
-        mkdirs()
-    }
-
-    private val cypherWriter = File("$baseDir/$limit.cypher").printWriter()
+    private val dump = dumpFile(limit).apply { parentFile.mkdirs() }
+    private val writer = dump.printWriter()
+    private val tsMap = mutableMapOf<Long, Long>()
+    private var personCounter = 0L
+    private var tsCounter = 0L
+    private var measurementCounter = 0L
+    private val pending = mutableListOf<Pair<String, String>>() // (label, properties) of the batch of the current series
 
     init {
-        clearGraph()
-        baseDir.mkdirs()
-    }
-
-    /** Deletes all nodes and relationships in the database */
-    private fun clearGraph() {
-    }
-
-    private fun writeCypher(query: String) {
-        cypherWriter.appendLine(query.replace("\\s+".toRegex(), " ").replace("Return ", "", ignoreCase = true))
+        writer.println("CREATE INDEX ON :Person(person_id);")
+        writer.println("CREATE INDEX ON :TimeSeries(ts_id);")
     }
 
     override fun addPerson(subjectId: Int, c: Int): Long {
-        writeCypher(createPerson(subjectId, c))
-        return subjectId.toLong()
+        val personId = ++personCounter
+        writer.println("CREATE (:Person {person_id: $personId, subject_id: $subjectId, rnd: ${subjectId % 10}, pId: ${personId - 1}, c: $c});")
+        return personId
     }
 
-    private fun createPerson(subjectId: Int, c: Int): String = "CREATE (p:Person {subject_id: ${subjectId}, rnd: ${subjectId % 10}, pId: ${subjectId}, c: $c});"
-
-    override fun addTimeseries(
-        abbreviation: String,
-        unitname: String?,
-        category: String,
-        label: String,
-        itemid: Int,
-        person: Long
-    ): Long {
-        writeCypher(createTS(person, abbreviation, unitname, category, label, itemid))
-        return (person.toString() + abbreviation).hashCode().toLong()
+    override fun addTimeseries(abbreviation: String, unitname: String?, category: String, label: String, itemid: Int, person: Long): Long {
+        if (!tsMap.contains(person)) {
+            val tsId = ++tsCounter
+            writer.println("MATCH (p:Person {person_id: $person}) CREATE (p)-[:HAS_PARAMETERS]->(:TimeSeries {ts_id: $tsId});")
+            tsMap[person] = tsId
+        }
+        return person
     }
-
-    private fun createTS(
-        person: Long,
-        abbreviation: String,
-        unitname: String?,
-        category: String,
-        label: String,
-        itemid: Int
-    ): String = """
-        MATCH (p: Person {subject_id: $person})
-        CREATE (ts:TimeSeries {
-            tsId: '${(person.toString() + abbreviation).hashCode()}',
-            abbreviation: '${abbreviation}',
-            unitname: '${unitname}',
-            category: '${category}',
-            label: '${label}',
-            itemid: '${itemid}'
-        })
-        CREATE (p)-[:HAS_PARAMETERS]->(ts);
-    """.trimIndent()
 
     override fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean) {
-        //val query =
-        //    if (isFirst) createMeasurement(tsId, row)
-        //    else updateMeasurement(tsId, row)
-        val query = createMeasurement2(tsId, row)
-        writeCypher(query)
+        val ts = tsMap.getValue(tsId)
+        val item = tsCache[row.label.toInt()]!!
+        val properties = linkedMapOf<String, Any?>(
+            "measurement_id" to ++measurementCounter, "ts_id" to ts, "category" to item.category, "abbreviation" to item.abbreviation,
+            "itemid" to item.itemid, "timestamp" to row.timestamp, "value" to row.value, "unitname" to item.unitname
+        )
+        pending += item.abbreviation to properties.filterValues { it != null && it != "" }
+            .entries.joinToString(", ", "{", "}") { (k, v) -> "$k: ${if (v is Number) v.toLong() else "'${escape(v.toString())}'"}" }
+        if (pending.size >= batchSize || isLast) flush(ts)
     }
 
-    private fun createMeasurement2(tsId: Long, row: TSRecord): String = """
-        MATCH (ts: TimeSeries {tsId: '$tsId'})
-        CREATE (m:Measurement {
-            timestamp: ${row.timestamp},
-            value: ${row.value}
-        })
-        CREATE (ts)-[:HAS_MEASUREMENT]->(m);
-        """.trimIndent()
-
-    private fun createMeasurement(tsId: Long, row: TSRecord): String = """
-        MATCH (ts: TimeSeries {tsId: '$tsId'})
-        CREATE (m:Measurement {
-            mId: '${tsId}',
-            timestamp: ${row.timestamp},
-            value: ${row.value}
-        })
-        CREATE (ts)-[:HAS_MEASUREMENT]->(m);
-        """.trimIndent()
-
-    private fun updateMeasurement(tsId: Long, row: TSRecord): String = """
-        MATCH (m:Measurement { mId: '${tsId}' })
-        SET m.timestamp = ${row.timestamp},
-            m.value = ${row.value};
-        """.trimIndent()
+    /** The batch of the series [ts] in one statement (one CREATE per measurement: its label is not a parameter) */
+    private fun flush(ts: Long) {
+        if (pending.isEmpty()) return
+        writer.println("MATCH (t:TimeSeries {ts_id: $ts}) " + pending.joinToString(" ") { (label, props) ->
+            "CREATE (t)-[:HAS_EVENT]->(:`${label.replace("`", "``")}` $props)"
+        } + ";")
+        pending.clear()
+    }
 
     override fun close() {
-        cypherWriter.flush()
-        cypherWriter.close()
+        writer.flush()
+        writer.close()
+        File(dump.path + ".done").writeText(DUMP_VERSION) // the dump is complete, in this version
+    }
+
+    companion object {
+        /** The version of the dumps: one written by an older MimicIVAeonG (another graph) is written again */
+        const val DUMP_VERSION = "neo4j-graph-batches"
+
+        fun dumpFile(limit: Long) = File("datasets/dump/aeong/mimic/$limit/$limit.cypher")
+
+        /** Whether the dump of [limit] is complete and of this version */
+        fun dumpReady(limit: Long) = File(dumpFile(limit).path + ".done").let { it.isFile && it.readText() == DUMP_VERSION }
+
+        private fun escape(s: String) = s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
     }
 }

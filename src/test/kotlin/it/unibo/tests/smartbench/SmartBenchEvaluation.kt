@@ -3,6 +3,7 @@ package it.unibo.tests.smartbench
 import it.unibo.graph.query.QueryMode
 import it.unibo.stats.Config
 import it.unibo.stats.SetupConfig
+import it.unibo.stats.TestConfig
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
@@ -15,6 +16,7 @@ import it.unibo.tests.systems.pgAgeConnection
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QGraphix
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QNeo4J
 import it.unibo.tests.smartbench.TestSmartBenchCompetitorsQuery.QPGAge
+import it.unibo.tests.smartbench.loaders.SmartBenchAeonG
 import it.unibo.tests.smartbench.loaders.SmartBenchDataLoader
 import it.unibo.tests.smartbench.loaders.SmartBenchGraphix
 import it.unibo.tests.smartbench.loaders.SmartBenchNeo4J
@@ -131,37 +133,48 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
     }
 
     /**
-     * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables.
-     * AeonG up to medium only, with the sizes of the old evaluation (same time windows: medium -> large); HyGraph
-     * with the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems, mounted by its
-     * compose file
+     * AeonG and HyGraph load the data and run the queries inside their container, configured by environment variables,
+     * with the sizes, the dataset and the time windows (time_constraints.yaml) of the other systems. AeonG loads its
+     * Cypher dump, written by SmartBenchAeonG from the dataset of the other systems (not timed) when missing, and runs
+     * its queries (queries/smartbench, as the ones of Neo4j) with the time window of the run (see [aeongQueries])
      */
     private fun selfContained(system: String) {
         // HyGraph records in results/dt_graph as the other systems: the model (with the label of the run) and the size
         val recorded = mapOf("MODEL" to evaluation.model(system), "RESULT_SIZE" to size)
+        download("datasets/original/smartbench/$size", "smartbench")
         if (system == "hygraph") {
-            download("datasets/original/smartbench/$size", "smartbench")
             selfContained(system, size, queryIds, recorded)
             return
         }
-        val oldSize = mapOf("xsmall" to "xsmall", "small" to "small", "medium" to "large")[size]
-        if (oldSize == null) {
-            progress("$system | $dataset $size: skipped, it runs up to medium only")
-            return
+        if (evaluation.ingestionIterations > 0 && !SmartBenchAeonG.dumpReady(size)) {
+            progress("aeong | $dataset $size: writing the Cypher dump")
+            SmartBenchAeonG(size).writeDump()
         }
-        selfContained(system, oldSize, queryIds, recorded + ("AEONG_DATASETS" to aeongDataset(oldSize)), singlePhase = true)
+        val env = mapOf("AEONG_DATASETS" to SmartBenchAeonG.dumpFile(size).absoluteFile.parentFile.apply { mkdirs() }.path, "AEONG_QUERIES" to aeongQueries())
+        selfContained(system, size, queryIds, recorded + env, singlePhase = true)
     }
 
-    /** The folder of the Cypher dump of AeonG, downloaded on the host: its image cannot reach the server (TLS 1.3 only) */
-    private fun aeongDataset(oldSize: String): String {
-        val dump = File("datasets/original/smartbench/aeong/$oldSize.cypher")
-        if (!dump.exists() && evaluation.ingestionIterations > 0) {
-            check(evaluation.download) { "Missing $dump: run ./downloadDataset.sh smartbench/aeong $oldSize.cypher, or set download: true" }
-            progress("download | smartbench/aeong $oldSize: started")
-            downloadDataset("smartbench/aeong", dump.name)
-            progress("download | smartbench/aeong $oldSize: done")
+    /**
+     * The queries of AeonG for this size (datasets/dump/aeong/smartbench/<size>/queries), as its scripts read them (one
+     * statement per line, without comments; the names of its files, e.g., q2 for EnvironmentAggregate), with the time
+     * window of the run: its scripts replace only the end of the window, so both ends are replaced here. One
+     * selectivity, with one window per query, as its scripts run them
+     */
+    private fun aeongQueries(): String {
+        val selectivity = evaluation.selectivities.singleOrNull() ?: error("AeonG runs one selectivity at a time: ${evaluation.selectivities}")
+        val folder = File(SmartBenchAeonG.dumpFile(size).absoluteFile.parentFile, "queries").apply { mkdirs() }
+        val files = mapOf("EnvironmentAggregate" to "q2", "MaintenanceOwners" to "q3", "EnvironmentOutlier" to "q4", "AgentOutlier" to "q5")
+        for (queryId in TestSmartBenchCompetitorsQuery.queryIds) {
+            var query = File("evaluation/architectures/aeong/queries/smartbench/$queryId.txt").readLines()
+                .map { it.replace(Regex("//.*$"), "").trim() }.filter { it.isNotEmpty() }.joinToString(" ")
+            if (query.contains("{TSTAMPTO_PARAM}")) {
+                val window = TestConfig.loadTemporalRanges(selectivity, queryId, size).values.singleOrNull()
+                    ?: error("AeonG runs one time window per query: $queryId on $size ($selectivity)")
+                query = query.replace("{TSTAMPFROM_PARAM}", window.from.toString()).replace("{TSTAMPTO_PARAM}", window.to.toString())
+            }
+            File(folder, "${files[queryId] ?: queryId}.txt").writeText(query + "\n")
         }
-        return dump.absoluteFile.parentFile.apply { mkdirs() }.path
+        return folder.path
     }
 
     companion object {

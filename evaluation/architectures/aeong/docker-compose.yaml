@@ -20,10 +20,13 @@ services:
       - QUERIES
     volumes:
       - ../../../results/aeong:/home/AeonG/tests/results/aeong/
-      - ./time_constraints_commit.yaml:/vol/time_constraints.yaml
-      # AEONG_QUERIES: the query files of the dataset (./queries/mimic for MIMIC-IV, set by the evaluation). Read-only and
-      # copied by the command, as the scripts of the image rewrite them for each time window
-      - ${AEONG_QUERIES:-./queries}:/vol/queries:ro
+      # The time windows of the other systems (the queries come with their window, see SmartBenchEvaluation.aeongQueries:
+      # the scripts of the image only loop over the windows of the size)
+      - ../../../src/main/resources/time_constraints.yaml:/vol/time_constraints.yaml:ro
+      # AEONG_QUERIES: the query files of the dataset (./queries/mimic for MIMIC-IV; for SmartBench, those of
+      # ./queries/smartbench with the time window of the run, written by the evaluation). Read-only and copied by the
+      # command, as the scripts of the image rewrite them for each time window
+      - ${AEONG_QUERIES:-./queries/mimic}:/vol/queries:ro
       # AEONG_DATASETS: the folder of the dataset on the host (set by the evaluation). Only this folder, not T-mgBench,
       # where the image keeps cypher_index.cypher
       - ${AEONG_DATASETS:-./datasets/${DATASET:-smartbench}}:/home/AeonG/tests/datasets/T-mgBench/${DATASET:-smartbench}

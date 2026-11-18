@@ -1,1 +1,0 @@
-MATCH (temp:Temperature)-[:hasTemperature]-(device:Sensor)-[:hasCoverage]-(environment:Infrastructure {name: "3042"}) WHERE temp.temperature > 0 RETURN DISTINCT environment, device;

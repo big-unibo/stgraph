@@ -54,7 +54,8 @@ replication.
 | Graphix | one dataset per collection (the WKT locations stored as 2D geometries, while STGraph keeps them as strings, see `INCONSISTENCIES.txt`), and `TimeSeries` with one record per series; graph `SmartBench` defined as views over them and over `Observations`, with the model of STGraph: sensor `-[hasTemperature]->` series (`Temperature`) `-[hasTS]->` events (`TemperatureEvent`) | dataset `Observations`: the events of STGraph (same type and records), loaded through the same socket data feed; the vertices `TemperatureEvent` and the edges `hasTS` | primary key `id` of every entity dataset and of `TimeSeries`; primary key `(tsid, _id)` of `Observations`, as STGraph, used by the joins between vertices and edges (`graphix.evaluation.prefer-indexnl`, see Query planning below); R-tree on `Observations.location`, built after the ingestion |
 | Neo4j | the JSON dataset of the other systems: one node per entity, one relationship `has<Field>` per reference (through the driver on xsmall and small, in batches of 10 events; CSV files imported with `neo4j-admin` from medium on, and on every size in the CI, where `CI=true`) | one `Temperature` node per event, linked to its sensor | range index on `Temperature.timestamp`, built after the ingestion; the label and relationship-type lookup indexes that Neo4j creates by itself |
 | PGAge | AGE graph `smartbench_<size>`: one vertex per entity, and one per series (its first event) | TimescaleDB hypertable `smartbench_<size>.measurements` (in the schema of the graph): `INSERT`s in batches of 10 rows on xsmall and small, `COPY` in batches of 20,000 from medium on and on every size in the CI (`CI=true`) | the TimescaleDB index on `time` (no primary key, as the range index of Neo4j) and GiST on `location`, both built after the ingestion; none on the graph                                         |
-| AeonG, HyGraph | their original evaluation | their original evaluation | their original evaluation                                                                                                                                                           |
+| AeonG | the Cypher dump of the graph of Neo4j (see below) | one `Temperature` node per event, in batches of 10 per statement | those of its scripts                                                                                                                                                                 |
+| HyGraph | its original evaluation | its original evaluation | its original evaluation                                                                                                                                                           |
 
 The indexes built after the ingestion are timed as index time.
 
@@ -142,9 +143,13 @@ PostgreSQL again (e.g., after changing `mimic-iv_subjectids_tsids.csv` or the Po
 system, `./gradlew mimicCache` writes the copies of the sizes of `datasets.mimic.sizes` (or of `--args="<size> ..."`).
 To spare the other machines the query, copy the folder to the same path on them (`evaluation/push_datasets.sh`).
 
-On MIMIC-IV, AeonG loads the Cypher dump of `datasets/dump/aeong/mimic/<limit>/`, written by MimicIVAeonG when missing.
-Its query files `q0.txt`-`q3.txt` go in `evaluation/architectures/aeong/queries/mimic/`, mounted on its container as the
-SmartBench ones: until all of them are there, its container only runs the ingestion.
+AeonG loads a Cypher dump with the graph of Neo4j, written when missing (not timed) from the data of the other systems:
+`datasets/dump/aeong/mimic/<limit>/` (MimicIVAeonG) and `datasets/dump/aeong/smartbench/<size>/` (SmartBenchAeonG), on
+every size; the events in batches of 10, one statement (one transaction of AeonG) per batch. Its queries are those of
+Neo4j: `evaluation/architectures/aeong/queries/mimic/` (`q1`-`q3` are Q1-Q3, `q0` a warm-up) and
+`evaluation/architectures/aeong/queries/smartbench/` (written with the time window of the run). Its results, recorded by
+its container in `results/aeong/`, are added to `results/dt_graph/` as those of the other systems (`model` aeong, the
+configuration of `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
 
 For each dataset, size and system, one system at a time, a run:
 1. downloads the missing data (`smartbench <size>`: the JSON dataset of every system), from the same URLs as

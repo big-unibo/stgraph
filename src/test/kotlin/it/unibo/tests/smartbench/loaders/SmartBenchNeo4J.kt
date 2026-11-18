@@ -286,7 +286,7 @@ class SmartBenchNeo4J(
          * The property types of each label, as the headers of the CSV files and the values of the statements: per key,
          * the widest type of its values (long and double: double; any other mix: string), in the order of the keys
          */
-        private fun schema(nodes: List<Triple<String, Map<String, Any?>, List<Pair<String, String>>>>): Map<String, Map<String, String>> {
+        internal fun schema(nodes: List<Triple<String, Map<String, Any?>, List<Pair<String, String>>>>): Map<String, Map<String, String>> {
             val types = linkedMapOf<String, LinkedHashMap<String, String>>()
             for ((label, properties, _) in nodes) {
                 val labelTypes = types.getOrPut(label) { linkedMapOf() }
@@ -308,7 +308,7 @@ class SmartBenchNeo4J(
         }
 
         /** [value] as a property of type [type] (see [schema]) */
-        private fun typed(value: Any?, type: String): Any? = when {
+        internal fun typed(value: Any?, type: String): Any? = when {
             value == null -> null
             type == "long" -> (value as Number).toLong()
             type == "double" -> (value as Number).toDouble()
@@ -322,7 +322,7 @@ class SmartBenchNeo4J(
          * properties (its fields, but the type, the nulls and the objects with an id) and its relationships has<Key>
          * towards the ids of the objects it refers to (alone or in a list; an empty list: nothing, as in STGraph)
          */
-        private fun jsonNode(entity: Map<String, Any?>, file: Path): Triple<String, Map<String, Any?>, List<Pair<String, String>>> {
+        internal fun jsonNode(entity: Map<String, Any?>, file: Path): Triple<String, Map<String, Any?>, List<Pair<String, String>>> {
             val properties = linkedMapOf<String, Any?>()
             val references = mutableListOf<Pair<String, String>>()
             for ((key, value) in entity) {
