@@ -62,7 +62,10 @@ services:
           done
         } > /home/AeonG/tests/experiments/time_constraints.yaml
         mkdir -p /home/AeonG/tests/results/temporal_query
-        cp /vol/queries/*.txt /home/AeonG/tests/results/temporal_query/
+        # The queries of the run (none in a run of the ingestion alone)
+        cp /vol/queries/*.txt /home/AeonG/tests/results/temporal_query/ 2>/dev/null || true
+        # The dump is written by the evaluation (AEONG_DATASETS): nothing to download
+        sed -i '/download_datasets.sh/d' t_smarbench_test.sh
         # For the queries without a time window (EnvironmentCoverage, AgentHistory) replace_timestamp.sh of the image
         # writes on the file it reads, which empties it: through a temporary file
         sed -i 's|> "$$OUTPUT_FILE"|> "$$OUTPUT_FILE.tmp" \&\& mv "$$OUTPUT_FILE.tmp" "$$OUTPUT_FILE"|' replace_timestamp.sh
@@ -72,7 +75,6 @@ services:
             echo "The database holds [$$(cat $$LOADED 2>/dev/null)], not [$$DATASET $$DATASET_SIZE updates]: run the ingestion first"
             exit 1
           fi
-          sed -i '/download_datasets.sh/d' t_smarbench_test.sh
         else
           echo > $$LOADED
         fi

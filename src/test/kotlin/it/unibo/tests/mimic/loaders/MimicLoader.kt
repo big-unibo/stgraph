@@ -112,7 +112,22 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
      */
     private fun ensureEvents(pairs: List<Pair<Int, Int>>): File {
         val file = File(cacheDir, "events.csv.gz")
-        if (file.exists()) return file
+        // The subjects of the copy (subjects.txt, written with it): a copy read for another list of subjects would load
+        // other time series, or none, for the selected ones
+        val stamp = File(cacheDir, "subjects.txt")
+        val subjects = pairs.map { it.first }.toSortedSet()
+        if (file.exists()) {
+            if (stamp.isFile && stamp.readText() == subjects.joinToString("\n")) return file
+            // A copy without its subjects (written before them) or of other subjects: valid if it has every selected one
+            val cached = HashSet<Int>()
+            gzippedReader(file).useLines { lines -> lines.filter { it.isNotEmpty() }.forEach { cached += it.substringBefore(",").toInt() } }
+            check(cached.containsAll(subjects)) {
+                "The local copy of MIMIC-IV in $cacheDir was read for another list of subjects and time series " +
+                    "($subjectsFile has ${subjects.size - subjects.count { it in cached }} subjects of ${subjects.size} " +
+                    "not in it): use the list it was read for, or delete the folder to read PostgreSQL again"
+            }
+            return file
+        }
         writeGzipped(file) { out ->
             pairs.chunked(100_000).forEach { chunk ->
                 val chunk = chunk.toSet()
@@ -149,6 +164,7 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
                 }
             }
         }
+        stamp.writeText(subjects.joinToString("\n"))
         return file
     }
 
