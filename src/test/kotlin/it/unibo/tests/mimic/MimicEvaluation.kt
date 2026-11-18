@@ -161,23 +161,23 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
      * query_mimic.sh runs the query files as they are: without all of them, the container only runs the ingestion
      */
     private fun aeong() {
-        val dump = MimicIVAeonG.dumpFile(limit)
-        if (evaluation.ingestionIterations > 0 && !MimicIVAeonG.dumpReady(limit)) {
-            progress("aeong | $dataset $size: writing the Cypher dump")
-            MimicIVAeonG(limit, postgres = postgres).loadData()
+        val updates = evaluation.aeongUpdates
+        val dump = MimicIVAeonG.dumpFile(limit, updates)
+        if (evaluation.ingestionIterations > 0 && !MimicIVAeonG.dumpReady(limit, updates)) {
+            progress("aeong | $dataset $size: writing the Cypher dump${if (updates) " (updates)" else ""}")
+            MimicIVAeonG(limit, postgres = postgres, updates = updates).loadData()
         }
         val queryFiles = listOf("q0", "q1", "q2", "q3")
-        val missing = queryFiles.filterNot { File("evaluation/architectures/aeong/queries/mimic/$it.txt").isFile }
-        if (missing.isNotEmpty() && evaluation.ingestionIterations == 0) {
-            progress("aeong | $dataset $size: skipped, missing query files in queries/mimic: $missing")
-            return
-        }
-        val queries = if (missing.isEmpty()) mapOf("AEONG_QUERIES" to "./queries/mimic") else {
-            progress("aeong | $dataset $size: only the ingestion, missing query files in queries/mimic: $missing")
-            mapOf("QUERY_ITERATIONS" to "0")
-        }
-        val folder = dump.absoluteFile.parentFile.apply { mkdirs() }.path
-        selfContained("aeong", limit.toString(), queryFiles, queries + ("AEONG_DATASETS" to folder), singlePhase = true)
+        val folder = dump.absoluteFile.parentFile.apply { mkdirs() }
+        // With updates, the queries on the whole history: transaction time up to the last statement of the dump
+        val queries = if (!updates) "./queries/mimic" else File(folder, "queries").apply { mkdirs() }.also { dir ->
+            val last = File(dump.path.removeSuffix(".cypher") + ".tt").readLines().first { it.startsWith("last=") }.substringAfter("=")
+            queryFiles.forEach { q ->
+                File(dir, "$q.txt").writeText(File("evaluation/architectures/aeong/queries/mimic-updates/$q.txt").readText().replace("{TTTO_PARAM}", last))
+            }
+        }.path
+        val env = mapOf("AEONG_QUERIES" to queries, "AEONG_DATASETS" to folder.path, "AEONG_MODEL" to if (updates) "updates" else "events")
+        selfContained("aeong", limit.toString(), queryFiles, env, singlePhase = true)
     }
 
     private fun neo4jReady() = neo4jDriver(NEO4J_URI).use { it.verifyConnectivity() }

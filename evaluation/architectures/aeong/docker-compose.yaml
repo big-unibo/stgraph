@@ -18,6 +18,7 @@ services:
       - THREAD
       - QUERY_SELECTIVITY
       - QUERIES
+      - AEONG_MODEL
     volumes:
       - ../../../results/aeong:/home/AeonG/tests/results/aeong/
       # The time windows of the other systems (the queries come with their window, see SmartBenchEvaluation.aeongQueries:
@@ -49,8 +50,8 @@ services:
         # The database is the one of the last load: a run of the queries only stops if it is not of this dataset and size
         LOADED=/home/AeonG/tests/results/database/loaded
         if [ "$$INGESTION_ITERATIONS" -eq 0 ]; then
-          if [ "$$(cat $$LOADED 2>/dev/null)" != "$$DATASET $$DATASET_SIZE" ]; then
-            echo "The database holds [$$(cat $$LOADED 2>/dev/null)], not [$$DATASET $$DATASET_SIZE]: run the ingestion first"
+          if [ "$$(cat $$LOADED 2>/dev/null)" != "$$DATASET $$DATASET_SIZE $${AEONG_MODEL:-events}" ]; then
+            echo "The database holds [$$(cat $$LOADED 2>/dev/null)], not [$$DATASET $$DATASET_SIZE $${AEONG_MODEL:-events}]: run the ingestion first"
             exit 1
           fi
           sed -i '/download_datasets.sh/d' t_smarbench_test.sh
@@ -58,7 +59,7 @@ services:
           echo > $$LOADED
         fi
         ./t_smarbench_test.sh
-        [ "$$INGESTION_ITERATIONS" -eq 0 ] || echo "$$DATASET $$DATASET_SIZE" > $$LOADED
+        [ "$$INGESTION_ITERATIONS" -eq 0 ] || echo "$$DATASET $$DATASET_SIZE $${AEONG_MODEL:-events}" > $$LOADED
 
 volumes:
   aeong-data:

@@ -150,6 +150,12 @@ Neo4j: `evaluation/architectures/aeong/queries/mimic/` (`q1`-`q3` are Q1-Q3, `q0
 `evaluation/architectures/aeong/queries/smartbench/` (written with the time window of the run). Its results, recorded by
 its container in `results/aeong/`, are added to `results/dt_graph/` as those of the other systems (`model` aeong, the
 configuration of `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
+With `aeong_updates: true` (in `defaults` or in a run), AeonG uses its own temporal model instead, recorded as
+`aeong_updates`: a node per time series, created by its first event and updated by each next one (one statement, one
+version per event; the SmartBench events in the order of their timestamps), in `datasets/dump/aeong-updates/`; its
+queries (`queries/{mimic,smartbench}-updates/`) read the history by transaction time (`TT FROM ... TO ...`), the time
+windows mapped to statements by the `<size>.tt` file of the dump (the whole history for MIMIC-IV and for the queries
+without a window).
 
 For each dataset, size and system, one system at a time, a run:
 1. downloads the missing data (`smartbench <size>`: the JSON dataset of every system), from the same URLs as

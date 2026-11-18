@@ -146,11 +146,16 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             selfContained(system, size, queryIds, recorded)
             return
         }
-        if (evaluation.ingestionIterations > 0 && !SmartBenchAeonG.dumpReady(size)) {
-            progress("aeong | $dataset $size: writing the Cypher dump")
-            SmartBenchAeonG(size).writeDump()
+        val updates = evaluation.aeongUpdates
+        if (evaluation.ingestionIterations > 0 && !SmartBenchAeonG.dumpReady(size, updates)) {
+            progress("aeong | $dataset $size: writing the Cypher dump${if (updates) " (updates)" else ""}")
+            SmartBenchAeonG(size, updates = updates).writeDump()
         }
-        val env = mapOf("AEONG_DATASETS" to SmartBenchAeonG.dumpFile(size).absoluteFile.parentFile.apply { mkdirs() }.path, "AEONG_QUERIES" to aeongQueries())
+        val env = mapOf(
+            "AEONG_DATASETS" to SmartBenchAeonG.dumpFile(size, updates).absoluteFile.parentFile.apply { mkdirs() }.path,
+            "AEONG_QUERIES" to aeongQueries(updates),
+            "AEONG_MODEL" to if (updates) "updates" else "events"
+        )
         selfContained(system, size, queryIds, recorded + env, singlePhase = true)
     }
 
@@ -158,19 +163,31 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
      * The queries of AeonG for this size (datasets/dump/aeong/smartbench/<size>/queries), as its scripts read them (one
      * statement per line, without comments; the names of its files, e.g., q2 for EnvironmentAggregate), with the time
      * window of the run: its scripts replace only the end of the window, so both ends are replaced here. One
-     * selectivity, with one window per query, as its scripts run them
+     * selectivity, with one window per query, as its scripts run them. With [updates] (queries/smartbench-updates), the
+     * window as transaction time (TT FROM ... TO ...): from the first statement of an event at or after its start to
+     * the last one before its end (<size>.tt of the dump, see SmartBenchAeonG); the whole history for the queries
+     * without a window
      */
-    private fun aeongQueries(): String {
+    private fun aeongQueries(updates: Boolean): String {
         val selectivity = evaluation.selectivities.singleOrNull() ?: error("AeonG runs one selectivity at a time: ${evaluation.selectivities}")
-        val folder = File(SmartBenchAeonG.dumpFile(size).absoluteFile.parentFile, "queries").apply { mkdirs() }
+        val folder = File(SmartBenchAeonG.dumpFile(size, updates).absoluteFile.parentFile, "queries").apply { mkdirs() }
+        val tt = if (updates) SmartBenchAeonG.transactionTimes(size) else emptyMap()
         val files = mapOf("EnvironmentAggregate" to "q2", "MaintenanceOwners" to "q3", "EnvironmentOutlier" to "q4", "AgentOutlier" to "q5")
         for (queryId in TestSmartBenchCompetitorsQuery.queryIds) {
-            var query = File("evaluation/architectures/aeong/queries/smartbench/$queryId.txt").readLines()
+            var query = File("evaluation/architectures/aeong/queries/${if (updates) "smartbench-updates" else "smartbench"}/$queryId.txt").readLines()
                 .map { it.replace(Regex("//.*$"), "").trim() }.filter { it.isNotEmpty() }.joinToString(" ")
             if (query.contains("{TSTAMPTO_PARAM}")) {
                 val window = TestConfig.loadTemporalRanges(selectivity, queryId, size).values.singleOrNull()
                     ?: error("AeonG runs one time window per query: $queryId on $size ($selectivity)")
                 query = query.replace("{TSTAMPFROM_PARAM}", window.from.toString()).replace("{TSTAMPTO_PARAM}", window.to.toString())
+            }
+            if (query.contains("{TTTO_PARAM}")) {
+                val window = TestConfig.loadTemporalRanges(selectivity, queryId, size).values.singleOrNull()
+                    ?: error("AeonG runs one time window per query: $queryId on $size ($selectivity)")
+                val windowed = queryId !in listOf("EnvironmentCoverage", "AgentHistory")
+                val from = if (windowed) tt.getValue(window.from.toString()) else 0L
+                val to = if (windowed) tt.getValue(window.to.toString()) - 1 else tt.getValue("last")
+                query = query.replace("{TTFROM_PARAM}", from.toString()).replace("{TTTO_PARAM}", to.toString())
             }
             File(folder, "${files[queryId] ?: queryId}.txt").writeText(query + "\n")
         }

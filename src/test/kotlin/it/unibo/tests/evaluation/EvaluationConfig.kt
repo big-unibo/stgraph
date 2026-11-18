@@ -47,6 +47,12 @@ data class EvaluationConfig(
     /** Appended to the model of the results (e.g., stgraph_4CPU for the label 4CPU): the configuration the run measures */
     val label: String? = null,
     /**
+     * AeonG with its own temporal model (aeong_updates: true): a node per time series, updated by every event, the
+     * history queried by transaction time (TT FROM ... TO ...), recorded as aeong_updates; otherwise (the default) the
+     * graph of Neo4j, a node per event (see SmartBenchAeonG, MimicIVAeonG)
+     */
+    val aeongUpdates: Boolean = false,
+    /**
      * The resources and configuration of the systems, as the variables of their compose files (e.g., NEO4J_MEMORY to
      * 12g, NEO4J_CONF to an absolute path), from the resources section; a variable not set keeps the value of the
      * compose file
@@ -64,7 +70,10 @@ data class EvaluationConfig(
     fun environment(dataset: String, size: String): Map<String, String> = volumes(dataset, size) + resources
 
     /** [system] as the model of the results: with the [label] of the run, if any */
-    fun model(system: String): String = label?.let { "${system}_$it" } ?: system
+    fun model(system: String): String {
+        val name = if (system == "aeong" && aeongUpdates) "aeong_updates" else system
+        return label?.let { "${name}_$it" } ?: name
+    }
 
     /**
      * The configuration of [system] recorded in the results: the name of its folder in the resources section (conf,
@@ -192,7 +201,8 @@ data class EvaluationConfig(
                 queryIds = strings(section(map, "queries"), "ids") ?: strings(section(defaults, "queries"), "ids") ?: emptyList(),
                 download = boolean("download") ?: true,
                 deploy = boolean("deploy") ?: true,
-                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() }
+                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() },
+                aeongUpdates = boolean("aeong_updates") ?: false
             )
             val unknown = config.systems - knownSystems.toSet()
             require(unknown.isEmpty()) { "Unknown systems in $path: $unknown (known: $knownSystems)" }
