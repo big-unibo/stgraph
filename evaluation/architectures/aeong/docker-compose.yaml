@@ -18,6 +18,11 @@ services:
       - THREAD
       - QUERY_SELECTIVITY
       - QUERIES
+      # serve: no ingestion nor queries, AeonG serves the loaded database (Bolt, AEONG_PORT on the host) until stopped, to
+      # measure its transaction times (see AeonGTransactionTimes)
+      - AEONG_MODE
+    ports:
+      - "${AEONG_PORT:-7690}:7687"
     volumes:
       - ../../../results/aeong:/home/AeonG/tests/results/aeong/
       # AEONG_QUERIES: the query files of the dataset (those of ./queries/mimic and ./queries/smartbench with the
@@ -34,6 +39,17 @@ services:
       - /bin/bash
       - -c
       - |
+        LOADED=/home/AeonG/tests/results/database/loaded
+        if [ "$$AEONG_MODE" = serve ]; then
+          if [ "$$(cat $$LOADED 2>/dev/null)" != "$$DATASET $$DATASET_SIZE updates" ]; then
+            echo "The database holds [$$(cat $$LOADED 2>/dev/null)], not [$$DATASET $$DATASET_SIZE updates]: run the ingestion first"
+            exit 1
+          fi
+          # As the scripts of the image start AeonG for the queries (../scripts/evaluate_temporal_q.py)
+          exec python3 -c "import sys, time; sys.path.append('../mgbench'); import runners
+        m = runners.Memgraph('../../build/memgraph', '../results/database/aeong', True, memgraph_port=7687, snapshot_interval_sec=30, memory_limit=0, anchor_num=10, real_time_flag=False)
+        m.start_benchmark(); print('AeonG serving the loaded database', flush=True); time.sleep(10 ** 9)"
+        fi
         # The scripts of the image loop over the time windows of time_constraints.yaml for the size: the queries come with
         # their window (SmartBenchEvaluation.aeongQueries), so a single placeholder window per query, run once
         {
@@ -52,7 +68,6 @@ services:
         STATS=/home/AeonG/tests/results/aeong/query_results/$$DATASET
         [ ! -d "$$STATS" ] || mv "$$STATS" "$$STATS.$$(date +%s)"
         # The database is the one of the last load: a run of the queries only stops if it is not of this dataset and size
-        LOADED=/home/AeonG/tests/results/database/loaded
         if [ "$$INGESTION_ITERATIONS" -eq 0 ]; then
           if [ "$$(cat $$LOADED 2>/dev/null)" != "$$DATASET $$DATASET_SIZE updates" ]; then
             echo "The database holds [$$(cat $$LOADED 2>/dev/null)], not [$$DATASET $$DATASET_SIZE updates]: run the ingestion first"

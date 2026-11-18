@@ -12,9 +12,9 @@ import java.io.File
  *   timestamp, value, unitname (if any)}): a node per time series (person and item), created by its first measurement
  *   and updated (SET of measurement_id, timestamp and value) by each next one, one statement (one transaction, one
  *   version) per measurement, so that AeonG keeps the measurements as its history.
- * The indexes on the ids of the nodes the statements match come first. The number of statements (<limit>.tt:
- * last=<n>) bounds the transaction time of the queries (see MimicEvaluation). Writing the dump is not timed: AeonG
- * times its load.
+ * The indexes on the ids of the nodes the statements match come first. <limit>.tt: last=<n>, the number of statements,
+ * where the search of the transaction time of the last one starts (measured on the loaded database, see
+ * AeonGTransactionTimes and MimicEvaluation.aeongTransactionTimes). Writing the dump is not timed: AeonG times its load.
  */
 class MimicIVAeonG(
     limit: Long,
@@ -94,7 +94,7 @@ class MimicIVAeonG(
         /** Whether the dump of [limit] is complete and of this version */
         fun dumpReady(limit: Long) = File(dumpFile(limit).path + ".done").let { it.isFile && it.readText() == DUMP_VERSION }
 
-        /** The last statement of the dump of [limit]: the end of the transaction time of the queries */
+        /** The number of statements of the dump of [limit] */
         fun lastStatement(limit: Long): String =
             File(dumpFile(limit).path.removeSuffix(".cypher") + ".tt").readLines().first { it.startsWith("last=") }.substringAfter("=")
 

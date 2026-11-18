@@ -16,9 +16,10 @@ import java.nio.file.Paths
  * first event and updated (SET of id, timestamp, temperature, location) by each next one, one statement (one
  * transaction, one version) per event, the events of all the series in the order of their timestamps (epoch ms), as
  * AeonG would receive them, so that the transaction time follows the time of the events. The indexes on the ids of the
- * nodes the statements match come first. <size>.tt maps the time to the transaction time: for each bound of the windows
- * of the queries on the size (TimeWindows), the first statement of an event at or after it (last=<n>: the number of
- * statements), see SmartBenchEvaluation.aeongQueries. Writing the dump is not timed: AeonG times its load.
+ * nodes the statements match come first. <size>.tt: for each bound of the windows of the queries on the size
+ * (TimeWindows), the first statement of an event at or after it, and last=<n>, the number of statements. The statements
+ * are not the transaction times of AeonG, measured on the loaded database (see AeonGTransactionTimes and
+ * SmartBenchEvaluation.aeongTransactionTimes). Writing the dump is not timed: AeonG times its load.
  */
 class SmartBenchAeonG(private val size: String) {
     private val mapper = jacksonObjectMapper()
@@ -127,7 +128,7 @@ class SmartBenchAeonG(private val size: String) {
         /** The bounds (from and to) of the time windows of the queries on [size] (TimeWindows) */
         fun windowBounds(size: String): Set<Long> = TimeWindows.of(size).flatMap { listOf(it.from, it.to) }.toSet()
 
-        /** The transaction time of the bounds of the windows in the dump of [size] (see [SmartBenchAeonG]): bound -> statement, last */
+        /** The statements of the bounds of the windows in the dump of [size] (see [SmartBenchAeonG]): bound -> statement, last */
         fun transactionTimes(size: String): Map<String, Long> =
             File(dumpFile(size).path.removeSuffix(".cypher") + ".tt").readLines().filter { "=" in it }
                 .associate { it.substringBefore("=") to it.substringAfter("=").toLong() }

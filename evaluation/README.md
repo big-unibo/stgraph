@@ -149,8 +149,12 @@ the data of the other systems: `datasets/dump/aeong/mimic/<limit>/` (MimicIVAeon
 event and updated by each next one: one statement (one transaction, one version of the node) per event, the SmartBench
 events in the order of their timestamps. Its queries, those of Neo4j (`evaluation/architectures/aeong/queries/mimic/`:
 `q1`-`q3` are Q1-Q3, `q0` a warm-up; `evaluation/architectures/aeong/queries/smartbench/`), read the history by
-transaction time (`TT FROM ... TO ...`): the time windows mapped to statements by the `<size>.tt` file of the dump (the
-whole history for MIMIC-IV and for the queries without a window). Its results, recorded by its container in
+transaction time (`TT FROM ... TO ...`), the logical clock of AeonG, which advances with every transaction: its container
+runs the ingestion alone, then serves the loaded database (`AEONG_MODE=serve`, Bolt on port 7690), where the evaluation
+measures the transaction time of each bound of the time windows (the first event at or after it) and of the last
+statement (`TT AS t` and a binary search, not timed), and then runs the queries alone with those times (the whole
+history for MIMIC-IV and for the queries without a window). The times are cached next to the dump (`<size>.aeong`,
+`<limit>.aeong`) for the runs of the queries alone, until the next ingestion. Its results, recorded by its container in
 `results/aeong/`, are added to `results/dt_graph/` as those of the other systems (`model` aeong, the configuration of
 `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
 
