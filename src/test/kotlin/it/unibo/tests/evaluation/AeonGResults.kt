@@ -7,16 +7,14 @@ import kotlin.math.roundToLong
 
 /**
  * The results of AeonG in the files of the other systems. AeonG times its load and its queries inside its container,
- * and its post-processing appends them to results/aeong (ingestion_time/ingestion_statistics.csv,
- * query_evaluation/statistics.csv, columns of the old Python evaluation, each run with its test_id): the rows of a run
- * (the test ids not there before it, see [testIds]) are appended to results/dt_graph (ingestion_time/ingestion_statistics.csv,
+ * and its post-processing writes them in the folder of the results of the run (AEONG_RESULTS of its compose file, a
+ * temporary folder: ingestion_time/ingestion_statistics.csv, query_evaluation/statistics.csv, columns of the old
+ * Python evaluation): they are appended to results/dt_graph (ingestion_time/ingestion_statistics.csv,
  * query_time/query_statistics.csv) with the columns and the default values of loadDataset and runQuery: one test_id
  * per row, times in ms, the model, dataset and size of the evaluation, the configuration (conf or conf-free),
  * iterations from 0, the queries of MIMIC-IV as Q1-Q3 (q0, a warm-up, is not recorded), unknown cardinalities as -1
  */
 internal object AeonGResults {
-    private val ingestionIn = File("results/aeong/ingestion_time/ingestion_statistics.csv")
-    private val queryIn = File("results/aeong/query_evaluation/statistics.csv")
     private val ingestionOut = File("results/dt_graph/ingestion_time/ingestion_statistics.csv")
     private val queryOut = File("results/dt_graph/query_time/query_statistics.csv")
 
@@ -30,12 +28,9 @@ internal object AeonGResults {
         "queryMode", "iteration", "querySelectivity", "temporalRangeIndex", "configuration"
     )
 
-    /** The test ids of the results of AeonG so far */
-    fun testIds(): Set<String> = (rows(ingestionIn) + rows(queryIn)).mapNotNull { it["test_id"] }.toSet()
-
-    /** Appends the rows of AeonG not in [before] to results/dt_graph, recorded as [model] on [dataset] [size] */
-    fun export(before: Set<String>, model: String, dataset: String, size: String, configuration: String) {
-        val ingestion = rows(ingestionIn).filter { it["test_id"] !in before }.map { r ->
+    /** Appends the results of AeonG in [folder] (a run) to results/dt_graph, recorded as [model] on [dataset] [size] */
+    fun export(folder: File, model: String, dataset: String, size: String, configuration: String) {
+        val ingestion = rows(File(folder, "ingestion_time/ingestion_statistics.csv")).map { r ->
             // Seconds (the timestamps of AeonG) or milliseconds
             fun ms(key: String) = r[key]?.toDoubleOrNull()?.let { if (it < 1e11) it * 1000 else it }?.roundToLong()
             val start = ms("startTimestamp")
@@ -48,7 +43,7 @@ internal object AeonGResults {
                 "tsStorage" to -1, "gsStorage" to -1, "tsCard" to -1, "gsCard" to -1, "configuration" to configuration
             )
         }
-        val queries = rows(queryIn).filter { it["test_id"] !in before }.mapNotNull { r ->
+        val queries = rows(File(folder, "query_evaluation/statistics.csv")).mapNotNull { r ->
             val name = r["queryName"].orEmpty()
             val queryId = if (dataset == "mimic") Regex("q([1-9])").matchEntire(name)?.let { "Q${it.groupValues[1]}" } ?: return@mapNotNull null else name
             mapOf(

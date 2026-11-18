@@ -162,18 +162,21 @@ abstract class DatasetEvaluation(
             return
         }
         val composeFile = "evaluation/architectures/$system/docker-compose.yaml"
-        val env = containerEnv(containerSize, queryIds, extraEnv)
+        // AeonG records the results of the run in a temporary folder, added to results/dt_graph (see AeonGResults)
+        val aeongResults = if (system == "aeong") java.nio.file.Files.createTempDirectory("aeong-results").toFile() else null
+        val env = containerEnv(containerSize, queryIds, extraEnv) + listOfNotNull(aeongResults?.let { "AEONG_RESULTS" to it.absolutePath })
         val run = "$system | $dataset $size (size $containerSize in its container)"
-        // AeonG records its results in results/aeong: those of this run go to results/dt_graph too (see AeonGResults)
-        val aeongBefore = if (system == "aeong") AeonGResults.testIds() else emptySet()
         progress("$run: inside its container, started")
         try {
             runCommand(listOf("docker", "compose", "-f", composeFile, "up", "--abort-on-container-exit", "--exit-code-from", system), env)
         } finally {
             runCommand(listOf("docker", "compose", "-f", composeFile, "down"), env)
         }
-        if (system == "aeong") AeonGResults.export(aeongBefore, evaluation.model(system), dataset, size, evaluation.configuration(system))
-        progress("$run: done, results in results/$system")
+        if (aeongResults != null) {
+            AeonGResults.export(aeongResults, evaluation.model(system), dataset, size, evaluation.configuration(system))
+            aeongResults.deleteRecursively()
+        }
+        progress("$run: done, results in results/dt_graph")
     }
 
     /** The environment of the container of AeonG or HyGraph (see [selfContained]) */

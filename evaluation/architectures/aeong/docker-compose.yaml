@@ -24,7 +24,9 @@ services:
     ports:
       - "${AEONG_PORT:-7690}:7687"
     volumes:
-      - ../../../results/aeong:/home/AeonG/tests/results/aeong/
+      # AEONG_RESULTS: where the scripts of the image record the results of a run, a temporary folder of the evaluation,
+      # which adds them to results/dt_graph as the results of the other systems (see AeonGResults)
+      - ${AEONG_RESULTS:-aeong-results}:/home/AeonG/tests/results/aeong/
       # AEONG_QUERIES: the query files of the dataset (those of src/test/resources/queries/<dataset>/aeong with the
       # transaction time of the run, written by the evaluation next to the dump). Read-only and copied by the command, as
       # the scripts of the image rewrite them for each time window
@@ -64,9 +66,6 @@ services:
         # For the queries without a time window (EnvironmentCoverage, AgentHistory) replace_timestamp.sh of the image
         # writes on the file it reads, which empties it: through a temporary file
         sed -i 's|> "$$OUTPUT_FILE"|> "$$OUTPUT_FILE.tmp" \&\& mv "$$OUTPUT_FILE.tmp" "$$OUTPUT_FILE"|' replace_timestamp.sh
-        # postprocess_results.py appends every JSON of query_results to the statistics: only the ones of this run
-        STATS=/home/AeonG/tests/results/aeong/query_results/$$DATASET
-        [ ! -d "$$STATS" ] || mv "$$STATS" "$$STATS.$$(date +%s)"
         # The database is the one of the last load: a run of the queries only stops if it is not of this dataset and size
         if [ "$$INGESTION_ITERATIONS" -eq 0 ]; then
           if [ "$$(cat $$LOADED 2>/dev/null)" != "$$DATASET $$DATASET_SIZE updates" ]; then
@@ -82,3 +81,4 @@ services:
 
 volumes:
   aeong-data:
+  aeong-results:

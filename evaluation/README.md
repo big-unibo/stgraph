@@ -154,8 +154,8 @@ runs the ingestion alone, then serves the loaded database (`AEONG_MODE=serve`, B
 measures the transaction time of each bound of the time windows (the first event at or after it) and of the last
 statement (`TT AS t` and a binary search, not timed), and then runs the queries alone with those times (the whole
 history for MIMIC-IV and for the queries without a window). The times are cached next to the dump (`<size>.aeong`,
-`<limit>.aeong`) for the runs of the queries alone, until the next ingestion. Its results, recorded by its container in
-`results/aeong/`, are added to `results/dt_graph/` as those of the other systems (`model` aeong, the configuration of
+`<limit>.aeong`) for the runs of the queries alone, until the next ingestion. Its results, recorded by its container in a
+temporary folder, are added to `results/dt_graph/` as those of the other systems (`model` aeong, the configuration of
 `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
 
 For each dataset, size and system, one system at a time, a run:
