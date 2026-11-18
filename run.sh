@@ -1,7 +1,8 @@
 #!/bin/bash
 set -ex
 
-cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
+# The configuration: the example (CI), unless there is one already
+[ -f src/main/resources/test_config.yml ] || cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
 # The subjects and time series of MIMIC-IV to load: ./run.sh, the short local list (CI); ./run.sh <any argument>, the
 # whole list, downloaded
 if [ $# -eq 0 ]; then
