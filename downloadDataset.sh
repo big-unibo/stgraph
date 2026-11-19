@@ -9,7 +9,7 @@ if [[ $# -lt 2 ]]; then
     echo "Example:"
     echo "  $0 smartbench small"
     echo "  $0 smartbench medium.tar.gz"
-    echo "  $0 mimic x1692200.dump"
+    echo "  $0 mimic xsmall.dump"
     exit 1
 fi
 

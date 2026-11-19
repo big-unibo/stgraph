@@ -28,7 +28,7 @@ class MimicIVGraphix(
     private val insertBatchSize: Int = 500,
     postgres: PostgresConfig = PostgresConfig()
 ) : AbstractMimicIVLoader(mimicLimit(size), threads = 1, postgres = postgres, short = mimicShort(size)) {
-    private val dataverse = "mimic_graphix_${if (mimicLimit(size) == Long.MAX_VALUE) "full" else size}"
+    private val dataverse = "mimic_graphix_$key"
     private val graphix = GraphixClient(host, port, dataverse, feedHost)
     private val mapper = jacksonObjectMapper()
     private val measurements = "Measurements"

@@ -1,5 +1,7 @@
 package it.unibo.tests.mimic
 
+import it.unibo.tests.mimic.loaders.mimicLimit
+
 import it.unibo.graph.asterixdb.AsterixDBTSM
 import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.interfaces.Graph
@@ -29,9 +31,9 @@ const val mimicFilter = 100L
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestMimicQuery {
-    /** Expected cardinalities per dataset size: x1692200 is the reduced dump used by the CI */
+    /** Expected cardinalities per dataset size: xsmall is the reduced dump used by the CI */
     private val expectedCardinalities = mapOf(
-        "x1692200" to mapOf("Q1" to 7347, "Q2" to 7, "Q3" to 5)
+        "xsmall" to mapOf("Q1" to 7347, "Q2" to 7, "Q3" to 5)
     )
 
     /** For the sizes with known cardinalities, fails the test if [query] returns a different number of results */
@@ -110,7 +112,7 @@ class TestMimicQuery {
 
     @Test
     fun `get measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q1(graph))
+        checked(size, if (mode == QueryMode.NAIVE && mimicLimit(size) == Long.MAX_VALUE) null else Q1(graph))
     }
 
     class Q2(val graph: Graph, pId: Long = Long.MIN_VALUE, c: Long = Long.MIN_VALUE) : Q() {
@@ -134,7 +136,7 @@ class TestMimicQuery {
 
     @Test
     fun `get average measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q2(graph))
+        checked(size, if (mode == QueryMode.NAIVE && mimicLimit(size) == Long.MAX_VALUE) null else Q2(graph))
     }
 
     class Q3(val graph: Graph) : Q() {
@@ -157,7 +159,7 @@ class TestMimicQuery {
 
     @Test
     fun `filter and group by measurements`() = TestConfig.runTest(dataset = "mimic") { graph, size, mode ->
-        checked(size, if (mode == QueryMode.NAIVE && size == "full") null else Q3(graph))
+        checked(size, if (mode == QueryMode.NAIVE && mimicLimit(size) == Long.MAX_VALUE) null else Q3(graph))
     }
 
     // @Test

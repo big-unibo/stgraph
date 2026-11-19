@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The PostgreSQL dump of a size of MIMIC-IV, e.g., the x1692200 of the CI, from its local cache:
+# The PostgreSQL dump of a size of MIMIC-IV, e.g., the xsmall of the CI, from its local cache:
 #   1. ./gradlew mimicCache --args="<size>": the cache (datasets/original/mimic/cache/<size>), read from the PostgreSQL
 #      of datasets.mimic in test_config.yml, for the subjects of src/main/resources/mimic-iv_subjectids_tsids_short.csv
 #      (an "x" size) or of mimic-iv_subjectids_tsids.csv (the others); skipped if the cache exists;
@@ -12,11 +12,11 @@
 # Then upload the dump to https://big.csr.unibo.it/downloads/stgraph/mimic/.
 # The values go back as the loader reads them: the values rounded as in the cache, timestamps in UTC.
 #
-# Usage (from anywhere): evaluation/mimic_dump.sh [size] (default: x1692200)
+# Usage (from anywhere): evaluation/mimic_dump.sh [size] (default: xsmall)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SIZE="${1:-x1692200}"
+SIZE="${1:-xsmall}"
 CACHE="datasets/original/mimic/cache/$SIZE" # named by the size (see mimicKey)
 OUT="datasets/original/mimic/$SIZE.dump"
 CONTAINER="stgraph-dump-mimic"

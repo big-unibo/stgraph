@@ -161,10 +161,10 @@ chmod +x ./gradlew *.sh
 
 It:
 
-1. creates `src/main/resources/test_config.yml` from `test_config.example.yml` (SmartBench `xsmall`, MIMIC-IV `x1692200`, synthetic `full`); the "x" sizes of MIMIC-IV read the subjects of `mimic-iv_subjectids_tsids_short.csv`, the others those of `mimic-iv_subjectids_tsids.csv`, downloaded by `run.sh` if missing;
-2. downloads SmartBench `xsmall`, the MIMIC-IV `x1692200` dump and the PeMS `xsmall` dump (built by `evaluation/mimic_dump.sh` and `evaluation/pems_dump.sh`);
+1. creates `src/main/resources/test_config.yml` from `test_config.example.yml` (SmartBench `xsmall`, MIMIC-IV `xsmall`, synthetic `full`); MIMIC-IV `xsmall` reads the subjects of `mimic-iv_subjectids_tsids_short.csv`, the other sizes (`small`, `medium`, `large`: 1,692,200, 16,922,000 and all the events) those of `mimic-iv_subjectids_tsids.csv`, downloaded by `run.sh` if missing;
+2. downloads SmartBench `xsmall`, the MIMIC-IV `xsmall` dump and the PeMS `xsmall` dump (built by `evaluation/mimic_dump.sh` and `evaluation/pems_dump.sh`);
 3. starts `docker-compose.yaml`: the AsterixDB of STGraph (configuration: `evaluation/architectures/stgraph/conf/cc.conf`) and the PostgreSQL of MIMIC-IV, which restores the downloaded dumps of MIMIC-IV and of PeMS in its databases `mimic-iv` and `pems` on initialization (`datasets/init-mimic-pg.sh`);
-4. runs `./gradlew` (`clean`, `build`, `check`): the regression tests of `it.unibo.tests.ci`, and ingestion and queries of STGraph on the synthetic dataset, SmartBench `xsmall`, MIMIC-IV `x1692200` and PeMS `xsmall`; on these two sizes, the SmartBench and MIMIC-IV queries check their cardinalities.
+4. runs `./gradlew` (`clean`, `build`, `check`): the regression tests of `it.unibo.tests.ci`, and ingestion and queries of STGraph on the synthetic dataset, SmartBench `xsmall`, MIMIC-IV `xsmall` and PeMS `xsmall`; on these two sizes, the SmartBench and MIMIC-IV queries check their cardinalities.
 
 ## Reproducing The Results
 
@@ -196,7 +196,7 @@ The dataset helper downloads inputs into `datasets/original/<dataset>` and extra
 
 ```bash
 ./downloadDataset.sh smartbench xsmall.tar.gz
-./downloadDataset.sh mimic x1692200.dump
+./downloadDataset.sh mimic xsmall.dump
 ```
 
 The evaluation downloads the inputs it needs by itself (also the Cypher dumps of Neo4j, `smartbench/neo4j <size>`).
@@ -208,7 +208,7 @@ copies without loading any system (e.g., on the machine that reaches the Postgre
 
 ```bash
 ./gradlew mimicCache                          # the sizes of datasets.mimic.sizes
-./gradlew mimicCache --args="1692200"         # or the given ones
+./gradlew mimicCache --args="small"           # or the given ones (xsmall, small, medium, large)
 ./gradlew pemsCache                           # the sizes of datasets.pems.sizes
 ./gradlew pemsCache --args="small medium"     # or the given ones (xsmall, small, medium, large, full, or a number of events)
 ```

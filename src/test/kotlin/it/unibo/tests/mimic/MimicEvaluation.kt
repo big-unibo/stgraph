@@ -50,8 +50,8 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     private val limit = mimicLimit(size)
     private val short = mimicShort(size) // the short list of subjects (see AbstractMimicIVLoader)
     private val key = mimicKey(limit, short) // the name of the copies and dumps of the size
-    /** The size in the dump of STGraph and in the dataverses: "full" for all the events (as MimicIVSTGraph) */
-    private val name = if (limit == Long.MAX_VALUE) "full" else size
+    /** The size in the dump of STGraph and in the dataverses (as MimicIVSTGraph) */
+    private val name = key
     private val postgres = config.datasets.getValue(dataset).postgres
     private val queryIds = evaluation.queryIds.ifEmpty { listOf("Q1", "Q2", "Q3") }
 
@@ -75,7 +75,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     private fun stgraphQueries(setup: SetupConfig, numMachines: Int) =
         withStgraph(setup, "datasets/dump/$dataset/$name/", "${dataset}_$name") { graph ->
             queries("stgraph", numMachines, queryIds, evaluation.threads, evaluation.modes) { queryId, mode ->
-                if (mode == QueryMode.NAIVE && name == "full") null
+                if (mode == QueryMode.NAIVE && limit == Long.MAX_VALUE) null
                 else when (queryId) {
                     "Q1" -> TestMimicQuery.Q1(graph)
                     "Q2" -> TestMimicQuery.Q2(graph)
@@ -121,14 +121,15 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     /**
      * Runs [block] with the PostgreSQL the data is read from, when the run loads data: on localhost, the mimic-postgres
      * of the root docker-compose.yaml, deployed as the other systems (with deploy: true), with the dump it restores at its
-     * first start (downloaded if missing, as run.sh: <size>.dump, e.g., x1692200.dump)
+     * first start (downloaded if missing, as run.sh: <size>.dump, e.g., xsmall.dump)
      */
     private fun source(block: () -> Unit) {
         val local = postgres.host == "localhost" || postgres.host == "127.0.0.1"
         if (evaluation.ingestionIterations == 0 || !local) return block()
         if (evaluation.deploy && File("datasets/original/mimic").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
-            check(evaluation.download) { "No dump in datasets/original/mimic: run ./downloadDataset.sh mimic $size.dump, or set download: true" }
-            downloadDataset("mimic", "$size.dump")
+            val dump = "$size.dump"
+            check(evaluation.download) { "No dump in datasets/original/mimic: run ./downloadDataset.sh mimic $dump, or set download: true" }
+            downloadDataset("mimic", dump)
         }
         // The PostgreSQL restores the dump of PeMS too (datasets/init-mimic-pg.sh): the one of the CI, if missing
         if (evaluation.deploy && File("datasets/original/pems").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {

@@ -21,7 +21,7 @@ DATA = "/home/hygraph/resources/datasets/mimic"
 
 # Set by the evaluation (MimicEvaluation): the sizes are the folders of the CSV files of Neo4j (the limits); the model
 # (with the label of the run) and the size as recorded by the other systems
-SIZES = os.environ.get("DATASET_SIZE", "1692200").split(",")
+SIZES = os.environ.get("DATASET_SIZE", "small").split(",")
 MODEL = os.environ.get("MODEL", "hygraph")
 # The configuration (conf, conf-free: the folder of resources.hygraph.conf), set by the evaluation as for the other systems
 CONFIGURATION = os.environ.get("CONFIGURATION", "conf-free")

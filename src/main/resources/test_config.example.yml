@@ -6,7 +6,7 @@ datasets:
     sizes: [ "xsmall"] # "small", "medium", "large", "extralarge"
 
   mimic:
-    sizes: [ "x1692200" ] # "1692200", "16922000", "9223372036854775807"
+    sizes: [ "xsmall" ] # "small", "medium", "large": 1,692,200, 16,922,000 and all the events; xsmall: the short list of subjects
     postgres_endpoint: "localhost"
     port: 5434
     database: "mimic-iv"

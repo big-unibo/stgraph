@@ -17,21 +17,18 @@ import java.util.zip.GZIPOutputStream
 import kotlin.math.roundToLong
 import kotlin.random.Random
 
-/**
- * Maximum number of events loaded for a MIMIC size of test_config.yml: "full" (all the events), a number
- * (e.g. "1692200"), or "x" followed by a number (e.g. "x1692200") for the reduced dump used by the CI (xsmall),
- * loaded with the same limit. The size itself, prefix included, names the dump folder and the dataverse.
- */
-fun mimicLimit(size: String): Long = when {
-    size == "full" -> Long.MAX_VALUE
-    else -> size.replace("x", "").toLong()
-}
+/** The MIMIC-IV sizes of test_config.yml and their limits (events): xsmall (the CI) on the short list of subjects */
+val MIMIC_SIZES = linkedMapOf("xsmall" to 1_692_200L, "small" to 1_692_200L, "medium" to 16_922_000L, "large" to Long.MAX_VALUE)
 
-/** Whether [size] ("x" followed by a number) reads the short list of subjects (mimic-iv_subjectids_tsids_short.csv) */
-fun mimicShort(size: String): Boolean = size.startsWith("x")
+/** Maximum number of events loaded for a MIMIC size of test_config.yml (MIMIC_SIZES), or a number of events */
+fun mimicLimit(size: String): Long = MIMIC_SIZES[size] ?: size.toLong()
 
-/** The name of the copies and dumps of a size: its limit ("full" for all the events), "x" first with the short list */
-fun mimicKey(limit: Long, short: Boolean): String = (if (short) "x" else "") + (if (limit == Long.MAX_VALUE) "full" else limit.toString())
+/** Whether [size] (xsmall) reads the short list of subjects (mimic-iv_subjectids_tsids_short.csv) */
+fun mimicShort(size: String): Boolean = size == "xsmall"
+
+/** The name of a size (MIMIC_SIZES, or its limit), which names its copies, dumps, graphs and dataverses */
+fun mimicKey(limit: Long, short: Boolean): String =
+    if (short) "xsmall" else MIMIC_SIZES.entries.firstOrNull { it.key != "xsmall" && it.value == limit }?.key ?: limit.toString()
 
 interface MimicIVLoader: Loader {
     fun addPerson(subjectId: Int, c: Int): Long

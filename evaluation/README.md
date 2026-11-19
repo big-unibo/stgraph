@@ -137,8 +137,9 @@ same container, is skipped by the tasks of a single phase.
 On MIMIC-IV, the loaders read PostgreSQL once per size: the items and the events of the selected time series are saved,
 gzipped, in `datasets/original/mimic/cache/<size>/` (`items.jsonl.gz`, `events.csv.gz`), and the next loads of every
 system read that copy instead of PostgreSQL (not timed, as the reads from PostgreSQL). Delete the folder to read
-PostgreSQL again (e.g., after changing the list of subjects or the PostgreSQL). The "x" sizes (e.g., `x1692200`, the
-CI) select the subjects of `mimic-iv_subjectids_tsids_short.csv`, the others those of `mimic-iv_subjectids_tsids.csv`
+PostgreSQL again (e.g., after changing the list of subjects or the PostgreSQL). The sizes are `xsmall` (the CI), `small`,
+`medium` and `large` (1,692,200, 1,692,200, 16,922,000 and all the events): `xsmall` selects the subjects of
+`mimic-iv_subjectids_tsids_short.csv`, the others those of `mimic-iv_subjectids_tsids.csv`
 (the whole list, downloaded by `run.sh` if missing). To read PostgreSQL without loading any
 system, `./gradlew mimicCache` writes the copies of the sizes of `datasets.mimic.sizes` (or of `--args="<size> ..."`).
 To spare the other machines the query, copy the folder to the same path on them (`evaluation/push_datasets.sh`).

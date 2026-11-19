@@ -24,7 +24,7 @@ private const val BASE_URL = "https://big.csr.unibo.it/downloads/stgraph"
 
 /** The downloader of downloadDataset.sh: ./gradlew downloadDataset --args="<dataset> <size or file>" */
 fun main(args: Array<String>) {
-    require(args.size == 2) { "Usage: <dataset> <size or file>, e.g., smartbench small, smartbench medium.tar.gz, mimic x1692200.dump" }
+    require(args.size == 2) { "Usage: <dataset> <size or file>, e.g., smartbench small, smartbench medium.tar.gz, mimic xsmall.dump" }
     downloadDataset(args[0], args[1])
 }
 
