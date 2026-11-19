@@ -20,7 +20,7 @@ fun neo4jCsv(limit: Long): Boolean = System.getenv("CI") == "true" || limit >= 5
  * - (:TimeSeries)-[:HAS_EVENT]->(:<abbreviation> {measurement_id, ts_id, category, abbreviation, itemid, timestamp, value,
  *   unitname (if any)});
  * the ids and the numbers are integers (typed columns of the CSV files, imported with --id-type=integer), the rest strings.
- * With [csv], the nodes and relationships are written to gzipped CSV files (datasets/dump/neo4j/mimic/<limit>), then
+ * With [csv], the nodes and relationships are written to gzipped CSV files (datasets/dump/neo4j/mimic/<key>), then
  * [csvImport] (if any) imports them (e.g., neo4j-admin database import full) and returns the time of the import, added
  * to the time-series time. Without [csv], the Person and TimeSeries nodes are created one at a time through [uri], the
  * measurements in batches of [batchSize], as MimicIVPGAge: a batch is sent when full and at the end of each time series,
@@ -37,8 +37,9 @@ class MimicIVNeo4J(
     val csv: Boolean,
     postgres: PostgresConfig = PostgresConfig(),
     private val csvImport: ((File) -> Long)? = null,
-    private val batchSize: Int = 10
-) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
+    private val batchSize: Int = 10,
+    short: Boolean = false
+) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres, short = short) {
 
     private val driver: Driver? = if (csv) null else neo4jDriver(uri, userNeo4j, passwordNeo4j)
     private val session: Session? = driver?.session()
@@ -49,7 +50,7 @@ class MimicIVNeo4J(
     // Without csv: the measurements not created yet, as (label, element id of the time series, properties)
     private val pending = mutableListOf<Triple<String, String, Map<String, Any>>>()
 
-    private val baseDir = File("datasets/dump/neo4j/mimic/$limit").apply {
+    private val baseDir = File("datasets/dump/neo4j/mimic/$key").apply {
         mkdirs()
     }
 

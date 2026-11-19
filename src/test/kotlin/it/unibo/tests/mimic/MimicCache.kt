@@ -5,13 +5,14 @@ import it.unibo.stats.TestConfig
 import it.unibo.tests.evaluation.progress
 import it.unibo.tests.mimic.loaders.AbstractMimicIVLoader
 import it.unibo.tests.mimic.loaders.mimicLimit
+import it.unibo.tests.mimic.loaders.mimicShort
 import it.unibo.tests.smartbench.loaders.TSRecord
 
 /**
  * The MIMIC-IV loader without a system: it only selects the subjects and time series, as every loader, and writes the
  * local copy of the data read from PostgreSQL (see AbstractMimicIVLoader.cacheDir)
  */
-private class MimicIVCache(limit: Long, postgres: PostgresConfig) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
+private class MimicIVCache(limit: Long, postgres: PostgresConfig, short: Boolean) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres, short = short) {
     private var persons = 0L
     override fun addPerson(subjectId: Int, c: Int): Long = ++persons
     override fun addTimeseries(abbreviation: String, unitname: String?, category: String, label: String, itemid: Int, person: Long): Long = person
@@ -35,7 +36,7 @@ fun main(args: Array<String>) {
     for (size in sizes) {
         val start = System.currentTimeMillis()
         progress("mimic cache | $size: started")
-        val dir = MimicIVCache(mimicLimit(size), mimic.postgres).prepareCache()
+        val dir = MimicIVCache(mimicLimit(size), mimic.postgres, mimicShort(size)).prepareCache()
         progress("mimic cache | $size: done in ${(System.currentTimeMillis() - start) / 1000} s, $dir")
     }
 }

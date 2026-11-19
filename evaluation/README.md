@@ -135,16 +135,18 @@ folders of the systems, see below), without downloading the datasets. AeonG keep
 same container, is skipped by the tasks of a single phase.
 
 On MIMIC-IV, the loaders read PostgreSQL once per size: the items and the events of the selected time series are saved,
-gzipped, in `datasets/original/mimic/cache/<limit>/` (`items.jsonl.gz`, `events.csv.gz`), and the next loads of every
+gzipped, in `datasets/original/mimic/cache/<size>/` (`items.jsonl.gz`, `events.csv.gz`), and the next loads of every
 system read that copy instead of PostgreSQL (not timed, as the reads from PostgreSQL). Delete the folder to read
-PostgreSQL again (e.g., after changing `mimic-iv_subjectids_tsids.csv` or the PostgreSQL). To read PostgreSQL without loading any
+PostgreSQL again (e.g., after changing the list of subjects or the PostgreSQL). The "x" sizes (e.g., `x1692200`, the
+CI) select the subjects of `mimic-iv_subjectids_tsids_short.csv`, the others those of `mimic-iv_subjectids_tsids.csv`
+(the whole list, downloaded by `./run.sh <any argument>`). To read PostgreSQL without loading any
 system, `./gradlew mimicCache` writes the copies of the sizes of `datasets.mimic.sizes` (or of `--args="<size> ..."`).
 To spare the other machines the query, copy the folder to the same path on them (`evaluation/push_datasets.sh`).
 PeMS does the same, in `datasets/original/pems/cache/<size>/` (the stations, their versions, segments, roads,
 incidents, and the events), written by the loaders or by `./gradlew pemsCache` (or `--args="<size> ..."`).
 
 AeonG loads a Cypher dump with the graph of Neo4j and its own temporal model, written when missing (not timed) from
-the data of the other systems: `datasets/dump/aeong/mimic/<limit>/` (MimicIVAeonG) and
+the data of the other systems: `datasets/dump/aeong/mimic/<size>/` (MimicIVAeonG) and
 `datasets/dump/aeong/smartbench/<size>/` (SmartBenchAeonG), on every size. A node per time series, created by its first
 event and updated by each next one: one statement (one transaction, one version of the node) per event, the SmartBench
 events in the order of their timestamps. Its queries, those of Neo4j (`src/test/resources/queries/mimic/aeong/`,
@@ -230,8 +232,8 @@ The large sizes need at least 300 GB of storage in the Docker data folder.
 ### Running on other machines
 
 From this machine (Git Bash on Windows), with the repository cloned in `~/stgraph` on each machine (`REMOTE_DIR`
-otherwise) and the same `src/main/resources/mimic-iv_subjectids_tsids.csv` (the caches are read for its subjects and
-time series):
+otherwise) and the same `src/main/resources/mimic-iv_subjectids_tsids.csv` for the sizes without "x" (the caches are
+read for its subjects and time series):
 
 1. Copy the ssh key, to log in and copy without a password (asks each machine's password once; `-k` for another key,
    by default `~/.ssh/id_rsa.pub`):

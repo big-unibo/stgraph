@@ -8,6 +8,7 @@ import it.unibo.tests.mimic.loaders.MimicIVNeo4J
 import it.unibo.tests.mimic.loaders.MimicIVPGAge
 import it.unibo.tests.mimic.loaders.MimicIVSTGraph
 import it.unibo.tests.mimic.loaders.mimicLimit
+import it.unibo.tests.mimic.loaders.mimicShort
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
@@ -28,9 +29,9 @@ fun main() {
     val postgres = postgres()
     TestConfig.loadConfig().datasets["mimic"]!!.sizes.forEach { size ->
         println(size)
-        loadDataset(MimicIVAeonG(mimicLimit(size.toString()), postgres = postgres), "aeong", 1, 1,"mimic", size.toString())
-        loadDataset(MimicIVPGAge(mimicLimit(size.toString()), postgres = postgres, csv = true), "pgage", 1, 1,"mimic", size.toString())
-        loadDataset(MimicIVNeo4J(mimicLimit(size.toString()), csv = true, postgres = postgres), "neo4j", 1, 1,"mimic", size.toString())
+        loadDataset(MimicIVAeonG(mimicLimit(size.toString()), postgres = postgres, short = mimicShort(size.toString())), "aeong", 1, 1,"mimic", size.toString())
+        loadDataset(MimicIVPGAge(mimicLimit(size.toString()), postgres = postgres, csv = true, short = mimicShort(size.toString())), "pgage", 1, 1,"mimic", size.toString())
+        loadDataset(MimicIVNeo4J(mimicLimit(size.toString()), csv = true, postgres = postgres, short = mimicShort(size.toString())), "neo4j", 1, 1,"mimic", size.toString())
         loadDataset(MimicIVGraphix(size.toString(), postgres = postgres), "graphix", 1, 1, "mimic", size.toString())
     }
 }

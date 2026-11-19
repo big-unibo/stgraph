@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The PostgreSQL dump of a size of MIMIC-IV, e.g., the x1692200 of the CI, from its local cache:
-#   1. ./gradlew mimicCache --args="<size>": the cache (datasets/original/mimic/cache/<limit>), read from the PostgreSQL
-#      of datasets.mimic in test_config.yml, for the subjects of src/main/resources/mimic-iv_subjectids_tsids.csv (the
-#      short list in the CI, see run.sh); skipped if the cache exists;
+#   1. ./gradlew mimicCache --args="<size>": the cache (datasets/original/mimic/cache/<size>), read from the PostgreSQL
+#      of datasets.mimic in test_config.yml, for the subjects of src/main/resources/mimic-iv_subjectids_tsids_short.csv
+#      (an "x" size) or of mimic-iv_subjectids_tsids.csv (the others); skipped if the cache exists;
 #   2. loads the cache into a temporary PostgreSQL container (postgres:18, removed at the end; not
 #      mimic-postgres, which needs the dumps to start): database mimic-iv, tables d_items and
 #      chartevents_unique, with the columns that AbstractMimicIVLoader reads, so that mimicCache on it writes
@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SIZE="${1:-x1692200}"
-CACHE="datasets/original/mimic/cache/${SIZE#x}" # named by the limit (see mimicLimit)
+CACHE="datasets/original/mimic/cache/$SIZE" # named by the size (see mimicKey)
 OUT="datasets/original/mimic/$SIZE.dump"
 CONTAINER="stgraph-dump-mimic"
 DB="mimic-iv"

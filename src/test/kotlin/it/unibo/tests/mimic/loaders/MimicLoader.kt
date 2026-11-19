@@ -27,6 +27,12 @@ fun mimicLimit(size: String): Long = when {
     else -> size.replace("x", "").toLong()
 }
 
+/** Whether [size] ("x" followed by a number) reads the short list of subjects (mimic-iv_subjectids_tsids_short.csv) */
+fun mimicShort(size: String): Boolean = size.startsWith("x")
+
+/** The name of the copies and dumps of a size: its limit ("full" for all the events), "x" first with the short list */
+fun mimicKey(limit: Long, short: Boolean): String = (if (short) "x" else "") + (if (limit == Long.MAX_VALUE) "full" else limit.toString())
+
 interface MimicIVLoader: Loader {
     fun addPerson(subjectId: Int, c: Int): Long
     fun addTimeseries(abbreviation: String, unitname: String?, category: String, label: String, itemid: Int, person: Long): Long
@@ -36,13 +42,18 @@ interface MimicIVLoader: Loader {
 /**
  * Reads the MIMIC-IV data from the PostgreSQL [postgres] (datasets.mimic of test_config.yml), once: what it reads (the
  * items, d_items, and the events of the selected time series, chartevents_unique) is saved, gzipped, in a local copy
- * ([cacheDir]: datasets/original/mimic/cache/<limit>), which the next loads read instead of PostgreSQL; it is written
+ * ([cacheDir]: datasets/original/mimic/cache/<key>), which the next loads read instead of PostgreSQL; it is written
  * in full before it is used (an interrupted read leaves none). Delete the folder to read PostgreSQL again (e.g., after
  * changing the list of subjects and time series or the PostgreSQL).
  * The copy can be copied to the other machines (same folder): then no machine queries PostgreSQL. Reading the data,
  * from PostgreSQL or from the copy, is not timed.
  */
-abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres: PostgresConfig = PostgresConfig()): MimicIVLoader {
+/**
+ * [short]: the subjects of the short list (mimic-iv_subjectids_tsids_short.csv, the "x" sizes, e.g., the CI), otherwise
+ * of the whole list (mimic-iv_subjectids_tsids.csv, downloaded by ./run.sh x); [key] names the copies and the dumps
+ */
+abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres: PostgresConfig = PostgresConfig(), val short: Boolean = false): MimicIVLoader {
+    val key = mimicKey(limit, short)
     val url = "jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}"
     val user = postgres.user
     val password = postgres.password
@@ -68,11 +79,11 @@ abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres
     )
     val tsCache = mutableMapOf<Int, MIMICTS>()
 
-    private val subjectsFile = File("src/main/resources/mimic-iv_subjectids_tsids.csv")
+    private val subjectsFile = File("src/main/resources/mimic-iv_subjectids_tsids${if (short) "_short" else ""}.csv")
     private val mapper = jacksonObjectMapper()
 
     /** The local copy of the data read from PostgreSQL, one folder per limit */
-    val cacheDir = File("datasets/original/mimic/cache/${if (limit == Long.MAX_VALUE) "full" else limit}")
+    val cacheDir = File("datasets/original/mimic/cache/$key")
 
     /** Writes [file] through a gzipped [write], in a temporary file renamed at the end: no partial copy */
     private fun writeGzipped(file: File, write: (BufferedWriter) -> Unit) {

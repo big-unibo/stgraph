@@ -13,7 +13,9 @@ import it.unibo.tests.mimic.loaders.MimicIVSTGraph
 import it.unibo.tests.mimic.loaders.MimicIVNeo4J
 import it.unibo.tests.mimic.loaders.MimicIVPGAge
 import it.unibo.tests.mimic.loaders.pgageCsv
+import it.unibo.tests.mimic.loaders.mimicKey
 import it.unibo.tests.mimic.loaders.mimicLimit
+import it.unibo.tests.mimic.loaders.mimicShort
 import it.unibo.tests.mimic.loaders.neo4jCsv
 import it.unibo.tests.evaluation.runCommand
 import it.unibo.tests.evaluation.progress
@@ -36,9 +38,9 @@ import java.sql.DriverManager
  * - pgage: deployed as for the other datasets (evaluation/architectures/pgage), loaded by MimicIVPGAge: batches of
  *   INSERTs on the small sizes, otherwise COPY ... FROM STDIN;
  * - hygraph: ingestion and queries inside its container (evaluation/architectures/hygraph), on the CSV files of the
- *   import of Neo4j (datasets/dump/neo4j/mimic/<limit>), written first by MimicIVNeo4J if missing (not timed);
+ *   import of Neo4j (datasets/dump/neo4j/mimic/<size>), written first by MimicIVNeo4J if missing (not timed);
  * - aeong: ingestion and queries inside its container (evaluation/architectures/aeong), on the Cypher dump
- *   (datasets/dump/aeong/mimic/<limit>: the graph of MimicIVNeo4J, a node per time series updated by its measurements),
+ *   (datasets/dump/aeong/mimic/<size>: the graph of MimicIVNeo4J, a node per time series updated by its measurements),
  *   written first by MimicIVAeonG if missing (not timed), with the queries of src/test/resources/queries/mimic/aeong
  *   (those of Neo4j on the whole history, by transaction time).
  */
@@ -46,6 +48,8 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     DatasetEvaluation(config, evaluation, "mimic", size) {
 
     private val limit = mimicLimit(size)
+    private val short = mimicShort(size) // the short list of subjects (see AbstractMimicIVLoader)
+    private val key = mimicKey(limit, short) // the name of the copies and dumps of the size
     /** The size in the dump of STGraph and in the dataverses: "full" for all the events (as MimicIVSTGraph) */
     private val name = if (limit == Long.MAX_VALUE) "full" else size
     private val postgres = config.datasets.getValue(dataset).postgres
@@ -86,7 +90,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             val csv = neo4jCsv(limit)
             if (csv && evaluation.ingestionIterations > 0) check(evaluation.deploy) { "The CSV import of Neo4j ($size) stops and starts Neo4j itself: it needs deploy: true" }
             repeat(evaluation.ingestionIterations) {
-                ingest("neo4j", it) { MimicIVNeo4J(limit, NEO4J_URI, userNeo4j = null, passwordNeo4j = null, csv = csv, postgres = postgres, csvImport = ::neo4jImport) }
+                ingest("neo4j", it) { MimicIVNeo4J(limit, NEO4J_URI, userNeo4j = null, passwordNeo4j = null, csv = csv, postgres = postgres, csvImport = ::neo4jImport, short = short) }
             }
             neo4jDriver(NEO4J_URI).use { driver ->
                 driver.session().use { session ->
@@ -102,10 +106,10 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         deployed(evaluation.deploy, PGAGE_COMPOSE, readyChecks = 3, env = environment, ready = ::pgageReady) {
             repeat(evaluation.ingestionIterations) {
                 ingest("pgage", it) {
-                    MimicIVPGAge(limit, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD, postgres = postgres, csv = pgageCsv(limit))
+                    MimicIVPGAge(limit, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD, postgres = postgres, csv = pgageCsv(limit), short = short)
                 }
             }
-            val graph = MimicIVPGAge.graphName(limit)
+            val graph = MimicIVPGAge.graphName(key)
             pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { connection ->
                 queries("pgage", numMachines = 1, queryIds) { queryId, _ ->
                     if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QPgAge(queryId, graph, connection) else error("Unknown query: $queryId")
@@ -146,14 +150,14 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
      * mode, no import, not recorded) when missing, e.g. on the small sizes, which Neo4j loads without them
      */
     private fun hygraph() {
-        val measurements = File("datasets/dump/neo4j/mimic/$limit/measurement.csv.gz")
+        val measurements = File("datasets/dump/neo4j/mimic/$key/measurement.csv.gz")
         if (evaluation.ingestionIterations > 0 && (!measurements.exists() ||
                 runCatching { GZIPInputStream(measurements.inputStream()).bufferedReader().useLines { it.take(2).count() } }.getOrDefault(0) < 2)) {
             progress("hygraph | $dataset $size: writing the CSV files of Neo4j")
-            MimicIVNeo4J(limit, csv = true, postgres = postgres).loadData()
+            MimicIVNeo4J(limit, csv = true, postgres = postgres, short = short).loadData()
         }
         // Recorded in results/dt_graph as the other systems: the model (with the label of the run) and the size
-        selfContained("hygraph", limit.toString(), queryIds, mapOf("MODEL" to evaluation.model("hygraph"), "RESULT_SIZE" to size))
+        selfContained("hygraph", key, queryIds, mapOf("MODEL" to evaluation.model("hygraph"), "RESULT_SIZE" to size))
     }
 
     /**
@@ -161,16 +165,16 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
      * queries Q1-Q3 read the whole history, up to the transaction time of the last statement recorded by the ingestion
      */
     private fun aeong() {
-        val dump = MimicIVAeonG.dumpFile(limit)
-        if (evaluation.ingestionIterations > 0 && !MimicIVAeonG.dumpReady(limit)) {
+        val dump = MimicIVAeonG.dumpFile(key)
+        if (evaluation.ingestionIterations > 0 && !MimicIVAeonG.dumpReady(key)) {
             progress("aeong | $dataset $size: writing the Cypher dump")
-            MimicIVAeonG(limit, postgres = postgres).loadData()
+            MimicIVAeonG(limit, postgres = postgres, short = short).loadData()
         }
         val queryFiles = listOf("Q1", "Q2", "Q3")
         val folder = dump.absoluteFile.parentFile.apply { mkdirs() }
         val queries = File(folder, "queries").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
         val env = mapOf("AEONG_QUERIES" to queries.path, "AEONG_DATASETS" to folder.path)
-        aeong(limit.toString(), queryFiles, dump, env) { tt ->
+        aeong(key, queryFiles, dump, env) { tt ->
             // The queries on the whole history: transaction time up to the one of the last statement of the dump
             queryFiles.forEach { q ->
                 File(queries, "$q.txt").writeText(MimicEvaluation::class.java.classLoader.getResource("queries/mimic/aeong/$q.txt")!!.readText().replace("{TTTO_PARAM}", tt.getValue("last").toString()))

@@ -3,11 +3,9 @@ set -ex
 
 # The configuration: the example (CI), unless there is one already
 [ -f src/main/resources/test_config.yml ] || cp src/main/resources/test_config.example.yml src/main/resources/test_config.yml
-# The subjects and time series of MIMIC-IV to load: ./run.sh, the short local list (CI), unless there is a list already;
-# ./run.sh <any argument>, the whole list, downloaded
-if [ $# -eq 0 ]; then
-  [ -f src/main/resources/mimic-iv_subjectids_tsids.csv ] || cp src/main/resources/mimic-iv_subjectids_tsids_short.csv src/main/resources/mimic-iv_subjectids_tsids.csv
-else
+# The subjects and time series of MIMIC-IV: the "x" sizes (e.g., x1692200 of the CI) read the short list of the repository
+# (mimic-iv_subjectids_tsids_short.csv), the other sizes the whole list, downloaded by ./run.sh <any argument>
+if [ $# -gt 0 ]; then
   curl -k -fL --retry 3 -o "mimic-iv_subjectids_tsids.csv" "https://big.csr.unibo.it/downloads/stgraph/mimic/mimic-iv_subjectids_tsids.csv"
   mv mimic-iv_subjectids_tsids.csv src/main/resources
 fi

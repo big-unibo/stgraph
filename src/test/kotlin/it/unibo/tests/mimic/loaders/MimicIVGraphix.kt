@@ -27,7 +27,7 @@ class MimicIVGraphix(
     // Rows per INSERT statement: one INSERT per row would mostly measure the fixed cost of an AsterixDB job
     private val insertBatchSize: Int = 500,
     postgres: PostgresConfig = PostgresConfig()
-) : AbstractMimicIVLoader(mimicLimit(size), threads = 1, postgres = postgres) {
+) : AbstractMimicIVLoader(mimicLimit(size), threads = 1, postgres = postgres, short = mimicShort(size)) {
     private val dataverse = "mimic_graphix_${if (mimicLimit(size) == Long.MAX_VALUE) "full" else size}"
     private val graphix = GraphixClient(host, port, dataverse, feedHost)
     private val mapper = jacksonObjectMapper()

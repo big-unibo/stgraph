@@ -32,9 +32,10 @@ class MimicIVPGAge(
     val csv: Boolean = pgageCsv(limit),
     private val batchSize: Int = 10,
     // Rows per COPY (with csv, above the small sizes)
-    private val copyBatchSize: Int = 20_000
-) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres)  {
-    private val graphName = graphName(limit)
+    private val copyBatchSize: Int = 20_000,
+    short: Boolean = false
+) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres, short = short)  {
+    private val graphName = graphName(key)
     // With the session settings of the evaluation (AGE loaded, ag_catalog in the search path),
     // applied once: not at every statement, inside the timed ingestion. Without csv, multi-row INSERTs from a batch
     private val conn: Connection = pgAgeConnection(url, user, password, mapOf("reWriteBatchedInserts" to "true"))
@@ -216,7 +217,7 @@ class MimicIVPGAge(
     companion object {
         const val COLUMNS = "measurement_id, ts_id, timestamp, value, label, itemid, abbreviation, category, unitname"
 
-        /** The AGE graph of [limit], whose schema holds the table measurements */
-        fun graphName(limit: Long) = "mimic_${if (limit == Long.MAX_VALUE) "full" else limit}"
+        /** The AGE graph of [key] (see mimicKey), whose schema holds the table measurements */
+        fun graphName(key: String) = "mimic_$key"
     }
 }

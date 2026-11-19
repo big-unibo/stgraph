@@ -5,7 +5,7 @@ import it.unibo.tests.smartbench.loaders.TSRecord
 import java.io.File
 
 /**
- * Writes MIMIC-IV as the Cypher dump that AeonG loads (datasets/dump/aeong/mimic/<limit>/<limit>.cypher, one statement
+ * Writes MIMIC-IV as the Cypher dump that AeonG loads (datasets/dump/aeong/mimic/<key>/<key>.cypher, one statement
  * per line, each one a transaction of AeonG), with the graph of MimicIVNeo4J and the temporal model of AeonG:
  * - (:Person {person_id, subject_id, rnd, pId, c})-[:HAS_PARAMETERS]->(:TimeSeries {ts_id}), a time series per person;
  * - (:TimeSeries)-[:HAS_EVENT]->(:<abbreviation> {series_id, measurement_id, ts_id, category, abbreviation, itemid,
@@ -18,10 +18,11 @@ import java.io.File
  */
 class MimicIVAeonG(
     limit: Long,
-    postgres: PostgresConfig = PostgresConfig()
-) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres) {
+    postgres: PostgresConfig = PostgresConfig(),
+    short: Boolean = false
+) : AbstractMimicIVLoader(limit, threads = 1, postgres = postgres, short = short) {
 
-    private val dump = dumpFile(limit).apply { parentFile.mkdirs() }
+    private val dump = dumpFile(key).apply { parentFile.mkdirs() }
     private val writer = dump.printWriter()
     private var statements = 0L
     private val indexed = mutableSetOf<String>() // the labels of the measurements with an index on series_id
@@ -89,10 +90,10 @@ class MimicIVAeonG(
         /** The version of the dumps: one written by an older MimicIVAeonG (another model) is written again */
         const val DUMP_VERSION = "updates"
 
-        fun dumpFile(limit: Long) = File("datasets/dump/aeong/mimic/$limit/$limit.cypher")
+        fun dumpFile(key: String) = File("datasets/dump/aeong/mimic/$key/$key.cypher")
 
         /** Whether the dump of [limit] is complete and of this version */
-        fun dumpReady(limit: Long) = File(dumpFile(limit).path + ".done").let { it.isFile && it.readText() == DUMP_VERSION }
+        fun dumpReady(key: String) = File(dumpFile(key).path + ".done").let { it.isFile && it.readText() == DUMP_VERSION }
 
         private fun escape(s: String) = s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
     }

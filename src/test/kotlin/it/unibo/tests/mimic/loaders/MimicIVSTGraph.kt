@@ -15,7 +15,7 @@ class MimicIVSTGraph(
     host: String = "localhost",
     controllerIPs: List<String> = listOf("localhost"),
     postgres: PostgresConfig = PostgresConfig()
-) : AbstractMimicIVLoader(mimicLimit(size), threads = threads, postgres = postgres) {
+) : AbstractMimicIVLoader(mimicLimit(size), threads = threads, postgres = postgres, short = mimicShort(size)) {
     val s = if (mimicLimit(size) == Long.MAX_VALUE) "full" else size
     val g = MemoryGraphACID(path = "datasets/dump/mimic/$s")
     val t = AsterixDBTSM.createDefault(g, "mimic_$s", host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else { threads * 10 }, multiTs = true)
