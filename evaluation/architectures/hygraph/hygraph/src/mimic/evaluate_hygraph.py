@@ -47,6 +47,13 @@ def append(path, row):
     if os.path.exists(path):
         with open(path, newline="") as f:
             header = next(csv.reader(f), None)
+    missing = [column for column in row if header is not None and column not in header]
+    if missing:  # a file written before the last columns were added (e.g., configuration): the old rows leave them empty
+        with open(path, newline="") as f:
+            lines = f.read().splitlines()[1:]
+        header = header + missing
+        with open(path, "w", newline="") as f:
+            f.write("\n".join([",".join(header)] + lines) + "\n")
     with open(path, "a", newline="") as f:
         writer = csv.writer(f, lineterminator="\n")  # as the files written by the other systems
         if header is None:

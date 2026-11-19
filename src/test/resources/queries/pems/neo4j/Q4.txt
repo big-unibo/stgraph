@@ -1,1 +1,1 @@
-MATCH (g:Segment)<-[:inSegment]-(v:StationVersion)<-[:hasVersion]-(:Station)-[:hasTimeSeries]->(:TimeSeries)-[:hasMeasurement]->(m:lane0_avg_speed) WHERE v.valid_from <= m.timestamp < v.valid_to RETURN v.type, avg(m.value)
+MATCH (g:Segment)<-[:inSegment]-(v:StationVersion)<-[:hasVersion]-(s:Station)-[:hasTimeSeries]->(:TimeSeries)-[:hasMeasurement]->(m:lane0_avg_speed) WHERE v.valid_from <= m.timestamp < v.valid_to AND {FROM} <= m.timestamp < {TO} RETURN g.segment_id, avg(m.value)

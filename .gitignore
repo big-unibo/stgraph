@@ -1,3 +1,4 @@
+evaluation/id_rsa.pub
 outputs/*.csv
 results/dummy.pdf
 # The copies of the results of the other machines (evaluation/collect_results.sh)

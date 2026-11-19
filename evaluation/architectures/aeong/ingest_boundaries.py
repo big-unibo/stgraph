@@ -56,8 +56,10 @@ def ingest(client, dump, num_workers):
         directory = Path(directory)
         chunk = directory / 'chunk.cypher'
         with dump.open(encoding='utf-8') as source, chunk.open('w', encoding='utf-8') as target:
+            pending = False
             for position, statement in enumerate(source, 1):
                 target.write(statement)
+                pending = True
                 if position not in stops:
                     continue
                 target.flush()
@@ -68,7 +70,14 @@ def ingest(client, dump, num_workers):
                 recorded[position] = transaction_time(client, statement, directory)
                 target.seek(0)
                 target.truncate()
-        if position != last:
+                pending = False
+            if pending:  # the statements after the last boundary (e.g., the changes of the graph after the last event)
+                target.flush()
+                begin = time.monotonic()
+                result = client.execute(file_path=str(chunk), num_workers=1)
+                elapsed += time.monotonic() - begin
+                duration += sum(row['duration'] for row in result)
+        if position < last:
             raise ValueError('Dump length differs from its boundary manifest')
     # TT FROM a TO b reads the versions that start before b: the end of the whole history (last) and of the windows past
     # the data (bound at statement last + 1) is just after the last statement

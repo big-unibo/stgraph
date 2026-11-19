@@ -5,6 +5,7 @@ import it.unibo.stats.Config
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
+import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
 import it.unibo.tests.mimic.MimicEvaluation.Companion.NEO4J_COMPOSE
 import it.unibo.tests.mimic.MimicEvaluation.Companion.NEO4J_URI
@@ -12,19 +13,22 @@ import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_COMPOSE
 import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_PASSWORD
 import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_URL
 import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_USER
+import it.unibo.tests.pems.loaders.PemsAeonG
 import it.unibo.tests.pems.loaders.PemsGraphix
 import it.unibo.tests.pems.loaders.PemsNeo4J
 import it.unibo.tests.pems.loaders.PemsPGAge
 import it.unibo.tests.pems.loaders.PemsSTGraph
 import it.unibo.tests.systems.pgAgeConnection
+import it.unibo.tests.systems.queryTemplate
 import it.unibo.tests.systems.neo4jDriver
 import java.io.File
 import java.sql.DriverManager
 
 /**
  * The evaluation of PeMS (see it.unibo.tests.evaluation.main), with the systems deployed as for MIMIC-IV and
- * SmartBench, and the queries Q1-Q4 of TestPemsQuery (no time windows; queries.ids selects them). The loaders read
- * the local copy of the data, or the PostgreSQL of datasets.pems if missing (see AbstractPemsLoader)
+ * SmartBench, and the queries Q1-Q5 of TestPemsQuery (queries.ids selects them). The loaders read the local copy of
+ * the data, or the PostgreSQL of datasets.pems if missing (see AbstractPemsLoader). AeonG loads its Cypher dump
+ * (PemsAeonG, written when missing, not timed) and HyGraph the local copy (src/pems of its container), in their containers
  */
 class PemsEvaluation(config: Config, evaluation: EvaluationConfig, size: String) : DatasetEvaluation(config, evaluation, "pems", size) {
     private val postgres = config.datasets.getValue(dataset).postgres
@@ -49,7 +53,34 @@ class PemsEvaluation(config: Config, evaluation: EvaluationConfig, size: String)
                 repeat(evaluation.ingestionIterations) { ingest("graphix", it) { PemsGraphix(size, postgres = postgres) } }
                 queries("graphix", 1, queryIds) { id, _ -> PemsGraphixQuery(id, size) }
             }
+            "aeong" -> aeong()
+            "hygraph" -> {
+                PemsCacheLoader(size, postgres).prepareCache() // the local copy, mounted in its container
+                selfContained("hygraph", size, queryIds, mapOf("MODEL" to evaluation.model("hygraph"), "RESULT_SIZE" to size))
+            }
             else -> error("$system is not evaluated on $dataset")
+        }
+    }
+
+    /**
+     * AeonG loads its Cypher dump (written by PemsAeonG when missing, not timed); its queries (queries/pems/aeong) with
+     * the transaction times of the times of PemsWindows and of the last statement, recorded by the ingestion
+     */
+    private fun aeong() {
+        val dump = PemsAeonG.dumpFile(size)
+        if (evaluation.ingestionIterations > 0 && !PemsAeonG.dumpReady(size)) {
+            progress("aeong | $dataset $size: writing the Cypher dump")
+            PemsAeonG(size, postgres).loadData()
+        }
+        val folder = dump.absoluteFile.parentFile.apply { mkdirs() }
+        val queries = File(folder, "queries").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+        aeong(size, queryIds, dump, mapOf("AEONG_QUERIES" to queries.path, "AEONG_DATASETS" to folder.path)) { tt ->
+            queryIds.forEach { q ->
+                val (from, to) = PemsWindows.windows[q] ?: (0L to 0L)
+                val text = queryTemplate("pems", "aeong", q, mapOf("TTFROM" to (tt[from.toString()] ?: 0), "TTTO" to (tt[to.toString()] ?: 0),
+                    "TTT" to tt.getValue(PemsWindows.T.toString()), "TTLAST" to tt.getValue("last")))
+                File(queries, "$q.txt").writeText(text.lines().map { it.replace(Regex("//.*$"), "").trim() }.filter { it.isNotEmpty() }.joinToString(" ") + "\n")
+            }
         }
     }
 

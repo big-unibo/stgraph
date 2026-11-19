@@ -102,11 +102,19 @@ internal class AeonGResults(
             "queryMode", "iteration", "querySelectivity", "temporalRangeIndex", "configuration"
         )
 
-        /** Appends [rows] to [file] with its header (or [columns] if new); a column it does not have: empty */
+        /**
+         * Appends [rows] to [file] with its header (or [columns] if new); a file written before the last columns were
+         * added (e.g., configuration) gets them in its header, the old rows leave them empty (as loadDataset)
+         */
         private fun append(file: File, columns: List<String>, rows: List<Map<String, Any?>>) {
             if (rows.isEmpty()) return
             file.parentFile.mkdirs()
-            val header = file.takeIf { it.isFile }?.bufferedReader()?.use { it.readLine() }?.split(",") ?: columns
+            val old = file.takeIf { it.isFile }?.bufferedReader()?.use { it.readLine() }?.split(",")
+            val header = old?.let { it + (columns - it.toSet()) } ?: columns
+            if (old != null && header.size > old.size) {
+                val lines = file.readLines()
+                file.writeText((listOf(header.joinToString(",")) + lines.drop(1)).joinToString("\n", postfix = "\n"))
+            }
             file.appendText(buildString {
                 if (!file.isFile || file.length() == 0L) append(header.joinToString(",") + "\n")
                 else if (!file.readText().endsWith("\n")) append("\n")

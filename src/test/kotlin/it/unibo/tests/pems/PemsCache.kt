@@ -9,7 +9,7 @@ import it.unibo.tests.pems.loaders.PemsStationVersion
 import it.unibo.tests.smartbench.loaders.TSRecord
 
 /** The PeMS loader without a system: it only writes the local copy of the data read from PostgreSQL */
-private class PemsCacheLoader(size: String, postgres: PostgresConfig) : AbstractPemsLoader(size, postgres) {
+internal class PemsCacheLoader(size: String, postgres: PostgresConfig) : AbstractPemsLoader(size, postgres) {
     override fun node(label: String, props: Map<String, Any?>, from: Long?, to: Long?): Long = 0
     override fun edge(label: String, from: Long, to: Long, validFrom: Long, validTo: Long) {}
     override fun addStation(station: PemsStation, versions: List<Pair<PemsStationVersion, Long?>>): Long = 0
