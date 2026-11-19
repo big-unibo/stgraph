@@ -155,7 +155,8 @@ records each required boundary node's `transaction_ts` during ingestion, then ru
 no post-ingestion timestamp search or calibration container. Boundary lookups are excluded from ingestion timing.
 The times are saved next to the dump (`<size>.aeong`, `<limit>.aeong`) for query-only runs and replaced on ingestion.
 Its results, recorded by its container in a
-temporary folder, are added to `results/dt_graph/` as those of the other systems (`model` aeong, the configuration of
+temporary folder with the number of rows of each query (from the report of its client, `query_cardinality.py`; -1 for
+a query too long to name its report), are added to `results/dt_graph/` as they come, as those of the other systems (`model` aeong, the configuration of
 `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
 
 For each dataset, size and system, one system at a time, a run:

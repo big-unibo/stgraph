@@ -174,15 +174,21 @@ abstract class DatasetEvaluation(
             "QUERIES" to queryIds.joinToString(",")
         ) + environment + extraEnv + listOfNotNull(aeongResults?.let { "AEONG_RESULTS" to it.absolutePath })
         val run = "$system | $dataset $size (size $containerSize in its container)"
+        // The results of AeonG are exported as they come (every 10 s), then once more at the end
+        val aeongExport = aeongResults?.let { AeonGResults(it, evaluation.model(system), dataset, size, evaluation.configuration(system)) }
+        val exporter = aeongExport?.let {
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor().apply {
+                scheduleWithFixedDelay({ runCatching { it.export() } }, 10, 10, java.util.concurrent.TimeUnit.SECONDS)
+            }
+        }
         progress("$run: inside its container, started")
         try {
             runCommand(listOf("docker", "compose", "-f", composeFile, "up", "--abort-on-container-exit", "--exit-code-from", system), env)
         } finally {
+            exporter?.run { shutdown(); awaitTermination(1, java.util.concurrent.TimeUnit.MINUTES) }
+            aeongExport?.export(last = true)
             runCommand(listOf("docker", "compose", "-f", composeFile, "down"), env)
-        }
-        if (aeongResults != null) {
-            AeonGResults.export(aeongResults, evaluation.model(system), dataset, size, evaluation.configuration(system))
-            aeongResults.deleteRecursively()
+            aeongResults?.deleteRecursively()
         }
         progress("$run: done, results in results/dt_graph")
     }
