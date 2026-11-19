@@ -50,7 +50,7 @@ interface MimicIVLoader: Loader {
  */
 /**
  * [short]: the subjects of the short list (mimic-iv_subjectids_tsids_short.csv, the "x" sizes, e.g., the CI), otherwise
- * of the whole list (mimic-iv_subjectids_tsids.csv, downloaded by ./run.sh x); [key] names the copies and the dumps
+ * of the whole list (mimic-iv_subjectids_tsids.csv, downloaded by run.sh if missing); [key] names the copies and the dumps
  */
 abstract class AbstractMimicIVLoader(val limit: Long, val threads: Int, postgres: PostgresConfig = PostgresConfig(), val short: Boolean = false): MimicIVLoader {
     val key = mimicKey(limit, short)

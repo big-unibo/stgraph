@@ -139,7 +139,7 @@ gzipped, in `datasets/original/mimic/cache/<size>/` (`items.jsonl.gz`, `events.c
 system read that copy instead of PostgreSQL (not timed, as the reads from PostgreSQL). Delete the folder to read
 PostgreSQL again (e.g., after changing the list of subjects or the PostgreSQL). The "x" sizes (e.g., `x1692200`, the
 CI) select the subjects of `mimic-iv_subjectids_tsids_short.csv`, the others those of `mimic-iv_subjectids_tsids.csv`
-(the whole list, downloaded by `./run.sh <any argument>`). To read PostgreSQL without loading any
+(the whole list, downloaded by `run.sh` if missing). To read PostgreSQL without loading any
 system, `./gradlew mimicCache` writes the copies of the sizes of `datasets.mimic.sizes` (or of `--args="<size> ..."`).
 To spare the other machines the query, copy the folder to the same path on them (`evaluation/push_datasets.sh`).
 PeMS does the same, in `datasets/original/pems/cache/<size>/` (the stations, their versions, segments, roads,
