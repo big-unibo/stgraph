@@ -125,10 +125,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun graphix() {
         download("datasets/original/smartbench/$size", "smartbench")
-        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", GRAPHIX_PORT) }) {
-            repeat(evaluation.ingestionIterations) { ingest("graphix", it) { SmartBenchGraphix(size, port = GRAPHIX_PORT) } }
-            queries("graphix", numMachines = 1, queryIds) { queryId, _ -> QGraphix(queryId, size) }
-        }
+        graphix(queryIds, { host, port -> SmartBenchGraphix(size, host = host, port = port) }) { queryId, host, port -> QGraphix(queryId, size, host, port) }
     }
 
     /**

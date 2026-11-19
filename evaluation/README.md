@@ -118,6 +118,7 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 | `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`, `aeong`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
 | `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., no CPU or memory limit and the configuration in `conf/` (see below) |
 | `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph (only for the tests: in the evaluation its ingestion is single-threaded, and its Kotlin queries run with 16 threads with `conf-free/` of AsterixDB, the default, and 1 with `conf/`, unless the `evaluation` section or the run sets `threads`), `ingestion.iterations`, `queries` (`iterations`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
+| `stgraphRuns` | the runs of STGraph alone, by its tests (`./gradlew test`, the CI): each with its `datasets`, optionally `sizes` and `modes`, `threads`, `setups` (the experiments of STGraph: query modes, threads, scale-out) |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
 
 The sizes default to `datasets.<dataset>.sizes`. Each query has one time window per size, the same for every system:
@@ -275,12 +276,13 @@ time series):
 
 ### Scale-out
 
-Scale-out concerns STGraph only, on an AsterixDB cluster deployed following the
+Scale-out concerns STGraph and Graphix, each on an AsterixDB cluster (for Graphix, with its extension) deployed following the
 [official documentation](https://asterixdb.apache.org/docs/0.9.9/ncservice.html). Its setup in `test_config.yml` gives
 the address of the cluster controller (`host`, and `port` of its query API) and the addresses of the node controllers
 (`controllerIPs`), which receive the data feeds (`c1` in `test_config.example.yml`); the runs use it through `setups`,
-with `systems: [ "stgraph" ]`. A run starts and stops the local setup and uses a cluster as it is. `numMachines` in the
-results is the number of node controllers.
+with `systems: [ "stgraph" ]` or `[ "graphix" ]` (e.g., `setups: [ "c1", "c2", "c4" ]`). A run starts and stops the local
+setup (for Graphix, its compose file, port 29002) and uses a cluster as it is. `numMachines` in the results is the
+number of node controllers.
 
 ### Figures
 

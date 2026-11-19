@@ -62,8 +62,8 @@ class TestSmartBenchCompetitorsQuery {
     }
 
     /** A query on the graph created by SmartBenchGraphix */
-    class QGraphix(override val queryId: String, size: String) :
-        GraphixQuery("smartbench_graphix_$size") {
+    class QGraphix(override val queryId: String, size: String, host: String = "localhost", port: Int = 29002) :
+        GraphixQuery("smartbench_graphix_$size", host, port) {
         private val text = queryText("graphix", queryId, size)
 
         override fun statement() = text

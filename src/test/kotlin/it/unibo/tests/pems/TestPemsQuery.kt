@@ -86,7 +86,7 @@ class PemsPGAgeQuery(override val queryId: String, private val graph: String, co
     override fun statement() = queryTemplate("pems", "pgage", queryId, PemsWindows.params(queryId) + ("GRAPH" to graph))
 }
 
-class PemsGraphixQuery(override val queryId: String, size: String) : GraphixQuery("pems_graphix_$size") {
+class PemsGraphixQuery(override val queryId: String, size: String, host: String = "localhost", port: Int = 29002) : GraphixQuery("pems_graphix_$size", host, port) {
     override fun statement() = queryTemplate("pems", "graphix", queryId, PemsWindows.params(queryId))
 }
 

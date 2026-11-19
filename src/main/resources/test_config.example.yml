@@ -3,7 +3,7 @@ datasets:
     sizes: [ "full" ]
 
   smartbench:
-    sizes: [ "xsmall"]
+    sizes: [ "xsmall"] # "small", "medium", "large", "extralarge"
 
   mimic:
     sizes: [ "x1692200" ] # "1692200", "16922000", "9223372036854775807"
@@ -30,11 +30,20 @@ setups:
     host: localhost
     port: 19002
     controllerIPs: [ "localhost" ]
-  # Scale-out on an AsterixDB cluster deployed beforehand (see evaluation/README.md)
+  # Scale-out on AsterixDB clusters deployed beforehand (see evaluation/README.md), e.g., those of the experiments of
+  # the paper: one machine with two node controllers, two and four machines
   # c1:
-  #   host: 192.168.1.10
+  #   host: 192.168.30.110
   #   port: 19002
-  #   controllerIPs: [ "192.168.1.11", "192.168.1.12" ]
+  #   controllerIPs: [ "192.168.30.110", "192.168.30.110" ]
+  # c2:
+  #   host: 192.168.30.101
+  #   port: 19002
+  #   controllerIPs: [ "192.168.30.102", "192.168.30.103" ]
+  # c4:
+  #   host: 192.168.30.104
+  #   port: 19002
+  #   controllerIPs: [ "192.168.30.105", "192.168.30.106", "192.168.30.107", "192.168.30.109" ]
 
 # Where the systems started by the evaluation (deploy: true) keep their data: a folder on the host for each one
 # (relative paths: from the repository root; created if missing), e.g. on a disk with room for the large sizes.
@@ -76,7 +85,7 @@ resources:
   aeong:
   hygraph:
 
-# Parameters common to the evaluation: the evaluation section can set its own
+# Parameters common to the runs of STGraph and to the evaluation: each run, and the evaluation, can set its own
 defaults:
   # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode. The threads
   # here are only those of the tests (CI): in the evaluation, the ingestion of STGraph is single-threaded and its Kotlin
@@ -101,7 +110,23 @@ defaults:
   # (CPU, memory, partitions...), to tell its results apart; empty: the bare model
   label:
 
-# Every combination of its parameters (./gradlew evaluate); the tests of STGraph (CI) run it if stgraph is among its systems
+# The runs of STGraph alone, by its tests (./gradlew test, the CI): each loads and queries its datasets, optionally on its
+# sizes (default: datasets.<dataset>.sizes), with its modes, threads and setups (default: those of defaults). The first
+# one: the CI; the others: the experiments of STGraph of the paper (query modes, threads, scale-out on the setups above)
+stgraphRuns:
+  - datasets: [ "smartbench", "mimic", "pems" ]
+    modes: [ "OPTIMIZED" ]
+  # - datasets: [ "smartbench", "mimic" ]
+  #   modes: [ "OPTIMIZED", "NAIVE" ]
+  #   setups: [ "c1" ]
+  # - datasets: [ "smartbench", "mimic" ]
+  #   threads: [ 1, 4, 8, 16 ]
+  #   setups: [ "c1", "c4" ]
+  # - datasets: [ "smartbench", "mimic" ]
+  #   threads: [ 16 ]
+  #   setups: [ "c2" ]
+
+# Every combination of its parameters (./gradlew evaluate), STGraph and the competitors
 evaluation:
   systems: [ "stgraph", "pgage", "graphix", "neo4j", "aeong" ] # "hygraph"
   datasets: [ "mimic", "smartbench", "pems" ]

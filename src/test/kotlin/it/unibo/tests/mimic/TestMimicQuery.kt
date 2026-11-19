@@ -86,7 +86,7 @@ class TestMimicQuery {
     }
 
     /** The query [queryId] (Q1, Q2, Q3) on the graph created by MimicIVGraphix */
-    class QGraphix(override val queryId: String, size: String) : GraphixQuery("mimic_graphix_$size") {
+    class QGraphix(override val queryId: String, size: String, host: String = "localhost", port: Int = 29002) : GraphixQuery("mimic_graphix_$size", host, port) {
         override fun statement() = queryTemplate("mimic", "graphix", queryId, mapOf("FILTER" to mimicFilter))
     }
 

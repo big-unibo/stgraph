@@ -212,13 +212,8 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } }
     }
 
-    private fun graphix() {
-        deployed(evaluation.deploy, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady("localhost", 29002) }) {
-            repeat(evaluation.ingestionIterations) { ingest("graphix", it) { MimicIVGraphix(size, postgres = postgres) } }
-            queries("graphix", numMachines = 1, queryIds) { queryId, _ ->
-                if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QGraphix(queryId, name) else error("Unknown query: $queryId")
-            }
-        }
+    private fun graphix() = graphix(queryIds, { host, port -> MimicIVGraphix(size, host, port, postgres = postgres) }) { queryId, host, port ->
+        if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QGraphix(queryId, name, host, port) else error("Unknown query: $queryId")
     }
 
     companion object {

@@ -59,6 +59,23 @@ abstract class DatasetEvaluation(
         }
     }
 
+    /**
+     * Graphix on each setup of the run (as STGraph, for the scale-out): the local one (its compose file, port 29002) or a
+     * cluster of AsterixDB with the Graphix extension deployed beforehand (its host and port, used as it is); [loader]
+     * and [query] on its host and port; numMachines: its node controllers (1 on the local setup)
+     */
+    protected fun graphix(queryIds: List<String>, loader: (host: String, port: Int) -> Loader, query: (queryId: String, host: String, port: Int) -> Querying) {
+        for (setup in setups) {
+            val local = setup.host == "localhost"
+            val port = if (local) 29002 else setup.port
+            val machines = if (local) 1 else setup.controllerIPs.toSet().size
+            deployed(evaluation.deploy && local, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady(setup.host, port) }) {
+                repeat(evaluation.ingestionIterations) { ingest("graphix", it, numMachines = machines) { loader(setup.host, port) } }
+                queries("graphix", machines, queryIds) { id, _ -> query(id, setup.host, port) }
+            }
+        }
+    }
+
     /** Runs [block] on the graph of STGraph dumped in [graphPath], with its time series in [dataverse] (as TestConfig.runTest) */
     protected fun withStgraph(setup: SetupConfig, graphPath: String, dataverse: String, block: (Graph) -> Unit) {
         val graph = MemoryGraphACID.readFromDisk(graphPath)

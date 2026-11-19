@@ -62,24 +62,24 @@ class TestConfig {
                 threads = (defaultsRaw["threads"] as List<Int>)
             )
 
-            // --- runs: the evaluation section (the tests run STGraph if it is among its systems) ---
-            val r = raw["evaluation"] as? Map<String, Any> ?: error("No evaluation section in $path: copy it from test_config.example.yml")
-            val runs = listOf(
+            // --- runs: the runs of STGraph alone (its tests and experiments: threads, setups, modes) ---
+            val stgraphRuns = raw["stgraphRuns"] as? List<Map<String, Any>> ?: error("No stgraphRuns section in $path: copy it from test_config.example.yml")
+            val runs = stgraphRuns.map { r ->
                 RunConfig(
-                    approaches = r["systems"] as List<String>,
+                    approaches = listOf("stgraph"),
                     datasets = r["datasets"] as List<String>,
                     sizes = r["sizes"] as? List<Any>,
                     modes = r["modes"] as? List<String>,
                     threads = (r["threads"] as? List<Number>),
                     setups = r["setups"] as? List<String>
                 )
-            )
+            }
 
             val config = Config(datasets, setups, defaults, runs)
             return config
         }
 
-        /** The runs of STGraph on [dataset] (the evaluation section, if STGraph is among its systems): the tests run only STGraph */
+        /** The runs of STGraph on [dataset] (stgraphRuns): the tests run only STGraph */
         private fun stgraphRuns(config: Config, dataset: String): List<RunConfig> =
             config.runs.filter { "stgraph" in it.approaches && dataset in it.datasets }
 
