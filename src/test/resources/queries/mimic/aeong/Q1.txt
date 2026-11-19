@@ -1,1 +1,1 @@
-MATCH (p)-->(t)-->(m) WHERE p.c > 25000 AND m.value > 100 TT FROM 0 TO {TTTO_PARAM} RETURN p, t, m;
+MATCH (p)-->(t)-->(m) WHERE p.c > 25000 TT FROM 0 TO {TTTO_PARAM} WITH p, t, m WHERE m.value > 100 RETURN p, t, m;

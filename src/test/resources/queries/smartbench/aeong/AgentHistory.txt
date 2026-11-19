@@ -1,1 +1,1 @@
-MATCH (environment:Infrastructure)-[:hasCoverage]-(device:Sensor {id: "thermometer3"})-[:hasTemperature]-(temp:Temperature) WHERE temp.temperature > 0 TT FROM {TTFROM_PARAM} TO {TTTO_PARAM} RETURN DISTINCT device, environment;
+MATCH (e:Infrastructure)-[:hasCoverage]-(d:Sensor {id: "thermometer3"})-[:hasTemperature]-(t:Temperature) TT FROM {TTFROM_PARAM} TO {TTTO_PARAM} WITH d, e, t WHERE t.temperature > 0 RETURN DISTINCT d, e;

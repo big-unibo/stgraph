@@ -1,1 +1,1 @@
-MATCH (device:Sensor)-[:hasOwner]-(owner), (environment:Infrastructure)<-[:hasCoverage]-(device)-[:hasTemperature]->(temp:Temperature) WHERE temp.temperature >= 65 TT FROM {TTFROM_PARAM} TO {TTTO_PARAM} RETURN DISTINCT device, environment, owner;
+MATCH (d:Sensor)-[:hasOwner]-(o), (e:Infrastructure)<-[:hasCoverage]-(d)-[:hasTemperature]->(t:Temperature) TT FROM {TTFROM_PARAM} TO {TTTO_PARAM} WITH d, e, o, t WHERE t.temperature >= 65 RETURN DISTINCT d, e, o;
