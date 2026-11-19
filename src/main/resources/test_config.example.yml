@@ -121,4 +121,4 @@ specificRuns:
 # systems (one at a time, in this order) and datasets, optionally sizes and any key of the defaults
 evaluation:
   systems: [ "stgraph", "pgage", "graphix", "neo4j", "aeong" ] # "hygraph"
-  datasets: [ "mimic", "smartbench" ]
+  datasets: [ "mimic", "smartbench", "pems" ]
