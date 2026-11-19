@@ -75,6 +75,8 @@ statistics_path = os.path.join(os.sep, "hygraph", "results", "dt_graph")
 ingestion_stats_path = os.path.join(statistics_path, "ingestion_time", "ingestion_statistics.csv")
 query_stats_path = os.path.join(statistics_path, "query_time", "query_statistics.csv")
 MODEL = os.getenv("MODEL", "hygraph")
+# The configuration (conf, conf-free: the folder of resources.hygraph.conf), set by the evaluation as for the other systems
+CONFIGURATION = os.getenv("CONFIGURATION", "conf-free")
 RESULT_SIZE = os.getenv("RESULT_SIZE", DATASET_SIZE)
 
 
@@ -149,6 +151,7 @@ for ingestion_iteration in range(INGESTION_ITERATIONS):
     append(ingestion_stats_path, {
         "test_id": str(uuid4()),
         "model": MODEL,
+        "configuration": CONFIGURATION,
         "startTimestamp": int(start_time * 1000),
         "endTimestamp": int(end_time * 1000),
         "dataset": DATASET,
@@ -178,6 +181,7 @@ for query_iteration in range(QUERY_ITERATIONS):
             "test_id": str(uuid4()),
             "queryid": query_name,
             "model": MODEL,
+            "configuration": CONFIGURATION,
             "dataset": DATASET,
             "datasetSize": RESULT_SIZE,
             "threads": 1,

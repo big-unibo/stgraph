@@ -21,6 +21,9 @@ services:
       # The model and the size recorded in results/dt_graph (set by MimicEvaluation and SmartBenchEvaluation)
       - MODEL
       - RESULT_SIZE
+      # The configuration recorded in the results (conf, conf-free), as the other systems: HyGraph is a Python library,
+      # without configuration files (see conf/ and conf-free/)
+      - CONFIGURATION
     volumes:
       # The local code (scripts and src/<dataset>), instead of the one copied into the image
       - "./hygraph:/hygraph"

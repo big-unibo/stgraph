@@ -23,6 +23,8 @@ DATA = "/home/hygraph/resources/datasets/mimic"
 # (with the label of the run) and the size as recorded by the other systems
 SIZES = os.environ.get("DATASET_SIZE", "1692200").split(",")
 MODEL = os.environ.get("MODEL", "hygraph")
+# The configuration (conf, conf-free: the folder of resources.hygraph.conf), set by the evaluation as for the other systems
+CONFIGURATION = os.environ.get("CONFIGURATION", "conf-free")
 RESULT_SIZE = os.environ.get("RESULT_SIZE")
 INGESTION_ITERATIONS = int(os.environ.get("INGESTION_ITERATIONS", "1"))
 QUERY_ITERATIONS = int(os.environ.get("QUERY_ITERATIONS", "1"))
@@ -71,6 +73,7 @@ def ingest(size):
     append(INGESTION_STATS, {
         "test_id": str(uuid.uuid4()),
         "model": MODEL,
+        "configuration": CONFIGURATION,
         "startTimestamp": start,
         "endTimestamp": end,
         "dataset": DATASET,
@@ -103,6 +106,7 @@ for size in SIZES:
                 "test_id": str(uuid.uuid4()),
                 "queryid": query_id,
                 "model": MODEL,
+                "configuration": CONFIGURATION,
                 "dataset": DATASET,
                 "datasetSize": RESULT_SIZE or size,
                 "threads": 1,

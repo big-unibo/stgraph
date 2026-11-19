@@ -17,7 +17,7 @@ Graphix are Kotlin code of this repository; AeonG and HyGraph run in their own c
 | `src/test/kotlin/it/unibo/tests/smartbench/SmartBenchEvaluation.kt`, `src/test/kotlin/it/unibo/tests/synth/SynthEvaluation.kt` | Ingestion and queries of each system on SmartBench, and of STGraph on the synthetic dataset (on `DatasetEvaluation.kt`) |
 | `src/test/kotlin/it/unibo/tests/smartbench/loaders/` | One loader per system on a shared skeleton (`SmartBenchLoader.kt`) |
 | `src/test/resources/queries/<dataset>/<system>/` | The queries of the competitors, as templates; `INCONSISTENCIES.txt`: their differences from STGraph and the differences of the loaders from the original Python code |
-| `results/` | The results: `dt_graph/` (Kotlin runs), `aeong/`, `hygraph/`; the archives, not updated by the runs: `paper/` (the data of the article) and `rebuttal/` (the data of the article and the runs of the rebuttal, from the repository STGraph-evaluation) |
+| `results/` | The results of every system, AeonG and HyGraph included: `dt_graph/` (`ingestion_time/ingestion_statistics.csv`, `query_time/query_statistics.csv`); the archives, not updated by the runs: `paper/` (the data of the article) and `rebuttal/` (the data of the article and the runs of the rebuttal, from the repository STGraph-evaluation) |
 | `evaluation/postprocessing/STGraph.ipynb` | The figures and tables, of the archive set by `archive` (default: `rebuttal`; `None` for the current runs), in `evaluation/figures/<archive>/` (`current/` for the current runs) |
 | `evaluation/stats.ipynb` | Exploration of the MIMIC-IV subjects and time series |
 | `evaluation/.devcontainer/` | The devcontainer of the notebooks (Python, `evaluation/requirements.txt`), opening the folder `evaluation` (the whole repository is mounted in `/home`); `.devcontainer/` in the repository root is the one of STGraph (Java, Gradle) |
@@ -187,7 +187,7 @@ of their configuration files, the threads of STGraph), load each size once, then
 files, set its `label` and run `./gradlew evaluateQueries` (or `evaluateSpecificRunsQueries`): each system is started
 with the new files on its data and queried, and its results are recorded as `<model>_<label>`. Only the partitions of
 AsterixDB and Graphix, the indexes and the data model change the data, and need a new ingestion. AeonG and HyGraph
-write their results themselves, without the label.
+write their results themselves, with the same model (`<system>_<label>`).
 
 The `resources` section sets the CPU and memory limits and the configuration folder of each system without editing the
 compose files (the evaluation passes them as `<SYSTEM>_CPUS`, `_CPUSET`, `_MEMORY`, `_SHM`, `_CONF`). Without it, the
@@ -226,6 +226,55 @@ Every run appends one row per ingestion and per query to `results/`, with the sy
 not run the evaluation: it runs the tests of STGraph through `run.sh`.
 
 The large sizes need at least 300 GB of storage in the Docker data folder.
+
+### Running on other machines
+
+From this machine (Git Bash on Windows), with the repository cloned in `~/stgraph` on each machine (`REMOTE_DIR`
+otherwise) and the same `src/main/resources/mimic-iv_subjectids_tsids.csv` (the caches are read for its subjects and
+time series):
+
+1. Copy the ssh key, to log in and copy without a password (asks each machine's password once; `-k` for another key,
+   by default `~/.ssh/id_rsa.pub`):
+   ```bash
+   evaluation/push-ssh-key.sh -k ~/.ssh/id_rsa.pub -u mfrancia 192.168.30.101 192.168.30.102
+   ```
+   `scp` (steps 2 and 4) offers only the keys with the default names (`id_rsa`, `id_ed25519`, ...): with another name,
+   add it to `~/.ssh/config`:
+   ```
+   Host 192.168.30.*
+       User mfrancia
+       IdentityFile ~/.ssh/id
+       IdentitiesOnly yes
+   ```
+2. Copy the caches of the datasets (MIMIC-IV and PeMS, with the dumps their PostgreSQL restores): every system then
+   writes its own data from them, without querying PostgreSQL:
+   ```bash
+   evaluation/push_datasets.sh -u mfrancia -p datasets/original/mimic -p datasets/original/pems 192.168.30.101 192.168.30.102
+   ```
+3. On each machine, check that the user is a sudoer and in the `docker` group, then run the evaluation (in `tmux` or
+   with `nohup`: it takes hours). A Gradle daemon started before the user joined the `docker` group cannot reach
+   Docker: stop it first.
+   ```bash
+   ssh mfrancia@192.168.30.101
+   sudo -v                                   # the user is a sudoer
+   groups | grep -qw docker || { sudo usermod -aG docker $USER; exit; }   # then log in again
+   docker ps                                 # Docker without sudo
+   cd ~/stgraph
+   ./gradlew --stop
+   nohup ./gradlew evaluate > evaluation.log 2>&1 &
+   tail -f evaluation.log
+   ```
+   To give each machine its own systems and configuration without editing its `test_config.yml`, list them in
+   `evaluation/machines.txt` (`<host> <systems> <limited|free> [label]`) and write and copy their configurations from
+   the local one (`-n`: only print them; `-r`: also start `./gradlew evaluate` on each machine, after the checks above):
+   ```bash
+   evaluation/configure_machines.sh -u mfrancia -r evaluation/machines.txt
+   ```
+4. Collect the results while they run: every 5 minutes for 8 hours, into `results/machines/<host>/`, merged into
+   `results/merged/` (Ctrl+C to stop):
+   ```bash
+   evaluation/collect_results.sh -l -i 300 -d 28800 -u mfrancia 192.168.30.101 192.168.30.102
+   ```
 
 ### Scale-out
 

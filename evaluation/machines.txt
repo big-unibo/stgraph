@@ -1,0 +1,11 @@
+# <host> <system>[,<system>...] <limited|free> [label]: see configure_machines.sh
+192.168.30.101 aeong   limited
+192.168.30.102 aeong   free
+192.168.30.103 pgage   limited
+192.168.30.104 pgage   free
+192.168.30.105 graphix limited
+192.168.30.106 graphix free
+192.168.30.107 stgraph limited
+192.168.30.108 stgraph free
+192.168.30.109 neo4j   limited
+192.168.30.110 neo4j   free

@@ -110,7 +110,10 @@ fun runCommand(command: List<String>, env: Map<String, String> = emptyMap()) {
  */
 fun pullImages(composeFile: String, services: List<String> = emptyList(), env: Map<String, String> = emptyMap()) {
     progress("deploy | ${(listOf(composeFile) + services).joinToString(" ")}: pulling the missing images")
-    runCommand(listOf("docker", "compose", "-f", composeFile, "pull", "--policy", "missing") + services, env)
+    // Not fatal: an image built by its compose file (Graphix), or a Compose without --policy (before 2.22), is left
+    // to docker compose up
+    runCatching { runCommand(listOf("docker", "compose", "-f", composeFile, "pull", "--policy", "missing") + services, env) }
+        .onFailure { progress("deploy | $composeFile: images not pulled ($it), left to docker compose up") }
 }
 
 /**

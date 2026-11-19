@@ -66,12 +66,12 @@ data class EvaluationConfig(
 
     /**
      * The configuration of [system] recorded in the results: the name of its folder in the resources section (conf,
-     * conf-free...), otherwise conf-free, the default of the compose files; empty for the systems without one (HyGraph).
-     * AeonG has no configuration file: its conf/ (with one core, see test_config.example.yml) and conf-free/ only name
-     * the configuration
+     * conf-free...), otherwise conf-free, the default of the compose files. AeonG and HyGraph (a Python library) have no
+     * configuration file: their conf/ (with one core, see test_config.example.yml) and conf-free/ only name the
+     * configuration
      */
     fun configuration(system: String): String {
-        val prefix = mapOf("stgraph" to "ASTERIXDB", "graphix" to "GRAPHIX", "neo4j" to "NEO4J", "pgage" to "PGAGE", "aeong" to "AEONG")[system] ?: return ""
+        val prefix = mapOf("stgraph" to "ASTERIXDB", "graphix" to "GRAPHIX", "neo4j" to "NEO4J", "pgage" to "PGAGE", "aeong" to "AEONG", "hygraph" to "HYGRAPH")[system] ?: return ""
         return resources["${prefix}_CONF"]?.let { File(it).name } ?: "conf-free"
     }
 

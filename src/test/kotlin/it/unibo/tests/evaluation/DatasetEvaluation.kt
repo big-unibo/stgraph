@@ -171,7 +171,8 @@ abstract class DatasetEvaluation(
             "QUERY_ITERATIONS" to evaluation.queryIterations.toString(),
             "THREAD" to "1",
             "QUERY_SELECTIVITY" to QUERY_WINDOWS, // recorded as the querySelectivity of the runs
-            "QUERIES" to queryIds.joinToString(",")
+            "QUERIES" to queryIds.joinToString(","),
+            "CONFIGURATION" to evaluation.configuration(system) // recorded by HyGraph, as the other systems
         ) + environment + extraEnv + listOfNotNull(aeongResults?.let { "AEONG_RESULTS" to it.absolutePath })
         val run = "$system | $dataset $size (size $containerSize in its container)"
         // The results of AeonG are exported as they come (every 10 s), then once more at the end
