@@ -6,10 +6,8 @@ import java.io.File
 
 /**
  * A configuration of the evaluation, from test_config.yml (see test_config.example.yml): which systems run on which
- * datasets, and how. Two levels, which take the parameters they do not set from the defaults section:
- * - [load]: the evaluation section, i.e., every combination of its parameters (./gradlew evaluate);
- * - [loadSpecificRuns]: the runs of the specificRuns section, one after the other (./gradlew evaluateSpecificRuns),
- *   the same runs that the tests of STGraph read (TestConfig).
+ * datasets, and how: [load], the evaluation section, i.e., every combination of its parameters (./gradlew evaluate),
+ * with the parameters it does not set from the defaults section.
  * The setups of STGraph and the sizes of the datasets come from the rest of the file (TestConfig), the data folders of
  * the systems from its volumes section, their resources and configuration from its resources section.
  */
@@ -104,17 +102,6 @@ data class EvaluationConfig(
                 ?: error("No evaluation section in $path: copy it from test_config.example.yml")
             val resources = resources(yaml, path)
             return parse(section, defaults(yaml), path).copy(volumeFolders = volumes(yaml, path), resources = resources).withThreads()
-        }
-
-        /** The runs of the specificRuns section of [path] */
-        @Suppress("UNCHECKED_CAST")
-        fun loadSpecificRuns(path: String = "src/main/resources/test_config.yml"): List<EvaluationConfig> {
-            val yaml = yaml(path)
-            val runs = (yaml["specificRuns"] as? Map<String, Any?>)?.get("runs") as? List<Map<String, Any?>>
-            require(!runs.isNullOrEmpty()) { "No specificRuns.runs in $path: copy them from test_config.example.yml" }
-            val volumes = volumes(yaml, path)
-            val resources = resources(yaml, path)
-            return runs.map { parse(it, defaults(yaml), path).copy(volumeFolders = volumes, resources = resources).withThreads() }
         }
 
         /** The query threads of STGraph not set by the run: 1 with the least parallelism of conf/, 16 with conf-free/ (the default) */

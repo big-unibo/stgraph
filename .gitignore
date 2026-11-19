@@ -1,3 +1,5 @@
+evaluation/**/*.pdf
+evaluation/**/*.svg
 evaluation/id_rsa.pub
 outputs/*.csv
 results/dummy.pdf

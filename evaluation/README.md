@@ -118,7 +118,6 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 | `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`, `aeong`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
 | `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., no CPU or memory limit and the configuration in `conf/` (see below) |
 | `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph (only for the tests: in the evaluation its ingestion is single-threaded, and its Kotlin queries run with 16 threads with `conf-free/` of AsterixDB, the default, and 1 with `conf/`, unless the `evaluation` section or the run sets `threads`), `ingestion.iterations`, `queries` (`iterations`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
-| `specificRuns.runs` | the runs to execute, each one with its `approaches` (systems), `datasets`, optionally `sizes` and any key of `defaults`; the tests of STGraph (CI) read the runs with `stgraph` |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
 
 The sizes default to `datasets.<dataset>.sizes`. Each query has one time window per size, the same for every system:
@@ -128,10 +127,8 @@ The sizes default to `datasets.<dataset>.sizes`. Each query has one time window 
 |------|---------|--------------|
 | `./gradlew evaluate` | `evaluation` | every combination of its parameters |
 | `./gradlew evaluateIngestion`, `evaluateQueries` | `evaluation` | the same, only the ingestion or only the queries |
-| `./gradlew evaluateSpecificRuns` | `specificRuns` | its runs, one after the other |
-| `./gradlew evaluateSpecificRunsIngestion`, `evaluateSpecificRunsQueries` | `specificRuns` | the same, only the ingestion or only the queries |
 
-The queries of `evaluateQueries` and `evaluateSpecificRunsQueries` run on the data already loaded (kept in the data
+The queries of `evaluateQueries` run on the data already loaded (kept in the data
 folders of the systems, see below), without downloading the datasets. AeonG keeps its database between the two phases:
 `evaluateQueries` stops if the database is not the one of that dataset and size. HyGraph, which loads and queries in the
 same container, is skipped by the tasks of a single phase.
@@ -184,7 +181,7 @@ the logs of a folder loaded before them are pruned at its next checkpoint (e.g.,
 
 To compare configurations of the systems on the same data (CPU and memory limits in the compose files, the settings
 of their configuration files, the threads of STGraph), load each size once, then for each configuration change the
-files, set its `label` and run `./gradlew evaluateQueries` (or `evaluateSpecificRunsQueries`): each system is started
+files, set its `label` and run `./gradlew evaluateQueries`: each system is started
 with the new files on its data and queried, and its results are recorded as `<model>_<label>`. Only the partitions of
 AsterixDB and Graphix, the indexes and the data model change the data, and need a new ingestion. AeonG and HyGraph
 write their results themselves, with the same model (`<system>_<label>`).

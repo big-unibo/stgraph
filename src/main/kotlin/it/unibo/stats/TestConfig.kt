@@ -62,28 +62,28 @@ class TestConfig {
                 threads = (defaultsRaw["threads"] as List<Int>)
             )
 
-            // --- runs: the specific runs ---
-            val specificRuns = raw["specificRuns"] as? Map<String, Any> ?: error("No specificRuns section in $path: copy it from test_config.example.yml")
-            val runs = (specificRuns["runs"] as List<Map<String, Any>>).map { r ->
+            // --- runs: the evaluation section (the tests run STGraph if it is among its systems) ---
+            val r = raw["evaluation"] as? Map<String, Any> ?: error("No evaluation section in $path: copy it from test_config.example.yml")
+            val runs = listOf(
                 RunConfig(
-                    approaches = r["approaches"] as List<String>,
+                    approaches = r["systems"] as List<String>,
                     datasets = r["datasets"] as List<String>,
                     sizes = r["sizes"] as? List<Any>,
                     modes = r["modes"] as? List<String>,
                     threads = (r["threads"] as? List<Number>),
                     setups = r["setups"] as? List<String>
                 )
-            }
+            )
 
             val config = Config(datasets, setups, defaults, runs)
             return config
         }
 
-        /** The specific runs of STGraph on [dataset]: the tests run only STGraph */
+        /** The runs of STGraph on [dataset] (the evaluation section, if STGraph is among its systems): the tests run only STGraph */
         private fun stgraphRuns(config: Config, dataset: String): List<RunConfig> =
             config.runs.filter { "stgraph" in it.approaches && dataset in it.datasets }
 
-        /** Loads [dataset] into STGraph for every size, setup and number of threads of the specific runs of STGraph on it */
+        /** Loads [dataset] into STGraph for every size, setup and number of threads of the runs of STGraph on it */
         fun runIngestion(dataset: String, loader: (String, Int, String, List<String>) -> Loader) {
             val config: Config = loadConfig("src/main/resources/test_config.yml")
             val combinations = stgraphRuns(config, dataset).flatMap { run ->

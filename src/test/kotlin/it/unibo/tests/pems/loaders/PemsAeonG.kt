@@ -107,11 +107,12 @@ class PemsAeonG(size: String, postgres: PostgresConfig = PostgresConfig()) : Abs
             val run = runs.poll()
             val i = run[0]
             while (change != null && change.first <= times[i]) { statement(change.third); change = if (pending.hasNext()) pending.next() else null }
-            bounds.headMap(times[i] + 1).filterValues { it < 0 }.keys.forEach { bounds[it] = statements + 1 }
             val label = "`${measureLabels[labelIds[i]]}`"
             val series = "'${tsIds[i]}_${measureLabels[labelIds[i]]}'"
-            if (created.add(series)) {
-                index(measureLabels[labelIds[i]], "series_id")
+            val first = created.add(series)
+            if (first) index(measureLabels[labelIds[i]], "series_id") // before the bounds: the bound is the statement of the event
+            bounds.headMap(times[i] + 1).filterValues { it < 0 }.keys.forEach { bounds[it] = statements + 1 }
+            if (first) {
                 statement("MATCH ${node("t", tsIds[i])} CREATE (t)-[:hasMeasurement]->(:$label {series_id: $series, timestamp: ${times[i]}, value: ${values[i]}});")
             } else {
                 statement("MATCH (m:$label {series_id: $series}) SET m.timestamp = ${times[i]}, m.value = ${values[i]};")
@@ -129,7 +130,7 @@ class PemsAeonG(size: String, postgres: PostgresConfig = PostgresConfig()) : Abs
 
     companion object {
         /** The version of the dumps: one written by an older PemsAeonG (another model) is written again */
-        const val DUMP_VERSION = "edges+attributes"
+        const val DUMP_VERSION = "edges+attributes+bounds"
 
         fun dumpFile(size: String) = File("datasets/dump/aeong/pems/$size/$size.cypher")
 

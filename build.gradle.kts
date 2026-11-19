@@ -102,15 +102,12 @@ tasks.register<JavaExec>("pemsCache") {
     workingDir = projectDir
 }
 
-// The evaluation of STGraph and of its competitors, configured by the evaluation and specificRuns sections of
+// The evaluation of STGraph and of its competitors, configured by the evaluation section of
 // test_config.yml (evaluation/README.md), with both phases or only one of them. Not tests: the CI does not run them.
 mapOf(
     "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to listOf()),
     "evaluateIngestion" to ("As evaluate, only the ingestion" to listOf("ingestion")),
-    "evaluateQueries" to ("As evaluate, only the queries, on the data already loaded" to listOf("queries")),
-    "evaluateSpecificRuns" to ("Runs the specificRuns.runs of src/main/resources/test_config.yml, one after the other" to listOf("specificRuns")),
-    "evaluateSpecificRunsIngestion" to ("As evaluateSpecificRuns, only the ingestion" to listOf("specificRuns", "ingestion")),
-    "evaluateSpecificRunsQueries" to ("As evaluateSpecificRuns, only the queries, on the data already loaded" to listOf("specificRuns", "queries"))
+    "evaluateQueries" to ("As evaluate, only the queries, on the data already loaded" to listOf("queries"))
 ).forEach { (name, task) ->
     tasks.register<JavaExec>(name) {
         description = task.first

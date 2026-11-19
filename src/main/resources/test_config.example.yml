@@ -1,6 +1,7 @@
 datasets:
-#  synth:
-#    sizes: [ "full" ]
+  synth:
+    sizes: [ "full" ]
+
   smartbench:
     sizes: [ "xsmall"]
 
@@ -13,9 +14,7 @@ datasets:
     password: "password"
 
   # PeMS, hourly data (pems repository: schema pems_cleaned); sizes: measurements, xsmall 1K, small 1M, medium 10M,
-  # large 100M. Read once into datasets/original/pems/cache/<size> (./gradlew pemsCache), then from there. By default,
-  # the mimic-postgres of docker-compose.yaml (the same PostgreSQL as MIMIC-IV), where the dump of PeMS is restored in
-  # the database pems
+  # large 100M. Read once into datasets/original/pems/cache/<size> (./gradlew pemsCache), then from there.
   pems:
     sizes: [ "xsmall" ] # "small", "medium", "large"
     postgres_endpoint: "localhost"
@@ -61,20 +60,14 @@ volumes:
 # AsterixDB and Graphix are those of the load. E.g., the single-core comparison of the paper: the limited
 # block below. The two configurations of each system (see evaluation/README.md), limited (one core, the least parallelism
 # of conf/):
-#  asterixdb: { cpus: 1, conf: evaluation/architectures/stgraph/conf }
-#  graphix: { cpus: 1, conf: evaluation/architectures/graphix/conf }
-#  neo4j: { cpus: 1, conf: evaluation/architectures/neo4j/conf }
-#  pgage: { cpus: 1, conf: evaluation/architectures/pgage/conf }
-#  aeong: { cpus: 1, conf: evaluation/architectures/aeong/conf }
-#  hygraph: { cpus: 1, conf: evaluation/architectures/hygraph/conf }
-# and free (20 cores, no memory limit, the defaults of the systems in conf-free/; AsterixDB and Graphix with two
-# partitions, so their data in another folder than the one of conf/, see volumes):
-#  asterixdb: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/stgraph/conf-free }
-#  graphix: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/graphix/conf-free }
-#  neo4j: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/neo4j/conf-free }
-#  pgage: { cpus: 20, cpuset: "0-19", shm: 1g, conf: evaluation/architectures/pgage/conf-free }
-#  aeong: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/aeong/conf-free }
-#  hygraph: { cpus: 20, cpuset: "0-19", conf: evaluation/architectures/hygraph/conf-free }
+# resources:
+#   asterixdb: { cpus: 1, conf: evaluation/architectures/stgraph/conf }
+#   graphix: { cpus: 1, conf: evaluation/architectures/graphix/conf }
+#   neo4j: { cpus: 1, conf: evaluation/architectures/neo4j/conf }
+#   pgage: { cpus: 1, conf: evaluation/architectures/pgage/conf }
+#   aeong: { cpus: 1, conf: evaluation/architectures/aeong/conf }
+#   hygraph: { cpus: 1, conf: evaluation/architectures/hygraph/conf }
+# or free
 resources:
   asterixdb:
   graphix:
@@ -83,7 +76,7 @@ resources:
   aeong:
   hygraph:
 
-# Parameters common to the specific runs and to the evaluation: each run, and the evaluation, can set its own
+# Parameters common to the evaluation: the evaluation section can set its own
 defaults:
   # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode. The threads
   # here are only those of the tests (CI): in the evaluation, the ingestion of STGraph is single-threaded and its Kotlin
@@ -93,11 +86,11 @@ defaults:
   modes: [ "OPTIMIZED" ]
   setups: [ "c0" ]
   threads: [ 1 ]
-  # The rest is used only by the evaluation (./gradlew evaluate, ./gradlew evaluateSpecificRuns), not by the tests
+  # The rest is used only by the evaluation (./gradlew evaluate), not by the tests
   ingestion:
     iterations: 1
   queries:
-    iterations: 10
+    iterations: 3
     # Query ids (empty: all)
     ids: [ ]
   # Downloads the missing datasets (from the same URLs as downloadDataset.sh)
@@ -108,17 +101,7 @@ defaults:
   # (CPU, memory, partitions...), to tell its results apart; empty: the bare model
   label:
 
-# Only the listed runs: the tests of STGraph (CI) run the ones with stgraph among the approaches, ./gradlew
-# evaluateSpecificRuns runs all of them. Each run sets approaches (stgraph, neo4j, pgage, graphix, aeong,
-# hygraph) and datasets, optionally sizes (default: datasets.<dataset>.sizes) and any key of the defaults
-specificRuns:
-  runs:
-    - approaches: [ "stgraph" ]
-      datasets: [ "smartbench", "mimic", "pems" ]
-      modes: [ "OPTIMIZED" ]
-
-# Every combination of its parameters (./gradlew evaluate, see evaluation/README.md); not used by the tests. It sets
-# systems (one at a time, in this order) and datasets, optionally sizes and any key of the defaults
+# Every combination of its parameters (./gradlew evaluate); the tests of STGraph (CI) run it if stgraph is among its systems
 evaluation:
   systems: [ "stgraph", "pgage", "graphix", "neo4j", "aeong" ] # "hygraph"
   datasets: [ "mimic", "smartbench", "pems" ]

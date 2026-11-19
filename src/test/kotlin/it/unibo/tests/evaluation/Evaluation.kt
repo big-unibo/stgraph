@@ -11,21 +11,19 @@ import kotlin.system.exitProcess
 /**
  * The evaluation configured by the evaluation section of test_config.yml: for each dataset, size and system (one at a
  * time), it downloads the missing data, deploys the system, loads the data, runs the queries and stops the system.
- * Without arguments (./gradlew evaluate), every combination of the parameters of the section; with the argument
- * "specificRuns" (./gradlew evaluateSpecificRuns), the runs of the specificRuns section, one after the other. With
- * "ingestion" or "queries" (./gradlew evaluateIngestion, evaluateQueries, evaluateSpecificRunsIngestion,
- * evaluateSpecificRunsQueries), only that phase: the queries run on the data already loaded (see the volumes section).
+ * Without arguments (./gradlew evaluate), every combination of the parameters of the section. With "ingestion" or
+ * "queries" (./gradlew evaluateIngestion, evaluateQueries), only that phase: the queries run on the data already loaded
+ * (see the volumes section).
  * The results go to results/
  * (see evaluation/README.md). Run from the repository root. A system that fails is reported at the end, the others go on.
  */
 fun main(args: Array<String>) {
     val config = TestConfig.loadConfig()
-    val byRuns = "specificRuns" in args
     val onlyIngestion = "ingestion" in args
     val onlyQueries = "queries" in args
     require(!(onlyIngestion && onlyQueries)) { "Either ingestion or queries, not both (both: no argument)" }
     // Only one phase: the other one runs zero times
-    val runs = (if (byRuns) EvaluationConfig.loadSpecificRuns() else listOf(EvaluationConfig.load())).map {
+    val runs = listOf(EvaluationConfig.load()).map {
         when {
             onlyIngestion -> it.copy(queryIterations = 0)
             onlyQueries -> it.copy(ingestionIterations = 0)
@@ -34,7 +32,7 @@ fun main(args: Array<String>) {
     }
     val failures = mutableListOf<String>()
     runs.forEachIndexed { index, evaluation ->
-        val run = if (byRuns) "specific run ${index + 1}/${runs.size}" else "evaluation"
+        val run = "evaluation"
         val sizes = evaluation.datasets.associateWith { dataset ->
             evaluation.sizes ?: config.datasets[dataset]?.sizes?.map { TestConfig.normalizeSize(it) }
                 ?: error("No sizes for the dataset $dataset in test_config.yml")

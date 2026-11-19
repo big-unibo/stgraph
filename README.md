@@ -145,8 +145,7 @@ The config defines:
 - `datasets`: dataset names and sizes; for MIMIC-IV, also the PostgreSQL the ingestion reads the data from (`postgres_endpoint`, `port`, `database`, `user`, `password`; default: the one of `docker-compose.yaml`);
 - `setups`: AsterixDB hosts, ports, and controller IPs;
 - `defaults`: fallback modes, setups, and thread counts (and the parameters of the evaluation);
-- `specificRuns.runs`: the runs to execute; the tests ingest and query STGraph on the datasets of the runs with `stgraph` among their `approaches`, `./gradlew evaluateSpecificRuns` executes all of them;
-- `evaluation`: every combination of its parameters, `./gradlew evaluate` (see [Reproducing The Results](#reproducing-the-results)).
+- `evaluation`: every combination of its parameters, `./gradlew evaluate` (see [Reproducing The Results](#reproducing-the-results)); the tests ingest and query STGraph on its datasets if `stgraph` is among its `systems`.
 
 Each SmartBench query has one time window per dataset size, the same for every system (`TimeWindows` in `src/test/kotlin/it/unibo/tests/smartbench/queries`). Label metadata is loaded from `src/main/resources/labels.yaml`.
 
@@ -171,8 +170,7 @@ It:
 The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. Every system runs in a container, without CPU or memory limits unless the `resources` section of `test_config.yml` sets them (the single-core comparison of the paper: `cpus: 1` for each; AeonG and HyGraph are always limited to one core, shared with their client), and is configured with the least parallelism it allows. One system at a time, the evaluation downloads the data, starts the system, loads the data, runs the queries (each on its time window for the size) and stops the system:
 
 ```bash
-./gradlew evaluate               # every combination of the evaluation section of test_config.yml
-./gradlew evaluateSpecificRuns   # the runs of the specificRuns section
+./gradlew evaluate   # every combination of the evaluation section of test_config.yml
 ```
 
 The results are appended to `results/` and plotted by `evaluation/postprocessing/STGraph.ipynb`. The setup of every system (versions, configuration files, data model and indexes, parallelism) and the reproduction steps are described in [`evaluation/README.md`](evaluation/README.md).
