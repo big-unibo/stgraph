@@ -181,6 +181,7 @@ abstract class DatasetEvaluation(
                 scheduleWithFixedDelay({ runCatching { it.export() } }, 10, 10, java.util.concurrent.TimeUnit.SECONDS)
             }
         }
+        pullImages(composeFile, env = env)
         progress("$run: inside its container, started")
         try {
             runCommand(listOf("docker", "compose", "-f", composeFile, "up", "--abort-on-container-exit", "--exit-code-from", system), env)

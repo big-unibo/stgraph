@@ -105,10 +105,20 @@ fun runCommand(command: List<String>, env: Map<String, String> = emptyMap()) {
 }
 
 /**
+ * Pulls the missing images of [composeFile] (or of its [services]), before starting them: the time to download them is
+ * not part of the time a system has to become ready (e.g., on the CI, where no image is there)
+ */
+fun pullImages(composeFile: String, services: List<String> = emptyList(), env: Map<String, String> = emptyMap()) {
+    progress("deploy | ${(listOf(composeFile) + services).joinToString(" ")}: pulling the missing images")
+    runCommand(listOf("docker", "compose", "-f", composeFile, "pull", "--policy", "missing") + services, env)
+}
+
+/**
  * Runs [block] on the system of [composeFile] (or its [service]): when [enabled], the system is started before (with
  * the variables [env] for the compose file) and stopped after, waiting until [ready] succeeds [readyChecks] times in a
  * row (e.g., PostgreSQL restarts once while
- * initializing). Stopped, not removed: the data in the containers survive (e.g., to query them again with deploy: false)
+ * initializing), within [readyTimeoutMs] from the start (the missing images are pulled before, see [pullImages]).
+ * Stopped, not removed: the data in the containers survive (e.g., to query them again with deploy: false)
  */
 fun <T> deployed(
     enabled: Boolean,
@@ -126,6 +136,7 @@ fun <T> deployed(
         return block()
     }
     val services = listOfNotNull(service)
+    pullImages(composeFile, services, env)
     progress("deploy | $system: starting")
     runCommand(listOf("docker", "compose", "-f", composeFile, "up", "-d") + services, env)
     try {
