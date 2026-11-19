@@ -140,6 +140,8 @@ system read that copy instead of PostgreSQL (not timed, as the reads from Postgr
 PostgreSQL again (e.g., after changing `mimic-iv_subjectids_tsids.csv` or the PostgreSQL). To read PostgreSQL without loading any
 system, `./gradlew mimicCache` writes the copies of the sizes of `datasets.mimic.sizes` (or of `--args="<size> ..."`).
 To spare the other machines the query, copy the folder to the same path on them (`evaluation/push_datasets.sh`).
+PeMS does the same, in `datasets/original/pems/cache/<size>/` (the stations, their versions, segments, roads,
+incidents, and the events), written by the loaders or by `./gradlew pemsCache` (or `--args="<size> ..."`).
 
 AeonG loads a Cypher dump with the graph of Neo4j and its own temporal model, written when missing (not timed) from
 the data of the other systems: `datasets/dump/aeong/mimic/<limit>/` (MimicIVAeonG) and

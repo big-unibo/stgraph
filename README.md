@@ -201,6 +201,18 @@ The dataset helper downloads inputs into `datasets/original/<dataset>` and extra
 
 The evaluation downloads the inputs it needs by itself (also the Cypher dumps of Neo4j, `smartbench/neo4j <size>`).
 
+MIMIC-IV and PeMS are read from their PostgreSQL (`datasets.mimic` and `datasets.pems` of `test_config.yml`) once per
+size, into a local copy that every later load reads instead (`datasets/original/<dataset>/cache/<size>`). To write the
+copies without loading any system (e.g., on the machine that reaches the PostgreSQL, then
+`evaluation/push_datasets.sh -p datasets/original/<dataset>` to the others):
+
+```bash
+./gradlew mimicCache                          # the sizes of datasets.mimic.sizes
+./gradlew mimicCache --args="1692200"         # or the given ones
+./gradlew pemsCache                           # the sizes of datasets.pems.sizes
+./gradlew pemsCache --args="small medium"     # or the given ones (xsmall, small, medium, large, full, or a number of events)
+```
+
 Query benchmarks read graph dumps from:
 
 ```text
