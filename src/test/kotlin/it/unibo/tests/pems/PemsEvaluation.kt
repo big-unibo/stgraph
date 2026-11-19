@@ -49,7 +49,7 @@ class PemsEvaluation(config: Config, evaluation: EvaluationConfig, size: String)
                 repeat(evaluation.ingestionIterations) { ingest("pgage", it) { PemsPGAge(size, PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD, postgres) } }
                 pgAgeConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { c -> queries("pgage", 1, queryIds) { id, _ -> PemsPGAgeQuery(id, PemsPGAge.graphName(size), c) } }
             }
-            "graphix" -> graphix(queryIds, { host, port -> PemsGraphix(size, host, port, postgres = postgres) }) { id, host, port -> PemsGraphixQuery(id, size, host, port) }
+            "graphix" -> graphix(queryIds, { host, port, feedHost -> PemsGraphix(size, host, port, feedHost, postgres = postgres) }) { id, host, port -> PemsGraphixQuery(id, size, host, port) }
             "aeong" -> aeong()
             "hygraph" -> {
                 PemsCacheLoader(size, postgres).prepareCache() // the local copy, mounted in its container

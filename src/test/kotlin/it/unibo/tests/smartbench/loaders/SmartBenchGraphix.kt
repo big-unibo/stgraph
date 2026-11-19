@@ -46,6 +46,7 @@ class SmartBenchGraphix(
     threads: Int = 1,
     host: String = "localhost",
     port: Int = 29002,
+    feedHost: String = host,
     private val firstFeedPort: Int = 11001,
     // Entities per INSERT statement. Entities (master data) are loaded in batches and timed separately from the
     // events, which are streamed one at a time through the data feed. One INSERT per entity would mostly measure
@@ -53,7 +54,7 @@ class SmartBenchGraphix(
     private val insertBatchSize: Int = 500
 ) : SmartBenchJsonLoader(size, threads) {
     private val dataverse = "smartbench_graphix_$size"
-    private val graphix = GraphixClient(host, port, dataverse)
+    private val graphix = GraphixClient(host, port, dataverse, feedHost)
     private val eventsDataset = "Observations"
     private val timeSeriesDataset = "TimeSeries"
     private val graphName = "SmartBench"

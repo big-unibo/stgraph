@@ -281,7 +281,8 @@ Scale-out concerns STGraph and Graphix, each on an AsterixDB cluster (for Graphi
 the address of the cluster controller (`host`, and `port` of its query API) and the addresses of the node controllers
 (`controllerIPs`), which receive the data feeds (`c1` in `test_config.example.yml`); the runs use it through `setups`,
 with `systems: [ "stgraph" ]` or `[ "graphix" ]` (e.g., `setups: [ "c1", "c2", "c4" ]`). A run starts and stops the local
-setup (for Graphix, its compose file, port 29002) and uses a cluster as it is. `numMachines` in the results is the
+setup (for Graphix, its compose file, port 29002) and uses a cluster as it is; Graphix receives its data feed on the
+first node controller only (its ingestion does not scale out). `numMachines` in the results is the
 number of node controllers.
 
 ### Figures

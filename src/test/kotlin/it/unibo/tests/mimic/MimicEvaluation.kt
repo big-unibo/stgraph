@@ -212,7 +212,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
         DriverManager.getConnection(PGAGE_URL, PGAGE_USER, PGAGE_PASSWORD).use { it.createStatement().use { st -> st.execute("SELECT 1") } }
     }
 
-    private fun graphix() = graphix(queryIds, { host, port -> MimicIVGraphix(size, host, port, postgres = postgres) }) { queryId, host, port ->
+    private fun graphix() = graphix(queryIds, { host, port, feedHost -> MimicIVGraphix(size, host, port, feedHost, postgres = postgres) }) { queryId, host, port ->
         if (queryId in listOf("Q1", "Q2", "Q3")) TestMimicQuery.QGraphix(queryId, name, host, port) else error("Unknown query: $queryId")
     }
 

@@ -14,7 +14,8 @@ import java.net.URLEncoder
 import kotlin.system.measureTimeMillis
 
 /** Statements and data-feed ingestion on a Graphix (AsterixDB + graph views) dataverse, shared by the Graphix loaders */
-class GraphixClient(val host: String = "localhost", port: Int = 29002, val dataverse: String) {
+/** [feedHost]: the node controller that receives the data feeds (on a cluster, not the cluster controller) */
+class GraphixClient(val host: String = "localhost", port: Int = 29002, val dataverse: String, private val feedHost: String = host) {
     val endpoint = "http://$host:$port/query/service"
 
     /**
@@ -42,7 +43,7 @@ class GraphixClient(val host: String = "localhost", port: Int = 29002, val datav
         JSONObject(exec("USE $dataverse; SELECT VALUE COUNT(*) FROM `$dataset`;")).getJSONArray("results").getLong(0)
 
     /** A socket data feed towards [dataset], whose type must be `Event` (the type used by the feeds of STGraph) */
-    fun feed(dataset: String, port: Int) = AsterixDBHTTPClient(endpoint, host, dataverse, dataset, dataFeedPort = port, isConcurrent = false)
+    fun feed(dataset: String, port: Int) = AsterixDBHTTPClient(endpoint, feedHost, dataverse, dataset, dataFeedPort = port, isConcurrent = false)
 
     /**
      * Ends the ingestion through [feeds], once every record has been sent: returns the time until all the [expected]

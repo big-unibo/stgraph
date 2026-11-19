@@ -17,12 +17,13 @@ class PemsGraphix(
     size: String,
     host: String = "localhost",
     port: Int = 29002,
+    feedHost: String = host,
     feedPort: Int = 11001,
     private val insertBatchSize: Int = 500,
     postgres: PostgresConfig = PostgresConfig()
 ) : AbstractPemsLoader(size, postgres) {
     private val dataverse = "pems_graphix_$size"
-    private val graphix = GraphixClient(host, port, dataverse)
+    private val graphix = GraphixClient(host, port, dataverse, feedHost)
     private val mapper = jacksonObjectMapper()
     private val measurements = "Measurements"
     private val vertices = linkedMapOf<String, MutableList<Map<String, Any>>>()

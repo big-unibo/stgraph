@@ -125,7 +125,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
 
     private fun graphix() {
         download("datasets/original/smartbench/$size", "smartbench")
-        graphix(queryIds, { host, port -> SmartBenchGraphix(size, host = host, port = port) }) { queryId, host, port -> QGraphix(queryId, size, host, port) }
+        graphix(queryIds, { host, port, feedHost -> SmartBenchGraphix(size, host = host, port = port, feedHost = feedHost) }) { queryId, host, port -> QGraphix(queryId, size, host, port) }
     }
 
     /**

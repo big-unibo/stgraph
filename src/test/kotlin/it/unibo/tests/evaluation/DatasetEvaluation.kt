@@ -62,15 +62,16 @@ abstract class DatasetEvaluation(
     /**
      * Graphix on each setup of the run (as STGraph, for the scale-out): the local one (its compose file, port 29002) or a
      * cluster of AsterixDB with the Graphix extension deployed beforehand (its host and port, used as it is); [loader]
-     * and [query] on its host and port; numMachines: its node controllers (1 on the local setup)
+     * and [query] on its host and port, the data feeds of [loader] to its first node controller (a feed listens on a node
+     * controller: all the events go through it); numMachines: its node controllers (1 on the local setup)
      */
-    protected fun graphix(queryIds: List<String>, loader: (host: String, port: Int) -> Loader, query: (queryId: String, host: String, port: Int) -> Querying) {
+    protected fun graphix(queryIds: List<String>, loader: (host: String, port: Int, feedHost: String) -> Loader, query: (queryId: String, host: String, port: Int) -> Querying) {
         for (setup in setups) {
             val local = setup.host == "localhost"
             val port = if (local) 29002 else setup.port
             val machines = if (local) 1 else setup.controllerIPs.toSet().size
             deployed(evaluation.deploy && local, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady(setup.host, port) }) {
-                repeat(evaluation.ingestionIterations) { ingest("graphix", it, numMachines = machines) { loader(setup.host, port) } }
+                repeat(evaluation.ingestionIterations) { ingest("graphix", it, numMachines = machines) { loader(setup.host, port, setup.controllerIPs.first()) } }
                 queries("graphix", machines, queryIds) { id, _ -> query(id, setup.host, port) }
             }
         }

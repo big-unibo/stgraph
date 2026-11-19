@@ -55,7 +55,7 @@ setups:
 # in its container) by the pgage-init service of its compose file. Empty the folder of asterixdb or graphix when the partitions of its cc.conf change (or use a
 # folder per partitioning)
 volumes:
-  asterixdb:   # the AsterixDB of STGraph (docker-compose.yaml of the repository root)
+  asterixdb:
   graphix:
   neo4j: datasets/volumes/neo4j/{dataset}/{size}
   pgage: datasets/volumes/pgage/{dataset}/{size}
@@ -116,13 +116,13 @@ defaults:
 stgraphRuns:
   - datasets: [ "smartbench", "mimic", "pems" ]
     modes: [ "OPTIMIZED" ]
-  # - datasets: [ "smartbench", "mimic" ]
+  # - datasets: [ "smartbench", "mimic", "pems" ]
   #   modes: [ "OPTIMIZED", "NAIVE" ]
   #   setups: [ "c1" ]
-  # - datasets: [ "smartbench", "mimic" ]
+  # - datasets: [ "smartbench", "mimic", "pems" ]
   #   threads: [ 1, 4, 8, 16 ]
   #   setups: [ "c1", "c4" ]
-  # - datasets: [ "smartbench", "mimic" ]
+  # - datasets: [ "smartbench", "mimic", "pems" ]
   #   threads: [ 16 ]
   #   setups: [ "c2" ]
 
@@ -130,3 +130,11 @@ stgraphRuns:
 evaluation:
   systems: [ "stgraph", "pgage", "graphix", "neo4j", "aeong" ] # "hygraph"
   datasets: [ "mimic", "smartbench", "pems" ]
+  # The setups of STGraph and Graphix (default: those of defaults, i.e., c0, the local one)
+  # setups: [ "c0" ]
+
+# The scale-out of Graphix on the clusters of the setups section (with the Graphix extension), instead of the above:
+# evaluation:
+#   systems: [ "graphix" ]
+#   datasets: [ "smartbench", "mimic", "pems" ]
+#   setups: [ "c1", "c2", "c4" ]
