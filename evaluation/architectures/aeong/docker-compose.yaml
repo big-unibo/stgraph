@@ -57,9 +57,9 @@ services:
         # The client of the image retries a failing statement up to 10000 times (hours) before aborting: once, a single
         # worker has no conflicts to retry
         sed -i 's/max_retries=10000/max_retries=1/' ../mgbench/runners.py
-        # evaluate_temporal_q.py reads the latency from the output of the client, empty when it writes to a file (--output):
-        # its IndexError skipped the stop of AeonG, left running under the next query
-        sed -i "s/temporal_q_ret\[0\]\['duration'\]/temporal_q_ret/" ../scripts/evaluate_temporal_q.py
+        # evaluate_temporal_q.py prints the latency from the output of the client, empty when it writes to a file (--output,
+        # recorded in the results): its IndexError skipped the stop of AeonG, left running under the next query
+        sed -i "/temporal query latency/d" ../scripts/evaluate_temporal_q.py
         # For the queries without a time window (EnvironmentCoverage, AgentHistory) replace_timestamp.sh of the image
         # writes on the file it reads, which empties it: through a temporary file
         sed -i 's|> "$$OUTPUT_FILE"|> "$$OUTPUT_FILE.tmp" \&\& mv "$$OUTPUT_FILE.tmp" "$$OUTPUT_FILE"|' replace_timestamp.sh
