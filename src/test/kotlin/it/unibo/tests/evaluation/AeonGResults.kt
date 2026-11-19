@@ -10,11 +10,11 @@ import kotlin.math.roundToLong
  * which writes a statistics file per load and per query in [folder] (AEONG_RESULTS of its compose file, a temporary
  * folder), under query_results/<dataset>: ingestion_stats/ingestion_<size>_<iteration>.json (times in microseconds),
  * query_stats/<query>_sz<size>_wrk<threads>_it<iteration>_sel<selectivity>_tr<range>.json (the duration in seconds),
- * and query_cards/<the same name>.txt, the number of rows of the query (see query_cardinality.py). [export] appends
+ * and query_cards/<the same name>.txt, the number of rows of the query (see run_queries.py). [export] appends
  * the files not exported yet to results/dt_graph (ingestion_time/ingestion_statistics.csv,
  * query_time/query_statistics.csv), with the columns and the default values of loadDataset and runQuery: one test_id
  * per row, times in ms, the model, dataset and size of the evaluation, the configuration (conf or conf-free),
- * iterations from 0, the queries of MIMIC-IV as Q1-Q3 (q0, a warm-up, is not recorded), unknown cardinalities as -1.
+ * iterations from 0, unknown cardinalities as -1.
  * It runs while the container runs too (see DatasetEvaluation.selfContained), so the results are kept as they come.
  */
 internal class AeonGResults(
@@ -56,8 +56,7 @@ internal class AeonGResults(
             exported += file.name
             // <query>_sz<size>_wrk<threads>_it<iteration>_sel<selectivity>_tr<range>
             val parts = file.nameWithoutExtension.split("_")
-            val name = parts[0]
-            val queryId = if (dataset == "mimic") Regex("q([1-9])").matchEntire(name)?.let { "Q${it.groupValues[1]}" } ?: return@mapNotNull null else name
+            val queryId = parts[0]
             fun part(prefix: String) = parts.firstOrNull { it.startsWith(prefix) }?.removePrefix(prefix)
             mapOf(
                 "test_id" to UUID.randomUUID().toString(), "queryid" to queryId, "model" to model, "dataset" to dataset,

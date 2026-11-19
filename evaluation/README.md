@@ -147,16 +147,15 @@ AeonG loads a Cypher dump with the graph of Neo4j and its own temporal model, wr
 the data of the other systems: `datasets/dump/aeong/mimic/<limit>/` (MimicIVAeonG) and
 `datasets/dump/aeong/smartbench/<size>/` (SmartBenchAeonG), on every size. A node per time series, created by its first
 event and updated by each next one: one statement (one transaction, one version of the node) per event, the SmartBench
-events in the order of their timestamps. Its queries, those of Neo4j (`src/test/resources/queries/mimic/aeong/`:
-`q1`-`q3` are Q1-Q3, `q0` a warm-up; `src/test/resources/queries/smartbench/aeong/`), read the history by
-transaction time (`TT FROM ... TO ...`), the logical clock of AeonG, which advances with every transaction: its container
-records each required boundary node's `transaction_ts` during ingestion, then runs the queries with those times
-(the whole history for MIMIC-IV and for the queries without a window). Only boundary nodes are looked up; there is
-no post-ingestion timestamp search or calibration container. Boundary lookups are excluded from ingestion timing.
-The times are saved next to the dump (`<size>.aeong`, `<limit>.aeong`) for query-only runs and replaced on ingestion.
-Its results, recorded by its container in a
-temporary folder with the number of rows of each query (from the report of its client, `query_cardinality.py`; -1 for
-a query too long to name its report), are added to `results/dt_graph/` as they come, as those of the other systems (`model` aeong, the configuration of
+events in the order of their timestamps. Its queries, those of Neo4j (`src/test/resources/queries/mimic/aeong/`,
+`src/test/resources/queries/smartbench/aeong/`), read the history by transaction time (`TT FROM ... TO ...`), the
+logical clock of AeonG, which advances with every transaction: its ingestion (`ingest_boundaries.py`) records the
+transaction time of the first event at or after each bound of the time windows and of the last statement (not timed),
+in `<size>.aeong` and `<limit>.aeong` next to the dump, with which the evaluation writes the queries (the whole history
+for MIMIC-IV and for the queries without a window). Its queries run on one AeonG, started once for all of them and
+their iterations (`run_queries.py`), as the other systems. Its results, recorded by its container in a temporary folder
+with the number of rows of each query (from the report of its client; -1 for a query too long to name its report), are
+added to `results/dt_graph/` as they come, as those of the other systems (`model` aeong, the configuration of
 `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
 
 For each dataset, size and system, one system at a time, a run:

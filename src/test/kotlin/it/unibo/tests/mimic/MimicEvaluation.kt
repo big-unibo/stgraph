@@ -158,7 +158,7 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
 
     /**
      * AeonG loads its Cypher dump (mounted by its compose file): written by MimicIVAeonG (not recorded) when missing. Its
-     * query_mimic.sh runs the query files as they are: without all of them, the container only runs the ingestion
+     * queries Q1-Q3 read the whole history, up to the transaction time of the last statement recorded by the ingestion
      */
     private fun aeong() {
         val dump = MimicIVAeonG.dumpFile(limit)
@@ -166,9 +166,9 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             progress("aeong | $dataset $size: writing the Cypher dump")
             MimicIVAeonG(limit, postgres = postgres).loadData()
         }
-        val queryFiles = listOf("q0", "q1", "q2", "q3")
+        val queryFiles = listOf("Q1", "Q2", "Q3")
         val folder = dump.absoluteFile.parentFile.apply { mkdirs() }
-        val queries = File(folder, "queries").apply { mkdirs() }
+        val queries = File(folder, "queries").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
         val env = mapOf("AEONG_QUERIES" to queries.path, "AEONG_DATASETS" to folder.path)
         aeong(limit.toString(), queryFiles, dump, env) { tt ->
             // The queries on the whole history: transaction time up to the one of the last statement of the dump

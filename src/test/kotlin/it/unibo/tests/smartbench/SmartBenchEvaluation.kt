@@ -151,21 +151,19 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             SmartBenchAeonG(size).writeDump()
         }
         val dump = SmartBenchAeonG.dumpFile(size)
-        val queries = File(dump.absoluteFile.parentFile, "queries").apply { mkdirs() }
+        val queries = File(dump.absoluteFile.parentFile, "queries").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
         val env = mapOf("AEONG_DATASETS" to dump.absoluteFile.parentFile.path, "AEONG_QUERIES" to queries.path)
         aeong(size, queryIds, dump, recorded + env) { aeongQueries(queries, it) }
     }
 
     /**
-     * Writes the queries of AeonG for this size into [folder] (datasets/dump/aeong/smartbench/<size>/queries), as its
-     * scripts read them (one statement per line, without comments; the names of its files, e.g., q2 for
-     * EnvironmentAggregate), with the time window of the query on the size (TimeWindows) as transaction time (TT FROM
+     * Writes the queries of AeonG for this size into [folder] (datasets/dump/aeong/smartbench/<size>/queries,
+     * <query>.txt, one statement per line, without comments, as the client of AeonG reads them), with the time window of the query on the size (TimeWindows) as transaction time (TT FROM
      * ... TO ...), from the transaction times [tt] recorded by the ingestion (ingest_boundaries.py): from the first event
      * at or after its start to the last one before its end (TT FROM a TO b reads the versions that start before b); the
      * whole history for the queries without a window (EnvironmentCoverage, AgentHistory)
      */
     private fun aeongQueries(folder: File, tt: Map<String, Long>) {
-        val files = mapOf("EnvironmentAggregate" to "q2", "MaintenanceOwners" to "q3", "EnvironmentOutlier" to "q4", "AgentOutlier" to "q5")
         for (queryId in TestSmartBenchCompetitorsQuery.queryIds) {
             val windowed = TimeWindows.windowed(queryId)
             val from = if (windowed) tt.getValue(TimeWindows.of(queryId, size).from.toString()) else 0L
@@ -173,7 +171,7 @@ class SmartBenchEvaluation(config: Config, evaluation: EvaluationConfig, size: S
             val query = TestSmartBenchCompetitorsQuery.queryText("aeong", queryId).lines()
                 .map { it.replace(Regex("//.*$"), "").trim() }.filter { it.isNotEmpty() }.joinToString(" ")
                 .replace("{TTFROM_PARAM}", from.toString()).replace("{TTTO_PARAM}", to.toString())
-            File(folder, "${files[queryId] ?: queryId}.txt").writeText(query + "\n")
+            File(folder, "$queryId.txt").writeText(query + "\n")
         }
     }
 
