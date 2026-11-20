@@ -55,8 +55,8 @@ setups:
 # in its container) by the pgage-init service of its compose file. Empty the folder of asterixdb or graphix when the partitions of its cc.conf change (or use a
 # folder per partitioning)
 volumes:
-  asterixdb:
-  graphix:
+  asterixdb: datasets/volumes/asterixdb/{dataset}/{size}
+  graphix: datasets/volumes/graphix/{dataset}/{size}
   neo4j: datasets/volumes/neo4j/{dataset}/{size}
   pgage: datasets/volumes/pgage/{dataset}/{size}
   aeong: datasets/volumes/aeong/{dataset}/{size}
