@@ -22,15 +22,20 @@ import kotlin.test.assertEquals
 import org.neo4j.driver.Session
 import java.sql.Connection
 
-val pemsQueries = listOf("Q1", "Q2", "Q3", "Q4", "Q5")
+val pemsQueries = listOf("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9")
 
 /**
- * The time conditions of the PeMS queries (epoch ms, UTC), the same on every size: Q3 the narrow window (1 January 2025),
- * Q4 the broad one (January 2025), Q5 the instant T (1 January 2025, 00:00) at which the stations are active
+ * The time conditions of the PeMS queries (epoch ms, UTC), the same on every size, from 1 January 2025: Q3 one day, Q4 one
+ * month, Q6 three months, Q7 six months, Q8 one month, Q9 three months; Q5 the instant T (1 January 2025, 00:00) at
+ * which the stations are active
  */
 object PemsWindows {
     const val T = 1735689600000L // 2025-01-01
-    val windows = mapOf("Q3" to (1735689600000L to 1735776000000L), "Q4" to (1735689600000L to 1738368000000L)) // [from, to)
+    val windows = mapOf( // [from, to)
+        "Q3" to (1735689600000L to 1735776000000L), "Q4" to (1735689600000L to 1738368000000L),
+        "Q6" to (1735689600000L to 1743465600000L), "Q7" to (1735689600000L to 1751328000000L),
+        "Q8" to (1735689600000L to 1738368000000L), "Q9" to (1735689600000L to 1743465600000L)
+    )
 
     /** The values of the placeholders {FROM}, {TO} and {T} of the query files */
     fun params(queryId: String): Map<String, Any> =
@@ -42,9 +47,11 @@ object PemsWindows {
  * of its station at its timestamp (the validity of inSegment, see PemsSTGraph):
  * - Q1: average speed by station;
  * - Q2: average speed by segment;
- * - Q3, Q4: as Q2, in the narrow and in the broad window (PemsWindows);
+ * - Q3, Q4, Q6, Q7: as Q2, in a window of one day, one month, three and six months (PemsWindows);
  * - Q5: average speed (of all time) by station, of the stations in a segment at T (PemsWindows.T): the stations at T,
- *   then their measurements.
+ *   then their measurements;
+ * - Q8, Q9: average speed by severity of the incidents on the segment of the station (both valid at the time of the
+ *   measurement), in a window of one and three months.
  * The competitors, without temporal graphs, match the station versions with explicit conditions on the half-open
  * [valid_from, valid_to) (resources/queries/pems/<system>/<Q>.txt)
  */
@@ -63,8 +70,13 @@ class PemsQuery(override val queryId: String, private val graph: Graph) : Queryi
             result = when (queryId) {
                 "Q1" -> query(graph, match, by = byStation, threads = threads, mode = queryMode)
                 "Q2" -> query(graph, match, by = bySegment, threads = threads, mode = queryMode)
-                "Q3", "Q4" -> PemsWindows.windows.getValue(queryId).let { (from, to) ->
+                "Q3", "Q4", "Q6", "Q7" -> PemsWindows.windows.getValue(queryId).let { (from, to) ->
                     query(graph, match, by = bySegment, from = from, to = to, threads = threads, mode = queryMode)
+                }
+                "Q8", "Q9" -> PemsWindows.windows.getValue(queryId).let { (from, to) ->
+                    // (Incident)-[locatedIn]->(Segment)<-...: the incident and its edge valid at the time of m as well
+                    query(graph, listOf(Step("Incident", alias = "i"), Step("locatedIn")) + match, by = listOf(Aggregate("i", "severity"), avg),
+                        from = from, to = to, threads = threads, mode = queryMode)
                 }
                 "Q5" -> {
                     val active = query(graph, match.take(3), by = listOf(Aggregate("s", "station_id")), from = PemsWindows.T, to = PemsWindows.T,
@@ -93,10 +105,11 @@ class PemsGraphixQuery(override val queryId: String, size: String, host: String 
 class TestPemsQuery {
     /**
      * Expected cardinalities on xsmall, the dataset of the CI (datasets/original/pems/xsmall.dump): 1000 hourly events of
-     * lane 0 of station 3088051 (segment 50_W_37, a single version, always valid), from 2025-01-01 (about 14 days): Q1
-     * and Q5 one station, Q2, Q3 and Q4 one segment
+     * lane 0 of station 3088051 (segment 50_W_37, a single version, always valid), from 2025-01-01 (about 14 days), and
+     * 54 incidents on its segment, all without severity: Q1 and Q5 one station, Q2, Q3, Q4, Q6 and Q7 one segment, Q8 and
+     * Q9 one severity (null)
      */
-    private val expectedXSmall = mapOf("Q1" to 1, "Q2" to 1, "Q3" to 1, "Q4" to 1, "Q5" to 1)
+    private val expectedXSmall = mapOf("Q1" to 1, "Q2" to 1, "Q3" to 1, "Q4" to 1, "Q5" to 1, "Q6" to 1, "Q7" to 1, "Q8" to 1, "Q9" to 1)
 
     /** On xsmall, fails the test if [query] does not return the expected cardinality (any mode and number of threads) */
     private fun checked(size: String, query: Querying): Querying =

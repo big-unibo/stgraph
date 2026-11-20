@@ -28,11 +28,12 @@ CONFIGURATION = os.environ.get("CONFIGURATION", "conf-free")
 RESULT_SIZE = os.environ.get("RESULT_SIZE") or SIZE
 INGESTION_ITERATIONS = int(os.environ.get("INGESTION_ITERATIONS", "1"))
 QUERY_ITERATIONS = int(os.environ.get("QUERY_ITERATIONS", "1"))
-QUERIES = [q for q in os.environ.get("QUERIES", "Q1,Q2,Q3,Q4,Q5").split(",") if q]
+QUERIES = [q for q in os.environ.get("QUERIES", "Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8,Q9").split(",") if q]
 
 MEASURES = ["flow", "avg_occupancy", "avg_speed"]  # AbstractPemsLoader.MEASURES
 # PemsWindows of TestPemsQuery (epoch ms, UTC): the windows of Q3 and Q4, [from, to), and the instant T of Q5
-WINDOWS = {"Q3": (1735689600000, 1735776000000), "Q4": (1735689600000, 1738368000000)}
+WINDOWS = {"Q3": (1735689600000, 1735776000000), "Q4": (1735689600000, 1738368000000), "Q6": (1735689600000, 1743465600000),
+           "Q7": (1735689600000, 1751328000000), "Q8": (1735689600000, 1738368000000), "Q9": (1735689600000, 1743465600000)}
 T = 1735689600000
 START = datetime(1900, 1, 1)  # the start of what is always valid (Long.MIN_VALUE in the copy); the end: HyGraph's default
 
@@ -96,6 +97,18 @@ def ingest():
         valid_from = START if v["from"] == -2**63 else ms(v["from"])
         valid_to = None if v["to"] == 2**63 - 1 else ms(v["to"])
         hygraph.add_pgedge(oid=oid, source=stations[v["stationId"]], target=segment, label="inSegment", start_time=valid_from, end_time=valid_to)
+    # The incidents, located in their segment while they last (the locatedIn edge valid as the incident)
+    for i in jsonl("incidents.jsonl.gz"):
+        segment = segments.get((i["fwy"], i["dir"], i["mile"]))
+        oid += 1
+        node = hygraph.add_pgnode(oid=oid, label="Incident", start_time=START)
+        if i.get("severity") is not None:
+            node.add_static_property("severity", i["severity"], hygraph)
+        if segment is not None:
+            edges += 1
+            oid += 1
+            hygraph.add_pgedge(oid=oid, source=oid - 1, target=segment, label="locatedIn",
+                               start_time=START if i["from"] == -2**63 else ms(i["from"]), end_time=None if i["to"] == 2**63 - 1 else ms(i["to"]))
     graph_end = time()
     events = pd.read_csv(os.path.join(DATA, SIZE, "events.csv.gz"), header=None, names=["station", "lane", "measure", "timestamp", "value"])
     for (station, lane, measure), group in events.groupby(["station", "lane", "measure"]):
@@ -156,6 +169,45 @@ def average(hygraph, by_segment, window=None):
     return [(key, sums[key] / counts[key]) for key in sums]
 
 
+def incidents(hygraph):
+    """The incidents of each segment: segment oid -> [(severity, start, end)]"""
+    result = {}
+    for source, target, data in hygraph.graph.edges(data=True):
+        if data["label"] == "locatedIn":
+            incident = hygraph.graph.nodes[source]["data"]
+            severity = incident.get_static_property("severity") if "severity" in incident.static_properties else None
+            result.setdefault(target, []).append((severity, pd.Timestamp(data["start_time"]), pd.Timestamp(data["end_time"])))
+    return result
+
+
+def by_severity(hygraph, window):
+    """avg(speed) by severity of the incidents on the segment of the station, both valid at the time of the speed, in [window]"""
+    on_segment = incidents(hygraph)
+    sums, counts = {}, {}
+    for sid, node in list(hygraph.graph.nodes(data=True)):
+        if node.get("label") != "Station":
+            continue
+        values = None
+        for _, target, data in hygraph.graph.out_edges(sid, data=True):
+            if data["label"] == "hasTimeSeries" and hygraph.graph.nodes[target]["data"].get_static_property("measure") == "lane0_avg_speed":
+                frame = hygraph.graph.nodes[target]["data"].get_temporal_property("ts").data.to_pandas()
+                values = frame[frame.columns[0]]
+                values.index = pd.to_datetime(values.index)
+        if values is None:
+            continue
+        values = values[(values.index >= ms(window[0])) & (values.index < ms(window[1]))]
+        for _, segment, data in hygraph.graph.out_edges(sid, data=True):
+            if data["label"] != "inSegment":
+                continue
+            start, end = pd.Timestamp(data["start_time"]), pd.Timestamp(data["end_time"])
+            for severity, i_start, i_end in on_segment.get(segment, []):
+                v = values[(values.index >= max(start, i_start)) & (values.index < min(end, i_end))]
+                if len(v):
+                    sums[severity] = sums.get(severity, 0) + v.sum()
+                    counts[severity] = counts.get(severity, 0) + len(v)
+    return [(key, sums[key] / counts[key]) for key in sums]
+
+
 def active(hygraph):
     """avg(speed) of all time by station, of the stations in a segment at T"""
     t = ms(T)
@@ -169,6 +221,10 @@ query_map = {
     "Q3": lambda h: average(h, by_segment=True, window=WINDOWS["Q3"]),
     "Q4": lambda h: average(h, by_segment=True, window=WINDOWS["Q4"]),
     "Q5": active,
+    "Q6": lambda h: average(h, by_segment=True, window=WINDOWS["Q6"]),
+    "Q7": lambda h: average(h, by_segment=True, window=WINDOWS["Q7"]),
+    "Q8": lambda h: by_severity(h, WINDOWS["Q8"]),
+    "Q9": lambda h: by_severity(h, WINDOWS["Q9"]),
 }
 
 hygraph = None
