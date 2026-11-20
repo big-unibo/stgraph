@@ -23,10 +23,15 @@ for arg in "$@"; do
     esac
 done
 
+# A step that fails (e.g., a container that does not stop) is reported, and the cleaning goes on with the others
+FAILED=0
 run() {
     echo "+ $*"
-    if ! $DRY_RUN; then "$@"; fi
+    if ! $DRY_RUN; then "$@" || { echo "WARNING: failed (exit $?): $*" >&2; FAILED=$((FAILED + 1)); }; fi
 }
+
+# The variables the compose files need without a default (set by the evaluation): any folder, to read them
+export AEONG_QUERIES="${AEONG_QUERIES:-/tmp}" AEONG_DATASETS="${AEONG_DATASETS:-/tmp}"
 
 ROOT_COMPOSE="docker-compose.yaml"
 COMPOSE_FILES=("$ROOT_COMPOSE" evaluation/architectures/*/docker-compose.yaml)
@@ -70,7 +75,7 @@ if ! $YES && ! $DRY_RUN; then
 fi
 
 for f in "${COMPOSE_FILES[@]}"; do
-    project=$(docker compose -f "$f" config 2>/dev/null | sed -n 's/^name: //p' | head -n 1)
+    project=$(docker compose -f "$f" config 2>/dev/null | sed -n 's/^name: //p' | head -n 1 || true)
     if [[ "$f" == "$ROOT_COMPOSE" ]] && ! $MIMIC; then
         # Only the AsterixDB of STGraph: "down -v" would also drop the data of mimic-postgres (an anonymous volume)
         run docker compose -f "$f" rm --stop --force asterixdb
@@ -81,7 +86,7 @@ for f in "${COMPOSE_FILES[@]}"; do
     fi
     # down --volumes skips the volumes of containers already removed: remove them by their compose labels
     for volume in "${volumes[@]}"; do
-        [[ -n "$volume" ]] || continue
+        [[ -n "$volume" && -n "$project" ]] || continue
         for id in $(docker volume ls -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.volume=$volume"); do
             run docker volume rm "$id"
         done
@@ -96,4 +101,8 @@ for folder in "${FOLDERS[@]}"; do
     run docker run --rm -v "$parent:/parent" busybox:1.36 rm -rf "/parent/$(basename "$folder")"
 done
 
+if [[ $FAILED -gt 0 ]]; then
+    echo "Done, with $FAILED failed step(s) (see the warnings above): e.g., stop the containers still running (docker ps) and run it again" >&2
+    exit 1
+fi
 echo "Done."
