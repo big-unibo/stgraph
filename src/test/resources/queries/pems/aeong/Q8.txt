@@ -1,0 +1,2 @@
+// AeonG (transaction time): the segment of a station is its inSegment edge, valid while it exists (see PemsAeonG); TT: the transaction times of the times of PemsWindows, recorded by the ingestion
+MATCH (i:Incident)-[:locatedIn]->(g:Segment)<-[:inSegment]-(s:Station)-[:hasTimeSeries]->(:TimeSeries)-[:hasMeasurement]->(m:lane0_avg_speed) TT FROM {TTFROM} TO {TTTO} RETURN i.severity, avg(m.value);

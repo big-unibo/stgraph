@@ -1,0 +1,66 @@
+services:
+  aeong:
+    image: mp4sini/aeong:latest
+    hostname: aeong
+    container_name: aeong
+    # No CPU or memory limit by default (free), as the other systems; AEONG_CPUS, AEONG_CPUSET (the cores) and
+    # AEONG_MEMORY: the resources of a run (set by the evaluation from the resources section of test_config.yml). The
+    # client runs in this container too
+    cpus: ${AEONG_CPUS:-0}
+    cpuset: "${AEONG_CPUSET:-}"
+    mem_limit: ${AEONG_MEMORY:-0}
+    # Set by the evaluation (src/test/kotlin/it/unibo/tests/evaluation, SmartBenchEvaluation)
+    environment:
+      - DATASET
+      - DATASET_SIZE
+      - INGESTION_ITERATIONS
+      - QUERY_ITERATIONS
+      - THREAD
+      - QUERY_SELECTIVITY
+      - QUERIES
+    volumes:
+      - ./ingest_boundaries.py:/vol/ingest_boundaries.py:ro
+      - ./run_queries.py:/vol/run_queries.py:ro
+      # AEONG_RESULTS: where the scripts of the image record the results of a run, a temporary folder of the evaluation,
+      # which adds them to results/dt_graph as the results of the other systems (see AeonGResults)
+      - ${AEONG_RESULTS:-aeong-results}:/home/AeonG/tests/results/aeong/
+      # AEONG_QUERIES: the query files of the run, <query>.txt (those of src/test/resources/queries/<dataset>/aeong with
+      # the transaction times of the loaded database, written by the evaluation next to the dump), run by run_queries.py
+      - ${AEONG_QUERIES}:/vol/queries:ro
+      # AEONG_DATASETS: the folder of the dump of the dataset on the host (datasets/dump/aeong/<dataset>/<size>, set by the
+      # evaluation). Only this folder, not T-mgBench, where the image keeps cypher_index.cypher
+      - ${AEONG_DATASETS}:/home/AeonG/tests/datasets/T-mgBench/${DATASET:-smartbench}
+      # The database, kept between the ingestion and the queries of two runs; AEONG_DATA: a host directory instead of the
+      # Docker volume (set by the evaluation from the volumes section of test_config.yml)
+      - ${AEONG_DATA:-aeong-data}:/home/AeonG/tests/results/database
+    command:
+      - /bin/bash
+      - -c
+      - |
+        LOADED=/home/AeonG/tests/results/database/loaded
+        # Capture the boundary transaction times while the existing client bulk-loads the dump.
+        sed -i 's|python_script="../scripts/create_temporal_database.py"|python_script="/vol/ingest_boundaries.py"|' create_database.sh
+        # The dump is written by the evaluation (AEONG_DATASETS): nothing to download
+        sed -i '/download_datasets.sh/d' t_smarbench_test.sh
+        # The client of the image retries a failing statement up to 10000 times (hours) before aborting: once, a single
+        # worker has no conflicts to retry
+        sed -i 's/max_retries=10000/max_retries=1/' ../mgbench/runners.py
+        # The queries run on one AeonG, started once (run_queries.py), not one AeonG per query (the scripts of the image)
+        sed -i 's|\./query_mimic\.sh .*|python3 /vol/run_queries.py|; s|\./query_dataset\.sh .*|python3 /vol/run_queries.py|' t_smarbench_test.sh
+        # The statistics are read by the evaluation as they are written (AeonGResults): no post-processing
+        sed -i '/postprocess_results.py/d' t_smarbench_test.sh
+        # The database is the one of the last load: a run of the queries only stops if it is not of this dataset and size
+        if [ "$$INGESTION_ITERATIONS" -eq 0 ]; then
+          if [ "$$(cat $$LOADED 2>/dev/null)" != "$$DATASET $$DATASET_SIZE updates" ]; then
+            echo "The database holds [$$(cat $$LOADED 2>/dev/null)], not [$$DATASET $$DATASET_SIZE updates]: run the ingestion first"
+            exit 1
+          fi
+        else
+          echo > $$LOADED
+        fi
+        ./t_smarbench_test.sh
+        [ "$$INGESTION_ITERATIONS" -eq 0 ] || echo "$$DATASET $$DATASET_SIZE updates" > $$LOADED
+
+volumes:
+  aeong-data:
+  aeong-results:

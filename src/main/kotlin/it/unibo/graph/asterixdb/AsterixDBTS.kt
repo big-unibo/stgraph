@@ -16,6 +16,13 @@ import java.io.BufferedWriter
 import java.io.PrintWriter
 
 @OptIn(DelicateCoroutinesApi::class)
+/**
+ * The interval of the partial aggregates of a request on several intervals (see AsterixDBTS.getValues): the alias of the
+ * CASE expression in the GROUP BY, i.e., the index of the interval of the events. Removed from the results (it is not a
+ * property)
+ */
+private const val BUCKET = "stgraphBucket"
+
 class AsterixDBTS(
     override val g: Graph,
     val id: Long,
@@ -50,7 +57,26 @@ class AsterixDBTS(
         }
     }
 
-    override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean): List<N> {
+    override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean): List<N> = select(by, filters, isGroupBy, emptyList())
+
+    /**
+     * An aggregation on several [intervals] in one request: the events are also grouped by interval (CASE on the timestamp).
+     * E.g., [by] = sum(value), [intervals] = [MIN, 2), [2, 4), [4, MAX):
+     *   SELECT ..., SUM(value), MIN(id) AS from, MAX(id) AS to FROM ... WHERE tsId = ...
+     *   GROUP BY tsId, CASE WHEN id < 2 THEN 0 WHEN id < 4 THEN 1 ELSE 2 END AS stgraphBucket
+     * returns one partial aggregate per non-empty interval (as one request per interval, see TS.getValues), with a single
+     * scan of the events instead of one request (and job) per interval
+     */
+    override fun getValues(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, intervals: List<Pair<Long, Long>>): List<N> =
+        // Without aggregation (the events themselves, each in its interval) or with a single interval: the usual requests
+        if (by.isEmpty() || intervals.size <= 1) super.getValues(by, filters, isGroupBy, intervals)
+        else select(by, filters + listOfNotNull( // the events of all the intervals: from the start of the first one...
+            intervals.first().first.takeIf { it != Long.MIN_VALUE }?.let { Filter(FROM_TIMESTAMP, Operators.GTE, it) },
+            intervals.last().second.takeIf { it != Long.MAX_VALUE }?.let { Filter(FROM_TIMESTAMP, Operators.LT, it) } // ... to the end of the last one
+        ), isGroupBy, intervals.dropLast(1).map { it.second }) // ... split at the end of each interval but the last
+
+    /** [buckets]: the upper bounds of the intervals but the last, whose events are aggregated separately */
+    private fun select(by: List<Aggregate>, filters: List<Filter>, isGroupBy: Boolean, buckets: List<Long>): List<N> {
         var selectQuery: String
 
         val filters: List<Pair<String, Filter>> = (filters + Filter(TSID, Operators.EQ, id))
@@ -80,18 +106,22 @@ class AsterixDBTS(
                 .map { f -> "${(if (f.operator == AggOperator.AVG) AggOperator.SUM else f.operator)?.name}(${ replacePropertyName(f.property!!, alias = false) }) as ${f.property}" }.toMutableSet()
         if (!groupby.any { it == LABEL })
             aggregators += listOf("MIN($LABEL) as $LABEL")
-        aggregators += listOf("COUNT(*) as $COUNT", "MIN($ID) as $FROM_TIMESTAMP", "MAX($ID) as $TO_TIMESTAMP")
+        aggregators += listOf("COUNT(*) as $COUNT", "MIN($ID) as $FROM_TIMESTAMP", "MAX($ID) + 1 as $TO_TIMESTAMP")
 
         selectQuery =  "USE $dataverse;"
         if (by.isNotEmpty()) {
-            selectQuery +=  "SELECT ${(groupby + aggregators).joinToString(",")} FROM $dataset ${applyFilters(filters.map { it.second })} GROUP BY ${groupby.joinToString(","){ removeAlias(it).replace(".$VALUE", "") }}"
+            // With buckets, the events are also grouped by interval: the i-th interval (i.e., the first whose end is after
+            // the timestamp of the event, since the intervals are sorted and consecutive), the last one otherwise. Empty
+            // intervals return no group. The interval is selected (and removed from the results, see BUCKET)
+            val bucket = if (buckets.isEmpty()) "" else ", CASE ${buckets.mapIndexed { i, b -> "WHEN $ID < $b THEN $i" }.joinToString(" ")} ELSE ${buckets.size} END AS $BUCKET"
+            selectQuery +=  "SELECT ${(groupby + aggregators + listOfNotNull(BUCKET.takeIf { buckets.isNotEmpty() })).joinToString(",")} FROM $dataset ${applyFilters(filters.map { it.second })} GROUP BY ${groupby.joinToString(","){ removeAlias(it).replace(".$VALUE", "") }}$bucket"
         } else {
             selectQuery += "SELECT * FROM $dataset ${applyFilters(filters.map { it.second })}"
             if (isGroupBy) {
                 selectQuery += " LIMIT 1"
             }
         }
-        selectQuery = selectQuery.replace(VALUE, "`$VALUE`")
+        selectQuery = quoteValue(selectQuery)
         return when (val result = connection.selectFromAsterixDB(selectQuery, isGroupBy = by.isNotEmpty())) {
             is AsterixDBResult.SelectResult -> {
                 if (result.entities.isEmpty) return emptyList()
@@ -108,6 +138,7 @@ class AsterixDBTS(
                             it.put(TYPE, PropType.NULL.ordinal)
                         })
                         json.remove(COUNT)
+                        json.remove(BUCKET)
                         jsonToNode(tsId = id, g = g, node = json)
                     }
             }
@@ -128,6 +159,22 @@ class AsterixDBTS(
 
             else -> throw IllegalArgumentException("Error occurred while performing query \n $selectQuery")
         }
+    }
+
+    /**
+     * [sql] with the identifier $VALUE (a reserved word of SQL++) between backticks: only as a whole word, outside of the
+     * string literals and of the longer identifiers (e.g., not in "values" or in a string value)
+     */
+    private fun quoteValue(sql: String): String {
+        val identifier = Regex("""(?<![\w`])$VALUE(?![\w`])""")
+        val literal = Regex(""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""")
+        val result = StringBuilder()
+        var last = 0
+        for (m in literal.findAll(sql)) {
+            result.append(sql.substring(last, m.range.first).replace(identifier, "`$VALUE`")).append(m.value)
+            last = m.range.last + 1
+        }
+        return result.append(sql.substring(last).replace(identifier, "`$VALUE`")).toString()
     }
 
     private fun updateTs(n: N) = connection.updateTs("USE $dataverse; UPSERT INTO $dataset ([${nodeToJson(n, isUpdate = true, tsId = id)}])")

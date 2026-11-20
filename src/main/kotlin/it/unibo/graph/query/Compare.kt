@@ -1,6 +1,7 @@
 package it.unibo.graph.query
 
 import it.unibo.graph.interfaces.ElemP
+import it.unibo.graph.interfaces.timeOverlap
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.io.WKTReader
 
@@ -56,9 +57,17 @@ class Compare(val first: Any, val second: Any, val property: String, val operato
         }
     }
 
-    fun isOk(a: ElemP, b: ElemP, timeaware: Boolean): Boolean {
-        val p1 = a.getProps(name = property)
-        val p2 = b.getProps(name = property)
-        return p1.isNotEmpty() && p2.isNotEmpty() && compareIfSameType(p1[0].value, p2[0].value, operator) && a.timeOverlap(timeaware, b.fromTimestamp, b.toTimestamp)
-    }
+    /**
+     * Whether the comparison holds between [a] and [b] at some time of [[from], [to]): for some pair of versions of the
+     * property valid at the same time (any pair without time). Used by the selection without time (see select in
+     * Query.kt); with time, the selection computes when it holds
+     */
+    fun isOk(a: ElemP, b: ElemP, timeaware: Boolean, from: Long = Long.MIN_VALUE, to: Long = Long.MAX_VALUE): Boolean =
+        a.getProps(name = property, fromTimestamp = from, toTimestamp = to, timeaware = timeaware).any { p ->
+            b.getProps(name = property, fromTimestamp = from, toTimestamp = to, timeaware = timeaware)
+                .any { q -> (!timeaware || timeOverlap(p.fromTimestamp, p.toTimestamp, q.fromTimestamp, q.toTimestamp)) && holds(p.value, q.value) }
+        }
+
+    /** Whether the values satisfy the operator; values that cannot be compared (e.g., of different types) do not */
+    fun holds(a: Any, b: Any): Boolean = runCatching { compareIfSameType(a, b, operator) }.getOrDefault(false)
 }

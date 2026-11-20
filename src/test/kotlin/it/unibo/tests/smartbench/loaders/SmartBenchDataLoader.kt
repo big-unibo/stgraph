@@ -12,12 +12,10 @@ import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.interfaces.TS
 import it.unibo.graph.utils.*
 import it.unibo.stats.Loader
-import java.io.File
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.*
-import java.util.logging.Logger
 
 data class TSRecord(
     val label: String,
@@ -45,7 +43,6 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
     )
     val graphPath = "datasets/dump/$dataset/$size/"
 
-    val logger: Logger = Logger.getLogger(this.javaClass.name)
     val graph = MemoryGraphACID(path = graphPath)
     val tsm = AsterixDBTSM.createDefault(graph, dataverse = "${dataset}_$size", host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else { threads * 10 })
 
@@ -80,12 +77,11 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
     override fun loadData() {
         val tsList: MutableMap<TS, String> = mutableMapOf()
         dataPath.forEach { file ->
-            logger.info { "Loading $file..." }
             val path = Paths.get(file).toAbsolutePath().normalize()
-            require(Files.exists(path)) { "File not found: $file" }
+            require(smartBenchExists(path)) { "File not found: $file" }
             for (obj in loadJsonObjects(path.toUri(), mapper)) {
                 val typeVal = (obj[TYPE] as? String) ?: error("Missing \"${TYPE}\" in JSON object")
-                val entityId = obj[ID] as? String ?: error("Missing \"${ID}\" in JSON object")
+                val entityId = obj["id"] as? String ?: error("Missing \"id\" in JSON object")
                 val nodeLabel = typeVal.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
                 gsTime += getTime {
@@ -99,7 +95,7 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
                         for ((key, value) in obj) {
                             when (value) {
                                 is Map<*, *> -> {
-                                    val destId = value[ID] as? String
+                                    val destId = value["id"] as? String
                                     if (destId != null) {
                                         val edgeLabel = hasLabel(key)
                                         val targetId = graphIdList[destId]
@@ -130,7 +126,7 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
                                 ?.resolve("$sensorId.json")
                                 ?.toAbsolutePath()
                                 ?.normalize()
-                            if (sensorTsFilePath != null && Files.exists(sensorTsFilePath)) {
+                            if (sensorTsFilePath != null && smartBenchExists(sensorTsFilePath)) {
                                 val newNode = graph.addNode(labelString, isTs = true)
                                 val newTs: TS = tsm.addTS(newNode.id)
                                 gsCard++
@@ -197,11 +193,11 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
     fun loadTS(ts: AsterixDBTS, path: String, isLast: Boolean): Long {
         val projectRoot = Paths.get("").toAbsolutePath().normalize()
         val filePath = projectRoot.resolve(path).normalize()
-        if (!Files.exists(filePath)) {
+        if (!smartBenchExists(filePath)) {
             throw UnsupportedOperationException("File not found: $filePath")
         }
         val records = mutableListOf<TSRecord>()
-        Files.newBufferedReader(filePath).useLines { lines ->
+        smartBenchReader(filePath).useLines { lines ->
             lines.forEach { line ->
                 val json: JsonNode = mapper.readTree(line)
                 val type = json.get(TYPE).textValue()
@@ -233,7 +229,6 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
                     ts.get(last)
                     val end = System.currentTimeMillis()
                     val deltaQuery = end - startQuery
-                    // logger.info { "Load time: $time. Waited for ${end - start - deltaQuery} ms after $fail failures" }
                     return time + end - start - deltaQuery // do not count the time of the last query
                 } catch (_: Exception) {
                     fail++
@@ -247,7 +242,7 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
 
     private fun loadJsonObjects(file: URI, mapper: ObjectMapper): Sequence<Map<String, Any>> {
         val factory = JsonFactory()
-        val parser = factory.createParser(File(file))
+        val parser = factory.createParser(smartBenchReader(Paths.get(file)))
         parser.codec = mapper
 
         if (parser.nextToken() != JsonToken.START_ARRAY) {

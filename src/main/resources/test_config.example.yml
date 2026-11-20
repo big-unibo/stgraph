@@ -3,29 +3,138 @@ datasets:
     sizes: [ "full" ]
 
   smartbench:
-    sizes: [ "small"]
+    sizes: [ "xsmall"] # "small", "medium", "large", "extralarge"
 
   mimic:
-    sizes: [ 1692200 ]
+    sizes: [ "xsmall" ] # "small", "medium", "large": 1,692,200, 16,922,000 and all the events; xsmall: the short list of subjects
+    postgres_endpoint: "localhost"
+    port: 5434
+    database: "mimic-iv"
+    user: "postgres"
+    password: "password"
 
+  # PeMS, hourly data (pems repository: schema pems_cleaned); sizes: measurements, xsmall 1K, small 1M, medium 10M,
+  # large 100M. Read once into datasets/original/pems/cache/<size> (./gradlew pemsCache), then from there.
+  pems:
+    sizes: [ "xsmall" ] # "small", "medium", "large"
+    postgres_endpoint: "localhost"
+    port: 5434
+    database: "pems"
+    user: "postgres"
+    password: "password"
+
+# AsterixDB of STGraph: host and port of the cluster controller (CC, query API), addresses of the node controllers
+# (NC, which receive the data feeds)
 setups:
   c0:
     host: localhost
     port: 19002
     controllerIPs: [ "localhost" ]
+  # Scale-out on AsterixDB clusters deployed beforehand (see evaluation/README.md), e.g., those of the experiments of
+  # the paper: one machine with two node controllers, two and four machines
+  # c1:
+  #   host: 192.168.30.110
+  #   port: 19002
+  #   controllerIPs: [ "192.168.30.110", "192.168.30.110" ]
+  # c2:
+  #   host: 192.168.30.101
+  #   port: 19002
+  #   controllerIPs: [ "192.168.30.102", "192.168.30.103" ]
+  # c4:
+  #   host: 192.168.30.104
+  #   port: 19002
+  #   controllerIPs: [ "192.168.30.105", "192.168.30.106", "192.168.30.107", "192.168.30.109" ]
 
+# Where the systems started by the evaluation (deploy: true) keep their data: a folder on the host for each one
+# (relative paths: from the repository root; created if missing), e.g. on a disk with room for the large sizes.
+# {dataset} and {size} stand for the dataset and the size of the run (e.g., neo4j: /data/neo4j/{dataset}/{size}): a
+# folder per dataset and size, so that Neo4j and PGAge, which keep a single database, can be queried on every one
+# without reloading it. Their loads require {size} (and refuse a folder loaded with another dataset or size, see the
+# marker <folder>.loaded), so that they never replace another loaded database.
+# Without a folder, the Docker volume of the system. The folder of pgage is made writable by the user 1000 (postgres
+# in its container) by the pgage-init service of its compose file. Empty the folder of asterixdb or graphix when the partitions of its cc.conf change (or use a
+# folder per partitioning)
+volumes:
+  asterixdb: datasets/volumes/asterixdb/{dataset}/{size}
+  graphix: datasets/volumes/graphix/{dataset}/{size}
+  neo4j: datasets/volumes/neo4j/{dataset}/{size}
+  pgage: datasets/volumes/pgage/{dataset}/{size}
+  aeong: datasets/volumes/aeong/{dataset}/{size}
+
+# Resources and configuration of the systems started by the evaluation (deploy: true), for their compose files; what is
+# not set keeps the value of the compose file: no CPU or memory limit (free), the configuration in conf-free/ of the
+# system (its defaults). cpus: the CPU time (e.g., 2); cpuset: the cores (e.g., "0,1"); memory: the limit (e.g.,
+# 12g); shm (pgage only): the shared memory of the parallel workers of PostgreSQL (see its compose file); conf: the folder of the
+# configuration (relative paths: from the repository root). They need no reload, as long as the partitions of
+# AsterixDB and Graphix are those of the load. E.g., the single-core comparison of the paper: the limited
+# block below. The two configurations of each system (see evaluation/README.md), limited (one core, the least parallelism
+# of conf/):
+# resources:
+#   asterixdb: { cpus: 1, conf: evaluation/architectures/stgraph/conf }
+#   graphix: { cpus: 1, conf: evaluation/architectures/graphix/conf }
+#   neo4j: { cpus: 1, conf: evaluation/architectures/neo4j/conf }
+#   pgage: { cpus: 1, conf: evaluation/architectures/pgage/conf }
+#   aeong: { cpus: 1, conf: evaluation/architectures/aeong/conf }
+#   hygraph: { cpus: 1, conf: evaluation/architectures/hygraph/conf }
+# or free
+resources:
+  asterixdb:
+  graphix:
+  neo4j:
+  pgage:
+  aeong:
+  hygraph:
+
+# Parameters common to the runs of STGraph and to the evaluation: each run, and the evaluation, can set its own
 defaults:
+  # Query modes, setups and threads of STGraph; the competitors run single-threaded, in OPTIMIZED mode. The threads
+  # here are only those of the tests (CI): in the evaluation, the ingestion of STGraph is single-threaded and its Kotlin
+  # queries run with 16 threads with conf-free/ of AsterixDB (resources.asterixdb.conf, the default) and 1 with conf/,
+  # unless the evaluation section or the run sets threads
+  # A local setup (host: localhost) runs on the AsterixDB of docker-compose.yaml; a cluster must be already running
   modes: [ "OPTIMIZED" ]
   setups: [ "c0" ]
   threads: [ 1 ]
+  # The rest is used only by the evaluation (./gradlew evaluate), not by the tests
+  ingestion:
+    iterations: 1
+  queries:
+    iterations: 3
+    # Query ids (empty: all)
+    ids: [ ]
+  # Downloads the missing datasets (from the same URLs as downloadDataset.sh)
+  download: true
+  # Starts each system (docker compose up -d) before its runs and stops it after; false: the systems are already running
+  deploy: true
+  # Appended to the model of the results (e.g., 4CPU: stgraph_4CPU, neo4j_4CPU): the configuration the runs measure
+  # (CPU, memory, partitions...), to tell its results apart; empty: the bare model
+  label:
 
-runs:
-  - approaches: [ "stgraph" ]
-    datasets: [ "smartbench", "mimic" ]
-    modes: [ "NAIVE", "OPTIMIZED" ]
+# The runs of STGraph alone, by its tests (./gradlew test, the CI): each loads and queries its datasets, optionally on its
+# sizes (default: datasets.<dataset>.sizes), with its modes, threads and setups (default: those of defaults). The first
+# one: the CI; the others: the experiments of STGraph of the paper (query modes, threads, scale-out on the setups above)
+stgraphRuns:
+  - datasets: [ "smartbench", "mimic", "pems" ]
+    modes: [ "OPTIMIZED" ]
+  # - datasets: [ "smartbench", "mimic", "pems" ]
+  #   modes: [ "OPTIMIZED", "NAIVE" ]
+  #   setups: [ "c1" ]
+  # - datasets: [ "smartbench", "mimic", "pems" ]
+  #   threads: [ 1, 4, 8, 16 ]
+  #   setups: [ "c1", "c4" ]
+  # - datasets: [ "smartbench", "mimic", "pems" ]
+  #   threads: [ 16 ]
+  #   setups: [ "c2" ]
 
-ingestion:
-  enabled: true
-  datasets: [ "synth", "smartbench", "mimic" ]
-  setups: [ "c0" ]
-  threads: [ 1 ]
+# Every combination of its parameters (./gradlew evaluate), STGraph and the competitors
+evaluation:
+  systems: [ "stgraph", "pgage", "graphix", "neo4j", "aeong" ] # "hygraph"
+  datasets: [ "mimic", "smartbench", "pems" ]
+  # The setups of STGraph and Graphix (default: those of defaults, i.e., c0, the local one)
+  # setups: [ "c0" ]
+
+# The scale-out of Graphix on the clusters of the setups section (with the Graphix extension), instead of the above:
+# evaluation:
+#   systems: [ "graphix" ]
+#   datasets: [ "smartbench", "mimic", "pems" ]
+#   setups: [ "c1", "c2", "c4" ]

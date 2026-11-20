@@ -20,6 +20,7 @@ jobs:
         run: |
           chmod +x ./gradlew *.sh
           ./run.sh
+          ./gradlew evaluate
 
   release:
     needs:

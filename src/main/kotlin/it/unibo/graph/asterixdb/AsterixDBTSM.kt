@@ -83,6 +83,8 @@ class AsterixDBTSM private constructor(
     }
 
     override fun close() {
-        connections.forEach { it.closeDataFeedConnection(true) }
+        // Closes every feed even if one fails (e.g., AsterixDB did not read its whole stream), then reports the failures
+        val errors = connections.mapNotNull { runCatching { it.closeDataFeedConnection(true) }.exceptionOrNull() }
+        errors.firstOrNull()?.let { e -> errors.drop(1).forEach(e::addSuppressed); throw e }
     }
 }

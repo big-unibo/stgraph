@@ -1,0 +1,1 @@
+MATCH (p)-->(t)-->(m) WHERE p.c > 25000 AND m.value > {FILTER} RETURN m.abbreviation, avg(m.value)

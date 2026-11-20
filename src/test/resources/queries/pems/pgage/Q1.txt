@@ -1,0 +1,11 @@
+SELECT g.station_id, avg(m.value)
+FROM (
+    SELECT *
+    FROM cypher('{GRAPH}'::name, $$
+        MATCH (g:Segment)<-[:inSegment]-(v:StationVersion)<-[:hasVersion]-(s:Station)-[:hasTimeSeries]->(t:TimeSeries)
+        RETURN s.station_id, v.valid_from, v.valid_to, id(t)
+    $$) AS (station_id agtype, valid_from bigint, valid_to bigint, tsid bigint)
+) g
+JOIN {GRAPH}.measurements m ON m.ts_id = g.tsid AND m.timestamp >= g.valid_from AND m.timestamp < g.valid_to
+WHERE m.label = 'lane0_avg_speed'
+GROUP BY g.station_id
