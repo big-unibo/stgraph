@@ -75,6 +75,7 @@ open(out, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
 PY
 }
 
+# ssh -n and scp < /dev/null: they would read the rest of the machines file (the stdin of the loop)
 failed=()
 while read -r host systems profile label _; do
     [[ -z "${host:-}" || "$host" == \#* ]] && continue
@@ -88,9 +89,9 @@ while read -r host systems profile label _; do
         diff "$CONFIG" "$out" | grep '^>' | sed 's/^> /   /'
         continue
     fi
-    scp -q "$out" "$dest:$REMOTE_DIR/src/main/resources/test_config.yml" || { echo "WARNING: not configured"; failed+=("$host"); continue; }
+    scp -q "$out" "$dest:$REMOTE_DIR/src/main/resources/test_config.yml" < /dev/null || { echo "WARNING: not configured"; failed+=("$host"); continue; }
     if $RUN; then
-        ssh "$dest" "cd $REMOTE_DIR && ./gradlew --stop >/dev/null; nohup setsid ./gradlew evaluate > evaluation.log 2>&1 < /dev/null &" \
+        ssh -n "$dest" "cd $REMOTE_DIR && ./gradlew --stop >/dev/null; nohup setsid ./gradlew evaluate > evaluation.log 2>&1 < /dev/null &" \
             && echo "   started: ssh $dest tail -f $REMOTE_DIR/evaluation.log" || { echo "WARNING: not started"; failed+=("$host"); }
     fi
 done < "$1"
