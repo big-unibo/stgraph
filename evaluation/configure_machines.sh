@@ -77,7 +77,7 @@ PY
 
 # ssh -n and scp < /dev/null: they would read the rest of the machines file (the stdin of the loop)
 failed=()
-while read -r host systems profile label _; do
+while read -r host systems profile label _ || [ -n "${host:-}" ]; do  # also a last line without newline
     [[ -z "${host:-}" || "$host" == \#* ]] && continue
     [[ "$profile" == limited || "$profile" == free ]] || { echo "$host: the profile must be limited or free, not '$profile'"; failed+=("$host"); continue; }
     [[ -n "${label:-}" && "$label" != \#* ]] || label=$([[ "$profile" == limited ]] && echo 1CPU || echo free)
