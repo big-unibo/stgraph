@@ -11,7 +11,8 @@ import it.unibo.tests.smartbench.loaders.TSRecord
 /**
  * Loads PeMS into STGraph, as MimicIVSTGraph. A station is one node: its attributes are properties valid in the
  * interval of the versions with the same value, its segment an inSegment edge valid in the same way; an incident is a
- * node valid in [time_from, time_to)
+ * node valid in [time_from, time_to);
+ * its measurements one time series (all its lanes)
  */
 class PemsSTGraph(
     size: String,
@@ -67,12 +68,18 @@ class PemsSTGraph(
         return id
     }
 
-    override fun addTimeseries(station: Long, lane: Int): Long {
+    /** The time series of each station (the lanes in the labels of its events, lane<n>_<measure>) */
+    private val stationTs = mutableMapOf<Long, Long>()
+
+    /**
+     * One time series per station, with the events of all its lanes (the labels, lane<n>_<measure>, keep the lane, and
+     * the key of the events, multiTs, includes the label): a query on a station sends one request, with the label
+     */
+    override fun addTimeseries(station: Long, lane: Int): Long = stationTs.getOrPut(station) {
         val n = g.addNode("TimeSeries", isTs = true)
         tsMap[n.id] = t.addTS(n.id) as AsterixDBTS
-        g.addProperty(n.id, "lane", lane, PropType.INT)
         g.addEdge("hasTimeSeries", fromNode = station, toNode = n.id)
-        return n.id
+        n.id
     }
 
     override fun addMeasurement(tsId: Long, row: TSRecord, isFirst: Boolean, isLast: Boolean) {
