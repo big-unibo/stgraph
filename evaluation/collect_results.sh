@@ -18,9 +18,11 @@
 # copies are merged into results/merged/ (ingestion_statistics.csv and query_statistics.csv), with a column machine.
 # With -s, the size in bytes (the sum of the sizes of the files) of the data of each system, as storage_statistics.csv
 # of the machine (results/machines/<host>/), merged as the others: neo4j, pgage and aeong, their data folders
-# datasets/volumes/<system>/<dataset>/<size> (component data); stgraph, its dataverses <dataset>_<size> (Docker volume
-# asterixdb-data, component timeseries) and its graph datasets/dump/<dataset>/<size> (component graph); graphix, its
-# dataverses <dataset>_graphix_<size> (Docker volume graphix-data, component data); hygraph none (in memory). The
+# datasets/volumes/<system>/<dataset>/<size> (component data); stgraph, its AsterixDB (component timeseries): its data
+# folders datasets/volumes/asterixdb/<dataset>/<size>, otherwise its dataverses <dataset>_<size> of the Docker volume
+# asterixdb-data, and its graph datasets/dump/<dataset>/<size> (component graph); graphix, its data folders
+# datasets/volumes/graphix/<dataset>/<size>, otherwise its dataverses <dataset>_graphix_<size> of the Docker volume
+# graphix-data (component data); hygraph none (in memory). The
 # systems and the configuration (conf, conf-free) of each machine from evaluation/machines.txt (limited, free). Read from a container (busybox), as
 # cleanVolumes.sh: no sudo for the files of the users of the containers.
 set -uo pipefail
@@ -64,15 +66,25 @@ dataverses() {  # the dataverses of the Docker volume of an AsterixDB ($1: its c
 for system in neo4j pgage aeong; do
     folders "datasets/volumes/$system" | while IFS="	" read -r path bytes; do echo "$system	${path%%/*}	${path#*/}	data	$bytes"; done
 done
-dataverses asterixdb-data | while IFS="	" read -r dv bytes; do
-    case "$dv" in mimic_*|pems_*|smartbench_*|synth_*) echo "stgraph	${dv%%_*}	${dv#*_}	timeseries	$bytes" ;; esac
-done
+# STGraph and Graphix: their data folders (the volumes section: an AsterixDB per dataset and size), otherwise their
+# Docker volume (one AsterixDB, a dataverse per dataset and size)
+if [ -d datasets/volumes/asterixdb ]; then
+    folders "datasets/volumes/asterixdb" | while IFS="	" read -r path bytes; do echo "stgraph	${path%%/*}	${path#*/}	timeseries	$bytes"; done
+else
+    dataverses asterixdb-data | while IFS="	" read -r dv bytes; do
+        case "$dv" in mimic_*|pems_*|smartbench_*|synth_*) echo "stgraph	${dv%%_*}	${dv#*_}	timeseries	$bytes" ;; esac
+    done
+fi
 folders "datasets/dump" | while IFS="	" read -r path bytes; do
     case "${path%%/*}" in mimic|pems|smartbench|synth) echo "stgraph	${path%%/*}	${path#*/}	graph	$bytes" ;; esac
 done
-dataverses graphix-data | while IFS="	" read -r dv bytes; do
-    case "$dv" in *_graphix_*) echo "graphix	${dv%%_graphix_*}	${dv#*_graphix_}	data	$bytes" ;; esac
-done
+if [ -d datasets/volumes/graphix ]; then
+    folders "datasets/volumes/graphix" | while IFS="	" read -r path bytes; do echo "graphix	${path%%/*}	${path#*/}	data	$bytes"; done
+else
+    dataverses graphix-data | while IFS="	" read -r dv bytes; do
+        case "$dv" in *_graphix_*) echo "graphix	${dv%%_graphix_*}	${dv#*_graphix_}	data	$bytes" ;; esac
+    done
+fi
 true
 '
 
