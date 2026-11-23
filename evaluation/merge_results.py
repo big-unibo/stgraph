@@ -15,6 +15,7 @@ import sys
 FILES = [
     os.path.join("dt_graph", "ingestion_time", "ingestion_statistics.csv"),
     os.path.join("dt_graph", "query_time", "query_statistics.csv"),
+    "storage_statistics.csv",  # collect_results.sh -s: the size of the data of the systems
 ]
 
 
