@@ -55,8 +55,8 @@ MACHINES="$REPO/results/machines"
 STORAGE_SCRIPT='
 cd '"$REMOTE_DIR"' 2>/dev/null || exit 0
 # The size of the files of a folder ($d), without the logs of the systems: AsterixDB (txnlog, logs), Neo4j
-# (transactions), PostgreSQL (pg_wal, log), AeonG (wal)
-SUM="find \"\$d\" \( -type d \( -iname \"*txn*\" -o -name pg_wal -o -name log -o -name logs -o -name transactions -o -name wal \) -prune \) -o -type f -exec stat -c %s {} + 2>/dev/null | awk \"{s+=\\\$1} END {print s+0}\""
+# (transactions), PostgreSQL (pg_wal, log), AeonG (wal), the graph of STGraph (wal.log)
+SUM="find \"\$d\" \( -type d \( -iname \"*txn*\" -o -name pg_wal -o -name log -o -name logs -o -name transactions -o -name wal \) -prune \) -o -type f ! -name wal.log -exec stat -c %s {} + 2>/dev/null | awk \"{s+=\\\$1} END {print s+0}\""
 folders() {  # the folders <dataset>/<size> of a folder ($1), as "dataset/size<TAB>bytes"
     [ -d "$1" ] || return 0
     docker run --rm -v "$(cd "$1" && pwd):/v:ro" busybox:1.36 sh -c "for d in /v/*/*; do [ -d \"\$d\" ] || continue; echo \"\${d#/v/}	\$($SUM)\"; done"
