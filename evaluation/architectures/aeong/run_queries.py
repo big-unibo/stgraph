@@ -16,6 +16,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+# AeonG (Memgraph) aborts a query after --query-execution-timeout-sec (600 s by default), and the client of the image
+# dies with it (SIGABRT): the queries of the large sizes run without a limit, as on the other systems. Added to the
+# command line of AeonG, whichever way runners starts it (before runners is imported, which may bind Popen)
+_Popen = subprocess.Popen
+
+
+class _AeonGPopen(_Popen):
+    def __init__(self, args, *rest, **kwargs):
+        if isinstance(args, (list, tuple)) and args and str(args[0]).endswith('memgraph'):
+            args = list(args) + ['--query-execution-timeout-sec=0']
+        super().__init__(args, *rest, **kwargs)
+
+
+subprocess.Popen = _AeonGPopen
+
 sys.path.append('../mgbench')
 import runners  # noqa: E402
 
