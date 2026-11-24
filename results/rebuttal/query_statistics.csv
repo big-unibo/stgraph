@@ -13777,4 +13777,6 @@ e0779084-1597-45ff-8498-0f42c4c2cf77,PGAge_Free,smartbench,Extralarge,1,Environm
 6c539c3d-05a5-4e21-a323-8f2d9a2eb9e0,PGAge_Free,smartbench,Extralarge,1,AgentHistory,edgesDirection,26621.0,1.0,1,increased,0,8.0,,,,
 4edf95a9-4889-4054-adf8-f1261fad4c7f,PGAge_Free,smartbench,Extralarge,1,EnvironmentCoverage,edgesDirection,429.0,44.0,1,increased,0,9.0,,,,
 cfe8f326-1cf6-4832-8cc6-88d3566e85b1,PGAge_Free,smartbench,Extralarge,1,EnvironmentAggregate,edgesDirection,118047.0,109.0,1,increased,0,9.0,,,,
-df307cbc-9fb6-4a58-9bd6-48e7ca9fd09c,PGAge_Free,smartbench,Extralarge,1,MaintenanceOwners,edgesDirection,47004.0,400.0,1,increased,0,9.0,,,,
+df307cbc-9fb6-4a58-9bd6-48e7ca9fd09c,PGAge_Free,smartbench,Extralarge,1,MaintenanceOwners,edgesDirection,47004.0,400.0,,increased,0,9.0,,,,
+b918dd51-bc9a-4f27-88ce-5300d4222208,AgentHistory,stgraph,smartbench,xsmall,16,31,2,1,OPTIMIZED,2,increased,0,conf-free,0,conf-free,
+,,,,,,,,,,,,,,,,

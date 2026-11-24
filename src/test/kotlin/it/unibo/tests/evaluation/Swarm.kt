@@ -75,6 +75,16 @@ fun <T> swarmDeployed(system: String, setup: SetupConfig, readyTimeoutMs: Long =
         while (true) {
             val state = runCatching { clusterState(setup.host, setup.port) }.getOrElse { "not answering ($it)" }
             if (state == "ACTIVE with ${ncs.size} active node controllers") break
+            // A task that failed (e.g., a port already in use on its node) or was rejected (e.g., an image that cannot be
+            // pulled) is not restarted (restart_policy none): the cluster would never be ready
+            val failed = failedTasks(stack)
+            if (failed.isNotEmpty()) {
+                failed.forEach { (service, task) ->
+                    progress("deploy | $stack: $task; its last output:")
+                    runCatching { runCommand(listOf("docker", "service", "logs", "--raw", "--tail", "30", service)) }
+                }
+                error("$stack not deployed: ${failed.joinToString { it.second }}")
+            }
             if (System.currentTimeMillis() > deadline) {
                 runCatching { runCommand(listOf("docker", "stack", "ps", "--no-trunc", stack)) }
                 error("$stack not ready after ${readyTimeoutMs / 1000} s: $state")
@@ -96,6 +106,14 @@ private fun swarmNodes(): Map<String, String> {
         .lines().filter { it.isNotBlank() }
         .associate { it.substringBefore(" ") to it.substringAfter(" ") }
 }
+
+/** The tasks of [stack] that failed or were rejected: their service and a description (node, state, error) */
+private fun failedTasks(stack: String): List<Pair<String, String>> =
+    runCatching { output(listOf("docker", "stack", "ps", stack, "--no-trunc", "--format", "{{.Name}}|{{.Node}}|{{.CurrentState}}|{{.Error}}")) }
+        .getOrDefault("")
+        .lines().map { it.split("|") }
+        .filter { it.size >= 4 && (it[2].startsWith("Failed") || it[2].startsWith("Rejected")) }
+        .map { (name, node, state, error) -> name.substringBeforeLast(".") to "task $name on $node: $state, $error" }
 
 /** The state of the cluster of AsterixDB with its query API on [host]:[port], e.g., "ACTIVE with 2 active node controllers" */
 private fun clusterState(host: String, port: Int): String {
