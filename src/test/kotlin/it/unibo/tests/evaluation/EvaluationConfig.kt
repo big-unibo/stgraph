@@ -47,7 +47,9 @@ data class EvaluationConfig(
      * 12g, NEO4J_CONF to an absolute path), from the resources section; a variable not set keeps the value of the
      * compose file
      */
-    val resources: Map<String, String> = emptyMap()
+    val resources: Map<String, String> = emptyMap(),
+    /** ./gradlew evaluateScaleOut: the clusters of the setups that are not local deployed on Docker Swarm (see Swarm.kt) */
+    val scaleOut: Boolean = false
 ) {
     /**
      * The data folders of [volumeFolders] for [size], with {size} replaced (e.g., a folder per size for Neo4j and PGAge,
