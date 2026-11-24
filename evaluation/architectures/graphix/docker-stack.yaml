@@ -1,4 +1,4 @@
-# Graphix on Docker Swarm, for the scale-out (./gradlew evaluateScaleOut, see evaluation/README.md): as the AsterixDB
+# Graphix on Docker Swarm, for the scale-out (scaleOut: true in test_config.yml, see evaluation/README.md): as the AsterixDB
 # of STGraph (evaluation/architectures/stgraph/docker-stack.yaml, keep them aligned), with the image of Graphix (its
 # package, from its Dockerfile, published on a registry that every node can reach) and conf-scaleout/cc.conf of
 # Graphix. The cluster controller on the node of the host of the setup, a node controller on the node of each address

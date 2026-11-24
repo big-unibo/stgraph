@@ -23,7 +23,8 @@ fun main(args: Array<String>) {
     val onlyQueries = "queries" in args
     require(!(onlyIngestion && onlyQueries)) { "Either ingestion or queries, not both (both: no argument)" }
     // Only one phase: the other one runs zero times
-    val runs = listOf(EvaluationConfig.load().copy(scaleOut = "scaleOut" in args)).map {
+    val runs = listOf(EvaluationConfig.load()).map {
+        require(!(it.scaleOut && (onlyIngestion || onlyQueries))) { "scaleOut: true keeps no data between two runs: ./gradlew evaluate (both phases)" }
         when {
             onlyIngestion -> it.copy(queryIterations = 0)
             onlyQueries -> it.copy(ingestionIterations = 0)

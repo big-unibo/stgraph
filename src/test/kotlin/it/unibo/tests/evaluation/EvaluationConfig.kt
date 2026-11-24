@@ -48,7 +48,7 @@ data class EvaluationConfig(
      * compose file
      */
     val resources: Map<String, String> = emptyMap(),
-    /** ./gradlew evaluateScaleOut: the clusters of the setups that are not local deployed on Docker Swarm (see Swarm.kt) */
+    /** The clusters of the setups that are not local deployed on Docker Swarm (see Swarm.kt), instead of used as they are */
     val scaleOut: Boolean = false
 ) {
     /**
@@ -177,7 +177,8 @@ data class EvaluationConfig(
                 queryIds = strings(section(map, "queries"), "ids") ?: strings(section(defaults, "queries"), "ids") ?: emptyList(),
                 download = boolean("download") ?: true,
                 deploy = boolean("deploy") ?: true,
-                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() }
+                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() },
+                scaleOut = boolean("scaleOut") ?: false
             )
             val unknown = config.systems - knownSystems.toSet()
             require(unknown.isEmpty()) { "Unknown systems in $path: $unknown (known: $knownSystems)" }

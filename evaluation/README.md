@@ -290,8 +290,8 @@ setup (for Graphix, its compose file, port 29002) and uses a cluster as it is; G
 first node controller only (its ingestion does not scale out). `numMachines` in the results is the
 number of node controllers.
 
-`./gradlew evaluateScaleOut`, from a manager of an existing Docker Swarm, also deploys these clusters: for each setup
-that is not local, the stack of the system (`evaluation/architectures/stgraph/docker-stack.yaml`, or the one of
+With `scaleOut: true` in the evaluation section, `./gradlew evaluate`, from a manager of an existing Docker Swarm, also
+deploys these clusters (both phases only: no data are kept between two runs): for each setup that is not local, the stack of the system (`evaluation/architectures/stgraph/docker-stack.yaml`, or the one of
 Graphix, image `bigunibo/graphix:0.4.1` or `GRAPHIX_IMAGE`) with the cluster controller on the node with the address
 `host` and one node controller (two data partitions, the free configuration of `conf-scaleout/cc.conf`) on the node of
 each address of `controllerIPs`, one per machine, up to four; host network, no data kept after the run. The nodes are

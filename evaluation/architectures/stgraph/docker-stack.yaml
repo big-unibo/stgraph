@@ -1,4 +1,4 @@
-# The AsterixDB of STGraph on Docker Swarm, for the scale-out (./gradlew evaluateScaleOut, see evaluation/README.md),
+# The AsterixDB of STGraph on Docker Swarm, for the scale-out (scaleOut: true in test_config.yml, see evaluation/README.md),
 # deployed from a manager: the cluster controller on the node of the host of the setup, a node controller (its
 # NCService, started by the cluster controller with the cc.conf) on the node of each address of its controllerIPs, one
 # per machine, up to four (nc1-nc4; the unused ones have 0 replicas). The evaluation sets the nodes (the hostnames of

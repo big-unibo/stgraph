@@ -107,8 +107,7 @@ tasks.register<JavaExec>("pemsCache") {
 mapOf(
     "evaluate" to ("Runs every combination of the parameters of the evaluation section of src/main/resources/test_config.yml" to listOf()),
     "evaluateIngestion" to ("As evaluate, only the ingestion" to listOf("ingestion")),
-    "evaluateQueries" to ("As evaluate, only the queries, on the data already loaded" to listOf("queries")),
-    "evaluateScaleOut" to ("As evaluate, with the clusters of the setups that are not local (STGraph, Graphix) deployed on Docker Swarm, from a manager" to listOf("scaleOut"))
+    "evaluateQueries" to ("As evaluate, only the queries, on the data already loaded" to listOf("queries"))
 ).forEach { (name, task) ->
     tasks.register<JavaExec>(name) {
         description = task.first
