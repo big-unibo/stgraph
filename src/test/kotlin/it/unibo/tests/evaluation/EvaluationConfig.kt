@@ -47,7 +47,9 @@ data class EvaluationConfig(
      * 12g, NEO4J_CONF to an absolute path), from the resources section; a variable not set keeps the value of the
      * compose file
      */
-    val resources: Map<String, String> = emptyMap()
+    val resources: Map<String, String> = emptyMap(),
+    /** The clusters of the setups that are not local deployed on Docker Swarm (see Swarm.kt), instead of used as they are */
+    val scaleOut: Boolean = false
 ) {
     /**
      * The data folders of [volumeFolders] for [size], with {size} replaced (e.g., a folder per size for Neo4j and PGAge,
@@ -175,7 +177,8 @@ data class EvaluationConfig(
                 queryIds = strings(section(map, "queries"), "ids") ?: strings(section(defaults, "queries"), "ids") ?: emptyList(),
                 download = boolean("download") ?: true,
                 deploy = boolean("deploy") ?: true,
-                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() }
+                label = (map["label"] ?: defaults["label"])?.toString()?.takeIf { it.isNotBlank() },
+                scaleOut = boolean("scaleOut") ?: false
             )
             val unknown = config.systems - knownSystems.toSet()
             require(unknown.isEmpty()) { "Unknown systems in $path: $unknown (known: $knownSystems)" }

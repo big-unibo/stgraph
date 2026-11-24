@@ -47,7 +47,7 @@ abstract class DatasetEvaluation(
     ) {
         for (setup in setups) {
             val local = setup.host == "localhost"
-            deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = environment, ready = { asterixDBReady(setup.host, setup.port) }) {
+            val run = {
                 // One thread: the threads of the configuration are those of the Kotlin queries only
                 repeat(evaluation.ingestionIterations) { iteration ->
                     resetPort()
@@ -56,6 +56,9 @@ abstract class DatasetEvaluation(
                 // numMachines: the number of node controllers, as for the ingestion (1 on a local setup)
                 if (evaluation.queryIterations > 0) queries?.invoke(setup, setup.controllerIPs.toSet().size)
             }
+            // scaleOut: true, a cluster deployed on Docker Swarm (see Swarm.kt)
+            if (evaluation.scaleOut && !local) swarmDeployed("stgraph", setup, block = run)
+            else deployed(evaluation.deploy && local, "docker-compose.yaml", "asterixdb", env = environment, ready = { asterixDBReady(setup.host, setup.port) }, block = run)
         }
     }
 
@@ -70,10 +73,13 @@ abstract class DatasetEvaluation(
             val local = setup.host == "localhost"
             val port = if (local) 29002 else setup.port
             val machines = if (local) 1 else setup.controllerIPs.toSet().size
-            deployed(evaluation.deploy && local, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady(setup.host, port) }) {
+            val run = {
                 repeat(evaluation.ingestionIterations) { ingest("graphix", it, numMachines = machines) { loader(setup.host, port, setup.controllerIPs.first()) } }
                 queries("graphix", machines, queryIds) { id, _ -> query(id, setup.host, port) }
             }
+            // scaleOut: true, a cluster deployed on Docker Swarm (see Swarm.kt)
+            if (evaluation.scaleOut && !local) swarmDeployed("graphix", setup, block = run)
+            else deployed(evaluation.deploy && local, "evaluation/architectures/graphix/docker-compose.yaml", env = environment, ready = { asterixDBReady(setup.host, port) }, block = run)
         }
     }
 
