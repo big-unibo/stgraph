@@ -133,6 +133,14 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
             progress("mimic $size: the local copy $cache, without PostgreSQL")
             return block()
         }
+        // Without it, the loaders build it from PostgreSQL: the local one (mimic-postgres) restores only the published
+        // dump, the one of xsmall (the CI), so the other sizes need the PostgreSQL with all of MIMIC-IV (a local one
+        // with xsmall would build them from its few subjects, silently)
+        check(short) {
+            "No local copy of MIMIC-IV $size ($cache) to build it from the local PostgreSQL, which holds only xsmall: set " +
+                "datasets.mimic in test_config.yml to the PostgreSQL with all of MIMIC-IV (e.g., 137.204.72.88, port 5434), " +
+                "which builds it, or copy it here (evaluation/push_datasets.sh -p datasets/original/mimic/cache/$key)"
+        }
         if (evaluation.deploy && File("datasets/original/mimic").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
             val dump = "$size.dump"
             check(evaluation.download) { "No dump in datasets/original/mimic: run ./downloadDataset.sh mimic $dump, or set download: true" }
