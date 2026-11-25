@@ -4,7 +4,6 @@ import it.unibo.graph.asterixdb.AsterixDBTSM
 import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.interfaces.Graph
 import it.unibo.graph.query.QueryMode
-import it.unibo.graph.utils.TimeRange
 import it.unibo.graph.utils.resetPort
 import java.util.logging.Logger
 import org.yaml.snakeyaml.Yaml
@@ -13,38 +12,25 @@ import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.get
 
+/**
+ * The tests (./gradlew test: -Dstgraph.runs=true, build.gradle.kts) keep the graphs and the time series of STGraph apart
+ * from those of the evaluation (./gradlew evaluate), so that they never replace them: graphs in datasets/dump/runs, time
+ * series in the dataverses runs_<dataset>_<size> (also on the clusters of the setups)
+ */
+val STGRAPH_RUNS = System.getProperty("stgraph.runs") == "true"
+
+/** The folder of the graph of STGraph of [dataset] and [size] (see STGRAPH_RUNS) */
+fun stgraphDump(dataset: String, size: String) = (if (STGRAPH_RUNS) "datasets/dump/runs" else "datasets/dump") + "/$dataset/$size/"
+
+/** The dataverse of the time series of STGraph of [dataset] and [size] (see STGRAPH_RUNS) */
+fun stgraphDataverse(dataset: String, size: String) = (if (STGRAPH_RUNS) "runs_" else "") + "${dataset}_$size"
+
+/** The configuration of the statistics of the tests (stgraphRuns): never taken for conf or conf-free of the evaluation */
+private const val RUNS_CONFIGURATION = "stgraphRuns"
+
 class TestConfig {
     companion object {
         val logger = Logger.getLogger(this::class.java.toString())
-
-        fun loadTemporalRanges(
-            constraintType: String,
-            queryName: String,
-            datasetSize: String
-        ): Map<Int, TimeRange> {
-            val resourcePath = "time_constraints.yaml"
-            val inputStream = this::class.java.classLoader.getResourceAsStream(resourcePath) ?: throw IllegalArgumentException("$resourcePath not found in classpath")
-            val yamlText = inputStream.bufferedReader().use { it.readText() }
-            val yamlMap = Yaml().load<Map<String, Any>>(yamlText) ?: emptyMap()
-
-            val temporalConstraints = yamlMap["temporalConstraints"] as? Map<*, *>
-                ?: throw IllegalArgumentException("'temporalConstraints' not found in YAML")
-            val constraintMap = temporalConstraints[constraintType] as? Map<*, *>
-                ?: throw IllegalArgumentException("Constraint type '$constraintType' not found in YAML")
-            val queryMap = constraintMap[queryName] as? Map<*, *>
-                ?: throw IllegalArgumentException("Query '$queryName' not found under '$constraintType'")
-            val datasetMap = queryMap[datasetSize] as? Map<*, *>
-                ?: throw IllegalArgumentException("Dataset size '$datasetSize' not found under '$queryName'")
-
-            return datasetMap.entries.associate { (k, v) ->
-                val index = k.toString().toInt()
-                val raw = v as List<*>
-                index to TimeRange(
-                    from = raw[0].toString().toLong(),
-                    to = raw[1].toString().toLong()
-                )
-            }
-        }
 
         fun normalizeSize(size: Any): String {
             return when (size) {
@@ -60,8 +46,17 @@ class TestConfig {
             // --- datasets ---
             val datasets = (raw["datasets"] as Map<String, Map<String, Any>>)
                 .mapValues { (_, v) ->
+                    val postgres = PostgresConfig()
                     DatasetConfig(
-                        sizes = v["sizes"] as List<Any>
+                        sizes = v["sizes"] as List<Any>,
+                        // Each missing key: the one of the PostgreSQL of docker-compose.yaml
+                        postgres = PostgresConfig(
+                            host = v["postgres_endpoint"]?.toString() ?: postgres.host,
+                            port = v["port"]?.toString()?.toInt() ?: postgres.port,
+                            database = v["database"]?.toString() ?: postgres.database,
+                            user = v["user"]?.toString() ?: postgres.user,
+                            password = v["password"]?.toString() ?: postgres.password
+                        )
                     )
                 }
 
@@ -83,50 +78,44 @@ class TestConfig {
                 threads = (defaultsRaw["threads"] as List<Int>)
             )
 
-            // --- runs ---
-            val runs = (raw["runs"] as List<Map<String, Any>>).map { r ->
+            // --- runs: the runs of STGraph alone (its tests and experiments: threads, setups, modes) ---
+            val stgraphRuns = raw["stgraphRuns"] as? List<Map<String, Any>> ?: error("No stgraphRuns section in $path: copy it from test_config.example.yml")
+            val runs = stgraphRuns.map { r ->
                 RunConfig(
-                    approaches = r["approaches"] as List<String>,
+                    approaches = listOf("stgraph"),
                     datasets = r["datasets"] as List<String>,
+                    sizes = r["sizes"] as? List<Any>,
                     modes = r["modes"] as? List<String>,
                     threads = (r["threads"] as? List<Number>),
                     setups = r["setups"] as? List<String>
                 )
             }
 
-            val ingestionRaw = raw["ingestion"] as Map<String, Any>
-            val ingestion = ingestionRaw.let {
-                IngestionConfig(
-                    enabled = it["enabled"] as Boolean,
-                    datasets = it["datasets"] as List<String>,
-                    setups = it["setups"] as List<String>,
-                    threads = it["threads"] as List<Int>,
-                )
-            }
-
-            val config = Config(datasets, setups, defaults, runs, ingestion)
+            val config = Config(datasets, setups, defaults, runs)
             return config
         }
 
+        /** The runs of STGraph on [dataset] (stgraphRuns): the tests run only STGraph */
+        private fun stgraphRuns(config: Config, dataset: String): List<RunConfig> =
+            config.runs.filter { "stgraph" in it.approaches && dataset in it.datasets }
+
+        /**
+         * Loads [dataset] into STGraph once for every size and setup of the runs of STGraph on it (the queries of every
+         * number of threads read the same data), with the most threads of the runs on that size and setup
+         */
         fun runIngestion(dataset: String, loader: (String, Int, String, List<String>) -> Loader) {
             val config: Config = loadConfig("src/main/resources/test_config.yml")
-            val ingestion = config.ingestion ?: return
-            if (!ingestion.enabled) return
-            val setups = ingestion.setups.map { name ->
-                name to config.setups[name]!!
-            }
-            ingestion.datasets.filter { it == dataset }.forEach { datasetName ->
-                val dataset = config.datasets[datasetName]!!
-                dataset.sizes.forEach { rawSize ->
-                    val size = normalizeSize(rawSize)
-                    setups.forEach { (setupName, setup) ->
-                        ingestion.threads.forEach { thread ->
-                            resetPort()
-                            logger.info("dataset: $datasetName size: $size threads: $thread setup: $setupName")
-                            loadDataset(loader(size, thread, setup.host, setup.controllerIPs), "stgraph", threads = thread, numMachines = setup.controllerIPs.toSet().size, datasetName, size)
-                        }
-                    }
-                }
+            val combinations = stgraphRuns(config, dataset).flatMap { run ->
+                val sizes = run.sizes ?: config.datasets[dataset]!!.sizes
+                val setupNames = run.setups ?: config.defaults.setups
+                val threads = run.threads?.map { it.toInt() } ?: config.defaults.threads
+                sizes.flatMap { rawSize -> setupNames.flatMap { setupName -> threads.map { Triple(normalizeSize(rawSize), setupName, it) } } }
+            }.groupBy { (size, setupName, _) -> size to setupName }.map { (key, runs) -> Triple(key.first, key.second, runs.maxOf { it.third }) }
+            combinations.forEach { (size, setupName, thread) ->
+                val setup = config.setups[setupName] ?: error("Unknown setup: $setupName")
+                resetPort()
+                logger.info("dataset: $dataset size: $size threads: $thread setup: $setupName")
+                loadDataset(loader(size, thread, setup.host, setup.controllerIPs), "stgraph", threads = thread, numMachines = setup.controllerIPs.toSet().size, dataset, size, configuration = RUNS_CONFIGURATION)
             }
         }
 
@@ -135,7 +124,7 @@ class TestConfig {
             queryBuilder: (graph: Graph, size: String, mode: QueryMode) -> Querying?,
         ) {
             val config: Config = loadConfig("src/main/resources/test_config.yml")
-            config.runs.forEach { run ->
+            stgraphRuns(config, dataset).forEach { run ->
                 val modes = (run.modes ?: config.defaults.modes).map { QueryMode.valueOf(it) }
                 val threads = run.threads ?: config.defaults.threads
                 val setupNames = run.setups ?: config.defaults.setups
@@ -145,11 +134,11 @@ class TestConfig {
                 config.datasets.filter { (datasetName, _) -> datasetName == dataset }.forEach { (datasetName, datasetConfig) ->
                     matrixFromConfig(
                         dataset = datasetName,
-                        sizes = datasetConfig.sizes,
+                        sizes = run.sizes ?: datasetConfig.sizes,
                         setups = selectedSetups,
                         threads = threads,
                         modes = modes,
-                        approaches = run.approaches,
+                        approaches = listOf("stgraph"),
                         queryBuilder = queryBuilder
                     )
                 }
@@ -170,22 +159,21 @@ class TestConfig {
                     sizes.forEach { rawSize ->
                         modes.forEach { mode ->
                             val size = normalizeSize(rawSize)
-                            val path = "datasets/dump/$dataset/$size/"
+                            val path = stgraphDump(dataset, size)
                             val graph = MemoryGraphACID.readFromDisk(path)
                             val tsm = AsterixDBTSM.createDefault(
                                 graph,
                                 host = setup.host,
                                 port = setup.port,
                                 controllerIps = setup.controllerIPs,
-                                dataverse = "${dataset}_$size",
+                                dataverse = stgraphDataverse(dataset, size),
                                 multiTs = false // I only need to read the data
                             )
                             graph.tsm = tsm
                             threads.forEach { thread ->
                                 val query = queryBuilder(graph, size, mode)
-                                val numMachines =
-                                    if (setup.host == "localhost") -1
-                                    else setup.controllerIPs.toSet().size
+                                // The number of node controllers, as for the ingestion (1 on a local setup)
+                                val numMachines = setup.controllerIPs.toSet().size
 
                                 resetPort()
                                 if (query != null) {
@@ -201,7 +189,8 @@ class TestConfig {
                                         numMachines = numMachines,
                                         dataset,
                                         size = size,
-                                        mode = mode
+                                        mode = mode,
+                                        configuration = RUNS_CONFIGURATION
                                     )
                                 }
                             }
@@ -218,19 +207,24 @@ data class Config(
     val datasets: Map<String, DatasetConfig>,
     val setups: Map<String, SetupConfig>,
     val defaults: DefaultsConfig,
-    val runs: List<RunConfig>,
-    val ingestion: IngestionConfig
-)
-
-data class IngestionConfig(
-    val enabled: Boolean = false,
-    val datasets: List<String> = emptyList(),
-    val setups: List<String> = emptyList(),
-    val threads: List<Int> = emptyList(),
+    val runs: List<RunConfig>
 )
 
 data class DatasetConfig(
-    val sizes: List<Any>
+    val sizes: List<Any>,
+    val postgres: PostgresConfig = PostgresConfig()
+)
+
+/**
+ * The PostgreSQL the ingestion reads the dataset from (MIMIC-IV: keys postgres_endpoint, port, database, user and
+ * password of datasets.mimic); by default, the mimic-postgres of docker-compose.yaml
+ */
+data class PostgresConfig(
+    val host: String = "localhost",
+    val port: Int = 5434,
+    val database: String = "mimic-iv",
+    val user: String = "postgres",
+    val password: String = "password"
 )
 
 data class SetupConfig(
@@ -248,6 +242,7 @@ data class DefaultsConfig(
 data class RunConfig(
     val approaches: List<String>,
     val datasets: List<String>,
+    val sizes: List<Any>?,      // optional → fallback to datasets.<dataset>.sizes
     val modes: List<String>?,   // optional → fallback to defaults
     val threads: List<Number>?,
     val setups: List<String>?   // optional → fallback to defaults

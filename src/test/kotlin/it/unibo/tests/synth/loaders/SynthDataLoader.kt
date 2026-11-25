@@ -1,6 +1,8 @@
 package it.unibo.tests.synth.loaders
 
 import it.unibo.graph.asterixdb.AsterixDBTS
+import it.unibo.stats.stgraphDataverse
+import it.unibo.stats.stgraphDump
 import it.unibo.graph.asterixdb.AsterixDBTSM
 import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.interfaces.PropType
@@ -47,12 +49,12 @@ open class SynthDataLoader(
     }
 
     open val dataset = "synth"
-    val graphPath = "datasets/dump/$dataset/full/"
+    val graphPath = stgraphDump(dataset, "full")
     val logger: Logger = Logger.getLogger(this.javaClass.name)
     val graph = MemoryGraphACID(path = graphPath)
     val tsm = AsterixDBTSM.createDefault(
         graph,
-        dataverse = "${dataset}_$size",
+        dataverse = stgraphDataverse(dataset, size),
         host = host,
         controllerIps = controllerIPs,
         maxConnections = if (threads == 1) 1 else {

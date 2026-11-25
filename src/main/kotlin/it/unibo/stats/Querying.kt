@@ -9,13 +9,25 @@ private const val resultPath = "results/dt_graph/query_time"
 private val resultFolder = File(resultPath)
 private val statisticsFile = File(resultFolder, "query_statistics.csv")
 
+/** The time windows of the queries, recorded as their querySelectivity: one per query and size, growing with the size */
+const val QUERY_WINDOWS = "increased"
+
 class QueryResultData(val timeMs: Long, val card: Int)
 interface Querying {
     val queryId: String
     fun runQuery(threads: Int, queryMode: QueryMode): QueryResultData
 }
 
-fun runQuery(querying: Querying, model: String, threads: Int, numMachines: Int, dataset: String, size: String, mode: QueryMode) {
+/**
+ * Runs [querying] and appends its statistics to the query statistics. [iteration], [querySelectivity] and
+ * [temporalRangeIndex] identify the run within an evaluation: the repetition, and the time windows (QUERY_WINDOWS: one
+ * per query and size, see it.unibo.tests.smartbench.queries.TimeWindows); [configuration]: the configuration of the system (conf
+ * or conf-free, see evaluation/README.md), empty when not known (e.g., the tests)
+ */
+fun runQuery(
+    querying: Querying, model: String, threads: Int, numMachines: Int, dataset: String, size: String, mode: QueryMode,
+    iteration: Int = 0, querySelectivity: String = QUERY_WINDOWS, temporalRangeIndex: Int = 0, configuration: String = ""
+) {
     if (!resultFolder.exists()) resultFolder.mkdirs()
 
     val data: QueryResultData
@@ -33,12 +45,25 @@ fun runQuery(querying: Querying, model: String, threads: Int, numMachines: Int, 
         "elapsedTime" to elapsedTime,
         "numMachines" to numMachines,
         "cardinality" to data.card,
-        "queryMode" to mode
+        "queryMode" to mode,
+        "iteration" to iteration,
+        "querySelectivity" to querySelectivity,
+        "temporalRangeIndex" to temporalRangeIndex,
+        "configuration" to configuration
     )
 
+    // A file written before the last columns were added: extend its header (the old rows leave them empty)
+    val header = row.keys.joinToString(",")
+    if (statisticsFile.exists()) {
+        val oldHeader = statisticsFile.bufferedReader().use { it.readLine() }
+        if (oldHeader != null && oldHeader != header && header.startsWith("$oldHeader,")) {
+            val rows = statisticsFile.readLines().drop(1)
+            statisticsFile.writeText((listOf(header) + rows).joinToString("\n", postfix = "\n"))
+        }
+    }
     val writeHeader = !statisticsFile.exists()
     statisticsFile.appendText(buildString {
-        if (writeHeader) append(row.keys.joinToString(",") + "\n")
+        if (writeHeader) append(header + "\n")
         append(row.values.joinToString(",") + "\n")
     })
 }

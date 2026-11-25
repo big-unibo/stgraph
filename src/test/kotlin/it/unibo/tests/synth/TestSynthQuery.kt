@@ -1,6 +1,8 @@
 package it.unibo.tests.synth
 
 import it.unibo.graph.asterixdb.AsterixDBTSM
+import it.unibo.stats.stgraphDataverse
+import it.unibo.stats.stgraphDump
 import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.query.QueryMode
 import it.unibo.graph.utils.resetPort
@@ -20,13 +22,15 @@ class TestSynthQuery {
     fun testMode() {
         val dataset = "synth"
         val size = "full"
-        val path = "datasets/dump/$dataset/$size/"
+        val path = stgraphDump(dataset, size)
+        // Only after its ingestion (synth in stgraphRuns)
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.io.File(path, "nodes.dat").isFile, "No synth graph in $path")
         val graph = MemoryGraphACID.readFromDisk(path)
         val tsm = AsterixDBTSM.createDefault(
             graph,
             host = "localhost",
             controllerIps = listOf("localhost"),
-            dataverse = "${dataset}_$size"
+            dataverse = stgraphDataverse(dataset, size)
         )
         graph.tsm = tsm
         listOf(1..3).forEach { _ ->

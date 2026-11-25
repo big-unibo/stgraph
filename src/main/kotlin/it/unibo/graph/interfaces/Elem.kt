@@ -2,6 +2,13 @@ package it.unibo.graph.interfaces
 
 import java.io.Serializable
 
+/**
+ * Validity as half-open intervals [from, to) of integer timestamps: an instant [t, t] is [t, t + 1), which contains the
+ * instant t only. Applied where validities are given (elements, events, query windows), so that the queries only see
+ * non-empty half-open intervals
+ */
+fun halfOpen(from: Long, to: Long): Long = if (from == to && to < Long.MAX_VALUE) to + 1 else to
+
 fun timeOverlap(fromTimestamp: Long, toTimestamp: Long, from: Long, to: Long, timeaware: Boolean = true): Boolean {
     if (!timeaware) return true
     val empty1 = fromTimestamp == toTimestamp

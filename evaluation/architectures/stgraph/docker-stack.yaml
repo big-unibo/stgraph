@@ -1,0 +1,60 @@
+# The AsterixDB of STGraph on Docker Swarm, for the scale-out (scaleOut: true in test_config.yml, see evaluation/README.md),
+# deployed from a manager: the cluster controller on the node of the host of the setup, a node controller (its
+# NCService, started by the cluster controller with the cc.conf) on the node of each address of its controllerIPs, one
+# per machine, up to four (nc1-nc4; the unused ones have 0 replicas). The evaluation sets the nodes (the hostnames of
+# the Swarm with the addresses of the setup), the replicas and the cc.conf (written from conf-scaleout/cc.conf).
+# Host network: the cluster listens on the addresses of the machines, those of the setup, used by the queries and the
+# data feeds. No persistence: the data stay in the containers, removed with the stack.
+x-node: &node
+  image: ${ASTERIXDB_IMAGE:-mp4sini/asterixdb:latest}
+  networks: [ hostnet ]
+
+x-nc: &nc
+  <<: *node
+  command: [ "bin/asterixncservice", "-logdir", "-" ]
+
+services:
+  cc:
+    <<: *node
+    command: [ "bin/asterixcc", "-config-file", "/asterixsetup/cc.conf" ]
+    configs:
+      - source: cc
+        target: /asterixsetup/cc.conf
+    deploy:
+      placement: { constraints: [ "node.hostname == ${CC_NODE}" ] }
+      restart_policy: { condition: none }
+  nc1:
+    <<: *nc
+    deploy:
+      replicas: ${NC1_REPLICAS:-0}
+      placement: { constraints: [ "node.hostname == ${NC1_NODE:-none}" ] }
+      restart_policy: { condition: none }
+  nc2:
+    <<: *nc
+    deploy:
+      replicas: ${NC2_REPLICAS:-0}
+      placement: { constraints: [ "node.hostname == ${NC2_NODE:-none}" ] }
+      restart_policy: { condition: none }
+  nc3:
+    <<: *nc
+    deploy:
+      replicas: ${NC3_REPLICAS:-0}
+      placement: { constraints: [ "node.hostname == ${NC3_NODE:-none}" ] }
+      restart_policy: { condition: none }
+  nc4:
+    <<: *nc
+    deploy:
+      replicas: ${NC4_REPLICAS:-0}
+      placement: { constraints: [ "node.hostname == ${NC4_NODE:-none}" ] }
+      restart_policy: { condition: none }
+
+networks:
+  hostnet:
+    external: true
+    name: host
+
+configs:
+  # A new name for each content (CC_CONF_NAME): a config of Swarm cannot change
+  cc:
+    name: ${CC_CONF_NAME}
+    file: ${CC_CONF}

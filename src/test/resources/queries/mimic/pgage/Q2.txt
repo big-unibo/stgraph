@@ -1,0 +1,11 @@
+SELECT m.label, avg(m.value)
+FROM (
+    SELECT *
+    FROM cypher('{GRAPH}'::name, $$
+        MATCH (p)--(t)
+        WHERE p.c > 25000
+        RETURN DISTINCT id(t)
+    $$) AS (tsid bigint)
+) t
+JOIN {GRAPH}.measurements m ON m.ts_id = t.tsid
+GROUP BY m.label
