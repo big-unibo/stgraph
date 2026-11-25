@@ -145,7 +145,7 @@ The config defines:
 - `datasets`: dataset names and sizes; for MIMIC-IV, also the PostgreSQL the ingestion reads the data from (`postgres_endpoint`, `port`, `database`, `user`, `password`; default: the one of `docker-compose.yaml`);
 - `setups`: AsterixDB hosts, ports, and controller IPs;
 - `defaults`: fallback modes, setups, and thread counts (and the parameters of the evaluation);
-- `stgraphRuns`: the runs of STGraph alone, by its tests (`./gradlew test`): each with its `datasets`, optionally `sizes`, `modes`, `threads` and `setups` (the CI, and the experiments of STGraph: modes, threads, scale-out), e.g. with `evaluation/stgraph_runs.sh` (ingestion, then queries, on an AsterixDB with a single folder for every dataset and size, `datasets/volumes/asterixdb/runs`);
+- `stgraphRuns`: the runs of STGraph alone, by its tests (`./gradlew test`): each with its `datasets`, optionally `sizes`, `modes`, `threads` and `setups` (the CI, and the experiments of STGraph: modes, threads, scale-out), by `./run.sh` (or `./gradlew test`, with AsterixDB running), on the Docker volume of AsterixDB, one for every dataset and size;
 - `evaluation`: every combination of its parameters, `./gradlew evaluate` (see [Reproducing The Results](#reproducing-the-results)).
 
 Each SmartBench query has one time window per dataset size, the same for every system (`TimeWindows` in `src/test/kotlin/it/unibo/tests/smartbench/queries`). Label metadata is loaded from `src/main/resources/labels.yaml`.
@@ -162,7 +162,7 @@ chmod +x ./gradlew *.sh
 It:
 
 1. creates `src/main/resources/test_config.yml` from `test_config.example.yml` (SmartBench `xsmall`, MIMIC-IV `xsmall`, synthetic `full`); MIMIC-IV `xsmall` reads the subjects of `mimic-iv_subjectids_tsids_short.csv`, the other sizes (`small`, `medium`, `large`: 1,692,200, 16,922,000 and all the events) those of `mimic-iv_subjectids_tsids.csv`, downloaded by `run.sh` if missing;
-2. downloads SmartBench `xsmall`, the MIMIC-IV `xsmall` dump and the PeMS `xsmall` dump (built by `evaluation/mimic_dump.sh` and `evaluation/pems_dump.sh`);
+2. downloads, if missing, SmartBench `xsmall`, the MIMIC-IV `xsmall` dump and the PeMS `xsmall` dump (built by `evaluation/mimic_dump.sh` and `evaluation/pems_dump.sh`);
 3. starts `docker-compose.yaml`: the AsterixDB of STGraph (configuration: `evaluation/architectures/stgraph/conf/cc.conf`) and the PostgreSQL of MIMIC-IV, which restores the downloaded dumps of MIMIC-IV and of PeMS in its databases `mimic-iv-xsmall` and `pems-xsmall` (named after the dump, so that the local copies of the other sizes are never built from them) on initialization (`datasets/init-mimic-pg.sh`);
 4. runs `./gradlew` (`clean`, `build`, `check`): the regression tests of `it.unibo.tests.ci`, and ingestion and queries of STGraph on the synthetic dataset, SmartBench `xsmall`, MIMIC-IV `xsmall` and PeMS `xsmall`; on these two sizes, the SmartBench and MIMIC-IV queries check their cardinalities.
 
