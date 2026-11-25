@@ -117,7 +117,7 @@ The runs are configured in `src/main/resources/test_config.yml` (copied from `te
 | `datasets`, `setups` | the sizes of each dataset (for MIMIC-IV, also the PostgreSQL the data is read from: `postgres_endpoint`, `port`, `database`, `user`, `password`); the AsterixDB setups of STGraph |
 | `volumes` | the folders on the host where the systems started by the evaluation keep their data (`asterixdb`, `graphix`, `neo4j`, `pgage`, `aeong`; default: a Docker volume of each system); `{size}` in a folder stands for the size of the run |
 | `resources` | the resources and configuration of the same systems: `cpus`, `cpuset` (the cores), `memory`, `shm` (PGAge) and `conf` (the folder of the configuration); default: those of the compose files, i.e., no CPU or memory limit and the configuration in `conf/` (see below) |
-| `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph (only for the tests: in the evaluation its ingestion is single-threaded, and its Kotlin queries run with 16 threads with `conf-free/` of AsterixDB, the default, and 1 with `conf/`, unless the `evaluation` section or the run sets `threads`), `ingestion.iterations`, `queries` (`iterations`, `ids`), `download`, `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
+| `defaults` | the parameters common to all the runs: modes, setups and threads of STGraph (only for the tests: in the evaluation its ingestion is single-threaded, and its Kotlin queries run with 16 threads with `conf-free/` of AsterixDB, the default, and 1 with `conf/`, unless the `evaluation` section or the run sets `threads`), `ingestion.iterations`, `queries` (`iterations`, `ids`), `deploy`, `label` (appended to the model of the results, e.g., `stgraph_4CPU`) |
 | `stgraphRuns` | the runs of STGraph alone, by its tests (`./gradlew test`, the CI): each with its `datasets`, optionally `sizes` and `modes`, `threads`, `setups` (the experiments of STGraph: query modes, threads, scale-out) |
 | `evaluation` | `systems`, `datasets`, optionally `sizes` and any key of `defaults`, all combined |
 
@@ -162,8 +162,10 @@ added to `results/dt_graph/` as they come, as those of the other systems (`model
 `resources.aeong.conf`: `conf/`, with `cpus: 1`, or `conf-free/`, the default).
 
 For each dataset, size and system, one system at a time, a run:
-1. downloads the missing data (`smartbench <size>`: the JSON dataset of every system), from the same URLs as
-   `downloadDataset.sh`;
+1. checks that its data is there (it never downloads: `./downloadDataset.sh`, on request): SmartBench, the JSON
+   dataset of every system (`datasets/original/smartbench/<size>`); MIMIC-IV and PeMS, the local copy of the size
+   (`datasets/original/<dataset>/cache/<size>`), otherwise the PostgreSQL of `datasets.<dataset>`, from which the
+   loaders build it (an error if it does not hold the dataset);
 2. starts the system (`docker compose up -d`) and waits until it answers;
 3. loads the data (`ingestion.iterations` times) and runs every query `queries.iterations` times on every time window of
    each selectivity;

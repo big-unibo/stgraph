@@ -168,7 +168,7 @@ It:
 
 ## Reproducing The Results
 
-The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. Every system runs in a container, without CPU or memory limits unless the `resources` section of `test_config.yml` sets them (the single-core comparison of the paper: `cpus: 1` for each; AeonG and HyGraph are always limited to one core, shared with their client), and is configured with the least parallelism it allows. One system at a time, the evaluation downloads the data, starts the system, loads the data, runs the queries (each on its time window for the size) and stops the system:
+The evaluation compares STGraph with Neo4j, PGAge (PostgreSQL with TimescaleDB, PostGIS and Apache AGE), Graphix, AeonG and HyGraph on SmartBench. Every system runs in a container, without CPU or memory limits unless the `resources` section of `test_config.yml` sets them (the single-core comparison of the paper: `cpus: 1` for each; AeonG and HyGraph are always limited to one core, shared with their client), and is configured with the least parallelism it allows. One system at a time, the evaluation checks the data (it never downloads: `./downloadDataset.sh` does, on request), starts the system, loads the data, runs the queries (each on its time window for the size) and stops the system:
 
 ```bash
 ./gradlew evaluate   # every combination of the evaluation section of test_config.yml
@@ -199,7 +199,7 @@ The dataset helper downloads inputs into `datasets/original/<dataset>` and extra
 ./downloadDataset.sh mimic xsmall.dump
 ```
 
-The evaluation downloads the inputs it needs by itself (also the Cypher dumps of Neo4j, `smartbench/neo4j <size>`).
+The evaluation never downloads: a missing input stops it, with the `./downloadDataset.sh` command to fetch it.
 
 MIMIC-IV and PeMS are read from their PostgreSQL (`datasets.mimic` and `datasets.pems` of `test_config.yml`) once per
 size, into a local copy that every later load reads instead (`datasets/original/<dataset>/cache/<size>`). To write the

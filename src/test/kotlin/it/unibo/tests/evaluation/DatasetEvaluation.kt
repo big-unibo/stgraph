@@ -158,15 +158,12 @@ abstract class DatasetEvaluation(
     }
 
     /**
-     * Downloads [path] (the dataset [name] of downloadDataset.sh) when it is missing and the configuration allows it;
-     * not when the run only queries the data already loaded, unless [needed]
+     * Fails if [path] (the dataset [name] of downloadDataset.sh) is missing and [needed] (by default, when the run loads
+     * data): the evaluation never downloads, ./downloadDataset.sh does, on request
      */
     protected fun download(path: String, name: String, needed: Boolean = evaluation.ingestionIterations > 0) {
-        if (!needed || File(path).exists()) return
-        check(evaluation.download) { "Missing $path: run ./downloadDataset.sh $name $size, or set download: true" }
-        progress("download | $name $size: started")
-        downloadDataset(name, size)
-        progress("download | $name $size: done")
+        // Never downloaded by the evaluation: only by ./downloadDataset.sh, on request
+        check(!needed || File(path).exists()) { "Missing $path: download it with ./downloadDataset.sh $name $size" }
     }
 
     /**
