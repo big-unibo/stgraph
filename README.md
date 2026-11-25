@@ -145,7 +145,7 @@ The config defines:
 - `datasets`: dataset names and sizes; for MIMIC-IV, also the PostgreSQL the ingestion reads the data from (`postgres_endpoint`, `port`, `database`, `user`, `password`; default: the one of `docker-compose.yaml`);
 - `setups`: AsterixDB hosts, ports, and controller IPs;
 - `defaults`: fallback modes, setups, and thread counts (and the parameters of the evaluation);
-- `stgraphRuns`: the runs of STGraph alone, by its tests (`./gradlew test`): each with its `datasets`, optionally `sizes`, `modes`, `threads` and `setups` (the CI, and the experiments of STGraph: modes, threads, scale-out);
+- `stgraphRuns`: the runs of STGraph alone, by its tests (`./gradlew test`): each with its `datasets`, optionally `sizes`, `modes`, `threads` and `setups` (the CI, and the experiments of STGraph: modes, threads, scale-out), e.g. with `evaluation/stgraph_runs.sh` (ingestion, then queries, on an AsterixDB with a single folder for every dataset and size, `datasets/volumes/asterixdb/runs`);
 - `evaluation`: every combination of its parameters, `./gradlew evaluate` (see [Reproducing The Results](#reproducing-the-results)).
 
 Each SmartBench query has one time window per dataset size, the same for every system (`TimeWindows` in `src/test/kotlin/it/unibo/tests/smartbench/queries`). Label metadata is loaded from `src/main/resources/labels.yaml`.
