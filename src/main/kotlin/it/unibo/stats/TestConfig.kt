@@ -99,7 +99,10 @@ class TestConfig {
         private fun stgraphRuns(config: Config, dataset: String): List<RunConfig> =
             config.runs.filter { "stgraph" in it.approaches && dataset in it.datasets }
 
-        /** Loads [dataset] into STGraph for every size, setup and number of threads of the runs of STGraph on it */
+        /**
+         * Loads [dataset] into STGraph once for every size and setup of the runs of STGraph on it (the queries of every
+         * number of threads read the same data), with the most threads of the runs on that size and setup
+         */
         fun runIngestion(dataset: String, loader: (String, Int, String, List<String>) -> Loader) {
             val config: Config = loadConfig("src/main/resources/test_config.yml")
             val combinations = stgraphRuns(config, dataset).flatMap { run ->
@@ -107,7 +110,7 @@ class TestConfig {
                 val setupNames = run.setups ?: config.defaults.setups
                 val threads = run.threads?.map { it.toInt() } ?: config.defaults.threads
                 sizes.flatMap { rawSize -> setupNames.flatMap { setupName -> threads.map { Triple(normalizeSize(rawSize), setupName, it) } } }
-            }.distinct()
+            }.groupBy { (size, setupName, _) -> size to setupName }.map { (key, runs) -> Triple(key.first, key.second, runs.maxOf { it.third }) }
             combinations.forEach { (size, setupName, thread) ->
                 val setup = config.setups[setupName] ?: error("Unknown setup: $setupName")
                 resetPort()
