@@ -6,7 +6,6 @@ import it.unibo.stats.SetupConfig
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
-import it.unibo.tests.evaluation.downloadDataset
 import it.unibo.tests.mimic.loaders.MimicIVAeonG
 import it.unibo.tests.mimic.loaders.MimicIVGraphix
 import it.unibo.tests.mimic.loaders.MimicIVSTGraph
@@ -119,46 +118,26 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     }
 
     /**
-     * Runs [block] with the PostgreSQL the data is read from, when the run loads data: on localhost, the mimic-postgres
-     * of the root docker-compose.yaml, deployed as the other systems (with deploy: true), with the dump it restores at its
-     * first start (downloaded if missing, as run.sh: <size>.dump, e.g., xsmall.dump)
+     * Runs [block] with the data of the size: its local copy if there (datasets/original/mimic/cache/<size>, see
+     * AbstractMimicIVLoader), which the loaders read; otherwise the PostgreSQL of datasets.mimic (test_config.yml), from
+     * which they build it, if it holds MIMIC-IV; otherwise an error. Nothing for a run of the queries only
      */
     private fun source(block: () -> Unit) {
-        val local = postgres.host == "localhost" || postgres.host == "127.0.0.1"
-        if (evaluation.ingestionIterations == 0 || !local) return block()
-        // The local copy of the size already there (datasets/original/mimic/cache/<size>, see AbstractMimicIVLoader):
-        // the loaders read it, not PostgreSQL, so no PostgreSQL (nor its dump, published only for xsmall)
+        if (evaluation.ingestionIterations == 0) return block()
         val cache = File("datasets/original/mimic/cache/$key")
         if (File(cache, "items.jsonl.gz").isFile && File(cache, "events.csv.gz").isFile) {
-            progress("mimic $size: the local copy $cache, without PostgreSQL")
+            progress("mimic $size: the local copy $cache")
             return block()
         }
-        // Without it, the loaders build it from PostgreSQL: the local one (mimic-postgres) restores only the published
-        // dump, the one of xsmall (the CI), so the other sizes need the PostgreSQL with all of MIMIC-IV (a local one
-        // with xsmall would build them from its few subjects, silently)
-        check(short) {
-            "No local copy of MIMIC-IV $size ($cache) to build it from the local PostgreSQL, which holds only xsmall: set " +
-                "datasets.mimic in test_config.yml to the PostgreSQL with all of MIMIC-IV (e.g., 137.204.72.88, port 5434), " +
-                "which builds it, or copy it here (evaluation/push_datasets.sh -p datasets/original/mimic/cache/$key)"
+        val url = "jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}"
+        runCatching {
+            DriverManager.getConnection(url, postgres.user, postgres.password).use { it.createStatement().use { st -> st.execute("SELECT 1 FROM d_items LIMIT 1") } }
+        }.onFailure {
+            error("No local copy of MIMIC-IV $size ($cache), and no MIMIC-IV in the PostgreSQL $url ($it): set datasets.mimic " +
+                "in test_config.yml to the PostgreSQL with MIMIC-IV, or copy the local copy here (evaluation/push_datasets.sh)")
         }
-        if (evaluation.deploy && File("datasets/original/mimic").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
-            val dump = "$size.dump"
-            check(evaluation.download) { "No dump in datasets/original/mimic: run ./downloadDataset.sh mimic $dump, or set download: true" }
-            downloadDataset("mimic", dump)
-        }
-        // The PostgreSQL restores the dump of PeMS too (datasets/init-mimic-pg.sh): the one of the CI, if missing
-        if (evaluation.deploy && File("datasets/original/pems").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
-            check(evaluation.download) { "No dump in datasets/original/pems: run ./downloadDataset.sh pems xsmall.dump, or set download: true" }
-            downloadDataset("pems", "xsmall.dump")
-        }
-        // Three successful connections in a row, as PGAge: PostgreSQL restarts at the end of its initialization (the
-        // restore of the dump, up to hours on the large dumps)
-        deployed(evaluation.deploy, "docker-compose.yaml", "mimic-postgres", readyChecks = 3, readyTimeoutMs = 6 * 60 * 60 * 1000L, env = environment, ready = ::sourceReady) { block() }
-    }
-
-    private fun sourceReady() {
-        DriverManager.getConnection("jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}", postgres.user, postgres.password)
-            .use { it.createStatement().use { st -> st.execute("SELECT 1 FROM d_items LIMIT 1") } }
+        progress("mimic $size: from the PostgreSQL $url, into the local copy $cache")
+        block()
     }
 
     /**
