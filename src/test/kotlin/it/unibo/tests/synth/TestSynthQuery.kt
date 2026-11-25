@@ -23,6 +23,8 @@ class TestSynthQuery {
         val dataset = "synth"
         val size = "full"
         val path = stgraphDump(dataset, size)
+        // Only after its ingestion (synth in stgraphRuns)
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.io.File(path, "nodes.dat").isFile, "No synth graph in $path")
         val graph = MemoryGraphACID.readFromDisk(path)
         val tsm = AsterixDBTSM.createDefault(
             graph,
