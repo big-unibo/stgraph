@@ -3,20 +3,21 @@ datasets:
     sizes: [ "full" ]
 
   smartbench:
-    sizes: [ "xsmall"] # "small", "medium", "large", "extralarge"
+    # sizes: [ "xsmall", "small", "medium", "large", "extralarge" ]
+    sizes: [ "xsmall"]
 
   mimic:
-    sizes: [ "xsmall" ] # "small", "medium", "large": 1,692,200, 16,922,000 and all the events; xsmall: the short list of subjects
+    # sizes: [ "xsmall", "small", "medium", "large"]
+    sizes: [ "xsmall" ]
     postgres_endpoint: "localhost"
     port: 5434
     database: "mimic-iv-xsmall" # the local PostgreSQL of the CI (xsmall.dump); the whole MIMIC-IV: mimic-iv, on its server
     user: "postgres"
     password: "password"
 
-  # PeMS, hourly data (pems repository: schema pems_cleaned); sizes: measurements, xsmall 1K, small 1M, medium 10M,
-  # large 100M. Read once into datasets/original/pems/cache/<size> (./gradlew pemsCache), then from there.
   pems:
-    sizes: [ "xsmall" ] # "small", "medium", "large"
+    # sizes: [ "xsmall", "small", "medium", "large"]
+    sizes: [ "xsmall" ]
     postgres_endpoint: "localhost"
     port: 5434
     database: "pems-xsmall" # the local PostgreSQL of the CI (xsmall.dump); the whole PeMS: pems, on its server
@@ -108,9 +109,11 @@ defaults:
   # (CPU, memory, partitions...), to tell its results apart; empty: the bare model
   label:
 
-# The runs of STGraph alone, by its tests (./gradlew test, the CI): each loads and queries its datasets, optionally on its
-# sizes (default: datasets.<dataset>.sizes), with its modes, threads and setups (default: those of defaults). The first
-# one: the CI; the others: the experiments of STGraph of the paper (query modes, threads, scale-out on the setups above)
+# The runs of STGraph alone, by its tests (./run.sh, ./gradlew test): each loads and queries its datasets, optionally on
+# its sizes (default: datasets.<dataset>.sizes), with its modes, threads and setups (default: those of defaults), apart
+# from the data of the evaluation (statistics with configuration stgraphRuns). The first one: the CI (OPTIMIZED, one
+# thread, local: what the evaluation measures already, not needed for the experiments); the others: the experiments
+# of STGraph of the paper, what the evaluation does not measure (query modes, threads, scale-out on the setups above)
 stgraphRuns:
   - datasets: [ "smartbench", "mimic", "pems" ]
     modes: [ "OPTIMIZED" ]
