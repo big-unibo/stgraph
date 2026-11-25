@@ -36,6 +36,8 @@ tasks.withType<Test>().configureEach {
     }
     useJUnitPlatform()
     maxHeapSize = "64g"
+    // The graphs and time series of STGraph of the tests apart from those of the evaluation (see STGRAPH_RUNS in TestConfig.kt)
+    systemProperty("stgraph.runs", "true")
 }
 
 dependencies {

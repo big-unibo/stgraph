@@ -12,6 +12,22 @@ import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.get
 
+/**
+ * The tests (./gradlew test: -Dstgraph.runs=true, build.gradle.kts) keep the graphs and the time series of STGraph apart
+ * from those of the evaluation (./gradlew evaluate), so that they never replace them: graphs in datasets/dump/runs, time
+ * series in the dataverses runs_<dataset>_<size> (also on the clusters of the setups)
+ */
+val STGRAPH_RUNS = System.getProperty("stgraph.runs") == "true"
+
+/** The folder of the graph of STGraph of [dataset] and [size] (see STGRAPH_RUNS) */
+fun stgraphDump(dataset: String, size: String) = (if (STGRAPH_RUNS) "datasets/dump/runs" else "datasets/dump") + "/$dataset/$size/"
+
+/** The dataverse of the time series of STGraph of [dataset] and [size] (see STGRAPH_RUNS) */
+fun stgraphDataverse(dataset: String, size: String) = (if (STGRAPH_RUNS) "runs_" else "") + "${dataset}_$size"
+
+/** The configuration of the statistics of the tests (stgraphRuns): never taken for conf or conf-free of the evaluation */
+private const val RUNS_CONFIGURATION = "stgraphRuns"
+
 class TestConfig {
     companion object {
         val logger = Logger.getLogger(this::class.java.toString())
@@ -96,7 +112,7 @@ class TestConfig {
                 val setup = config.setups[setupName] ?: error("Unknown setup: $setupName")
                 resetPort()
                 logger.info("dataset: $dataset size: $size threads: $thread setup: $setupName")
-                loadDataset(loader(size, thread, setup.host, setup.controllerIPs), "stgraph", threads = thread, numMachines = setup.controllerIPs.toSet().size, dataset, size)
+                loadDataset(loader(size, thread, setup.host, setup.controllerIPs), "stgraph", threads = thread, numMachines = setup.controllerIPs.toSet().size, dataset, size, configuration = RUNS_CONFIGURATION)
             }
         }
 
@@ -140,14 +156,14 @@ class TestConfig {
                     sizes.forEach { rawSize ->
                         modes.forEach { mode ->
                             val size = normalizeSize(rawSize)
-                            val path = "datasets/dump/$dataset/$size/"
+                            val path = stgraphDump(dataset, size)
                             val graph = MemoryGraphACID.readFromDisk(path)
                             val tsm = AsterixDBTSM.createDefault(
                                 graph,
                                 host = setup.host,
                                 port = setup.port,
                                 controllerIps = setup.controllerIPs,
-                                dataverse = "${dataset}_$size",
+                                dataverse = stgraphDataverse(dataset, size),
                                 multiTs = false // I only need to read the data
                             )
                             graph.tsm = tsm
@@ -170,7 +186,8 @@ class TestConfig {
                                         numMachines = numMachines,
                                         dataset,
                                         size = size,
-                                        mode = mode
+                                        mode = mode,
+                                        configuration = RUNS_CONFIGURATION
                                     )
                                 }
                             }

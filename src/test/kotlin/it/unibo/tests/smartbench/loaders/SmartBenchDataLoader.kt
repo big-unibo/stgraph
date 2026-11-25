@@ -1,6 +1,8 @@
 package it.unibo.tests.smartbench.loaders
 
 import com.fasterxml.jackson.core.JsonFactory
+import it.unibo.stats.stgraphDataverse
+import it.unibo.stats.stgraphDump
 import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -41,10 +43,10 @@ class SmartBenchDataLoader(size: String, val threads: Int, host: String = "local
         "$path/original/$dataset/$size/virtualSensor.json",
         "$path/original/$dataset/$size/semanticObservationType.json",
     )
-    val graphPath = "datasets/dump/$dataset/$size/"
+    val graphPath = stgraphDump(dataset, size)
 
     val graph = MemoryGraphACID(path = graphPath)
-    val tsm = AsterixDBTSM.createDefault(graph, dataverse = "${dataset}_$size", host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else { threads * 10 })
+    val tsm = AsterixDBTSM.createDefault(graph, dataverse = stgraphDataverse(dataset, size), host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else { threads * 10 })
 
     init {
         val folder = Paths.get(graphPath)

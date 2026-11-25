@@ -1,6 +1,8 @@
 package it.unibo.tests.pems.loaders
 
 import it.unibo.graph.asterixdb.AsterixDBTS
+import it.unibo.stats.stgraphDataverse
+import it.unibo.stats.stgraphDump
 import it.unibo.graph.asterixdb.AsterixDBTSM
 import it.unibo.graph.inmemory.MemoryGraphACID
 import it.unibo.graph.interfaces.PropType
@@ -21,8 +23,8 @@ class PemsSTGraph(
     controllerIPs: List<String> = listOf("localhost"),
     postgres: PostgresConfig = PostgresConfig()
 ) : AbstractPemsLoader(size, postgres) {
-    val g = MemoryGraphACID(path = "datasets/dump/pems/$size")
-    val t = AsterixDBTSM.createDefault(g, "pems_$size", host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else threads * 10, multiTs = true)
+    val g = MemoryGraphACID(path = stgraphDump("pems", size))
+    val t = AsterixDBTSM.createDefault(g, stgraphDataverse("pems", size), host = host, controllerIps = controllerIPs, maxConnections = if (threads == 1) 1 else threads * 10, multiTs = true)
     private val tsMap = mutableMapOf<Long, AsterixDBTS>()
 
     init {
