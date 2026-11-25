@@ -9,7 +9,7 @@ datasets:
     sizes: [ "xsmall" ] # "small", "medium", "large": 1,692,200, 16,922,000 and all the events; xsmall: the short list of subjects
     postgres_endpoint: "localhost"
     port: 5434
-    database: "mimic-iv"
+    database: "mimic-iv-xsmall" # the local PostgreSQL of the CI (xsmall.dump); the whole MIMIC-IV: mimic-iv, on its server
     user: "postgres"
     password: "password"
 
@@ -19,7 +19,7 @@ datasets:
     sizes: [ "xsmall" ] # "small", "medium", "large"
     postgres_endpoint: "localhost"
     port: 5434
-    database: "pems"
+    database: "pems-xsmall" # the local PostgreSQL of the CI (xsmall.dump); the whole PeMS: pems, on its server
     user: "postgres"
     password: "password"
 

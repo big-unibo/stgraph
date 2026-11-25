@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The dumps of the datasets in the same PostgreSQL, one database each: the first custom-format dump of /dump/mimic
-# (required) in POSTGRES_DB (mimic-iv), the one of /dump/pems (required) in the database pems
+# The dumps of the datasets in the same PostgreSQL, one database each, named after the dataset and the dump (its size):
+# the first custom-format dump of /dump/mimic (required) in mimic-iv-<dump>, the one of /dump/pems (required) in
+# pems-<dump> (e.g., xsmall.dump of the CI: mimic-iv-xsmall, pems-xsmall). A database with only the data of a size, never
+# taken for the whole dataset (mimic-iv, pems): the loaders would build the local copies of the other sizes from it
 DUMP_DIR="/dump"
 
 for DIR in "$DUMP_DIR"/mimic "$DUMP_DIR"/pems; do
-  if [[ "$DIR" == "$DUMP_DIR/mimic" ]]; then DATABASE="${POSTGRES_DB:-mimic-iv}"; else DATABASE="pems"; fi
   DUMP_FILE="$(
     find "$DIR" \
       -maxdepth 1 \
@@ -21,6 +22,8 @@ for DIR in "$DUMP_DIR"/mimic "$DUMP_DIR"/pems; do
     exit 1
   fi
 
+  NAME="$(basename "$DUMP_FILE")"
+  if [[ "$DIR" == "$DUMP_DIR/mimic" ]]; then DATABASE="mimic-iv-${NAME%.*}"; else DATABASE="pems-${NAME%.*}"; fi
   echo "Restoring ${DUMP_FILE} into database ${DATABASE}"
   psql --username="$POSTGRES_USER" --dbname=postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '${DATABASE}'" | grep -q 1 \
     || psql --username="$POSTGRES_USER" --dbname=postgres -c "CREATE DATABASE \"${DATABASE}\""

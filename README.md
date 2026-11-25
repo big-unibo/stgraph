@@ -163,7 +163,7 @@ It:
 
 1. creates `src/main/resources/test_config.yml` from `test_config.example.yml` (SmartBench `xsmall`, MIMIC-IV `xsmall`, synthetic `full`); MIMIC-IV `xsmall` reads the subjects of `mimic-iv_subjectids_tsids_short.csv`, the other sizes (`small`, `medium`, `large`: 1,692,200, 16,922,000 and all the events) those of `mimic-iv_subjectids_tsids.csv`, downloaded by `run.sh` if missing;
 2. downloads SmartBench `xsmall`, the MIMIC-IV `xsmall` dump and the PeMS `xsmall` dump (built by `evaluation/mimic_dump.sh` and `evaluation/pems_dump.sh`);
-3. starts `docker-compose.yaml`: the AsterixDB of STGraph (configuration: `evaluation/architectures/stgraph/conf/cc.conf`) and the PostgreSQL of MIMIC-IV, which restores the downloaded dumps of MIMIC-IV and of PeMS in its databases `mimic-iv` and `pems` on initialization (`datasets/init-mimic-pg.sh`);
+3. starts `docker-compose.yaml`: the AsterixDB of STGraph (configuration: `evaluation/architectures/stgraph/conf/cc.conf`) and the PostgreSQL of MIMIC-IV, which restores the downloaded dumps of MIMIC-IV and of PeMS in its databases `mimic-iv-xsmall` and `pems-xsmall` (named after the dump, so that the local copies of the other sizes are never built from them) on initialization (`datasets/init-mimic-pg.sh`);
 4. runs `./gradlew` (`clean`, `build`, `check`): the regression tests of `it.unibo.tests.ci`, and ingestion and queries of STGraph on the synthetic dataset, SmartBench `xsmall`, MIMIC-IV `xsmall` and PeMS `xsmall`; on these two sizes, the SmartBench and MIMIC-IV queries check their cardinalities.
 
 ## Reproducing The Results

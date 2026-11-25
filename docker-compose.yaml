@@ -47,11 +47,12 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: mimic-iv
+      # No database of a dataset by default: datasets/init-mimic-pg.sh restores the dumps in mimic-iv-<size> and pems-<size>
+      POSTGRES_DB: postgres
     ports:
       - "5434:5432"
     volumes:
-      # The dumps of MIMIC-IV and of PeMS, restored at the first start in the databases mimic-iv and pems
+      # The dumps of MIMIC-IV and of PeMS, restored at the first start in the databases mimic-iv-<size> and pems-<size>
       - ./datasets/original/mimic:/dump/mimic:ro
       - ./datasets/original/pems:/dump/pems:ro
       - ./datasets:/docker-entrypoint-initdb.d:ro
