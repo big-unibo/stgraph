@@ -132,7 +132,7 @@ evaluation:
   datasets: [ "mimic", "smartbench", "pems" ]
   # The setups of STGraph and Graphix (default: those of defaults, i.e., c0, the local one); for the scale-out, the
   # clusters of the setups section, e.g., systems: [ "stgraph", "graphix" ] with setups: [ "c1", "c2", "c4" ]
-  # setups: [ "c0" ]
+  setups: [ "c1" ]
   # true: the clusters of the setups that are not local are deployed on Docker Swarm, from a manager, and removed after
   # each run (see evaluation/README.md, Scale-out); false: they are used as they are (deployed beforehand)
   scaleOut: false

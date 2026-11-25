@@ -162,6 +162,11 @@ data class EvaluationConfig(
             fun int(sectionKey: String, key: String): Int? = (section(map, sectionKey)[key] ?: section(defaults, sectionKey)[key]) as? Int
             fun boolean(key: String): Boolean? = (map[key] ?: defaults[key]) as? Boolean
 
+            // Those of defaults only without the key: a wrong value (e.g., setups: c2) must not silently run on them
+            require("setups" !in map || !strings(map, "setups").isNullOrEmpty()) {
+                "The setups of the evaluation section of $path must be a non-empty list (e.g., [ \"c0\" ]): ${map["setups"]}"
+            }
+
             val config = EvaluationConfig(
                 // "systems" in the evaluation section, "approaches" in the runs (as in the runs of the tests)
                 systems = strings(map, "systems") ?: strings(map, "approaches") ?: emptyList(),
