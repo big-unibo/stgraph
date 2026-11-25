@@ -5,6 +5,7 @@ import it.unibo.stats.Config
 import it.unibo.tests.evaluation.DatasetEvaluation
 import it.unibo.tests.evaluation.EvaluationConfig
 import it.unibo.tests.evaluation.deployed
+import it.unibo.tests.evaluation.downloadDataset
 import it.unibo.tests.evaluation.progress
 import it.unibo.tests.evaluation.runCommand
 import it.unibo.tests.mimic.MimicEvaluation.Companion.NEO4J_COMPOSE
@@ -13,6 +14,7 @@ import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_COMPOSE
 import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_PASSWORD
 import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_URL
 import it.unibo.tests.mimic.MimicEvaluation.Companion.PGAGE_USER
+import it.unibo.tests.pems.loaders.AbstractPemsLoader
 import it.unibo.tests.pems.loaders.PemsAeonG
 import it.unibo.tests.pems.loaders.PemsGraphix
 import it.unibo.tests.pems.loaders.PemsNeo4J
@@ -34,7 +36,44 @@ class PemsEvaluation(config: Config, evaluation: EvaluationConfig, size: String)
     private val postgres = config.datasets.getValue(dataset).postgres
     private val queryIds = evaluation.queryIds.ifEmpty { pemsQueries }
 
-    override fun run(system: String) {
+    override fun run(system: String) = source { runSystem(system) }
+
+    /**
+     * Runs [block] with the PostgreSQL the data is read from, as MimicEvaluation.source: nothing if the local copy of the
+     * size is there (datasets/original/pems/cache/<size>, see AbstractPemsLoader), which the loaders read instead, or
+     * if datasets.pems is another PostgreSQL (with all of PeMS, which builds it); the local one (mimic-postgres of the root
+     * docker-compose.yaml) restores only the published dumps, of xsmall (the CI): the other sizes need the PostgreSQL
+     * with all of PeMS, or their local copy copied here
+     */
+    private fun source(block: () -> Unit) {
+        val local = postgres.host == "localhost" || postgres.host == "127.0.0.1"
+        if (evaluation.ingestionIterations == 0 || !local) return block()
+        val cache = File("datasets/original/pems/cache/$size")
+        if (AbstractPemsLoader.FILES.all { File(cache, it).isFile }) {
+            progress("pems $size: the local copy $cache, without PostgreSQL")
+            return block()
+        }
+        check(size == "xsmall") {
+            "No local copy of PeMS $size ($cache) to build it from the local PostgreSQL, which holds only xsmall: set " +
+                "datasets.pems in test_config.yml to the PostgreSQL with all of PeMS (e.g., 137.204.72.88, port 5434), " +
+                "which builds it, or copy it here (evaluation/push_datasets.sh -p datasets/original/pems/cache/$size)"
+        }
+        // The local PostgreSQL restores the dumps of MIMIC-IV and of PeMS (both required, datasets/init-mimic-pg.sh)
+        for (dataset in listOf("mimic", "pems")) {
+            if (evaluation.deploy && File("datasets/original/$dataset").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
+                check(evaluation.download) { "No dump in datasets/original/$dataset: run ./downloadDataset.sh $dataset xsmall.dump, or set download: true" }
+                downloadDataset(dataset, "xsmall.dump")
+            }
+        }
+        deployed(evaluation.deploy, "docker-compose.yaml", "mimic-postgres", readyChecks = 3, readyTimeoutMs = 6 * 60 * 60 * 1000L, env = environment, ready = ::sourceReady) { block() }
+    }
+
+    private fun sourceReady() {
+        DriverManager.getConnection("jdbc:postgresql://${postgres.host}:${postgres.port}/${postgres.database}", postgres.user, postgres.password)
+            .use { it.createStatement().use { st -> st.execute("SELECT 1 FROM ${AbstractPemsLoader.SCHEMA}.station LIMIT 1") } }
+    }
+
+    private fun runSystem(system: String) {
         when (system) {
             "stgraph" -> stgraph("stgraph", { threads, setup -> PemsSTGraph(size, threads, setup.host, setup.controllerIPs, postgres) }) { setup, numMachines ->
                 withStgraph(setup, "datasets/dump/$dataset/$size/", "${dataset}_$size") { graph ->
