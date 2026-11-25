@@ -126,6 +126,13 @@ class MimicEvaluation(config: Config, evaluation: EvaluationConfig, size: String
     private fun source(block: () -> Unit) {
         val local = postgres.host == "localhost" || postgres.host == "127.0.0.1"
         if (evaluation.ingestionIterations == 0 || !local) return block()
+        // The local copy of the size already there (datasets/original/mimic/cache/<size>, see AbstractMimicIVLoader):
+        // the loaders read it, not PostgreSQL, so no PostgreSQL (nor its dump, published only for xsmall)
+        val cache = File("datasets/original/mimic/cache/$key")
+        if (File(cache, "items.jsonl.gz").isFile && File(cache, "events.csv.gz").isFile) {
+            progress("mimic $size: the local copy $cache, without PostgreSQL")
+            return block()
+        }
         if (evaluation.deploy && File("datasets/original/mimic").listFiles { f -> f.name.endsWith(".dump") }.isNullOrEmpty()) {
             val dump = "$size.dump"
             check(evaluation.download) { "No dump in datasets/original/mimic: run ./downloadDataset.sh mimic $dump, or set download: true" }
