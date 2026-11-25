@@ -102,10 +102,19 @@ fun <T> swarmDeployed(system: String, setup: SetupConfig, readyTimeoutMs: Long =
 private fun swarmNodes(): Map<String, String> {
     val ids = output(listOf("docker", "node", "ls", "-q")).lines().filter { it.isNotBlank() }
     check(ids.isNotEmpty()) { "No node of the Swarm: the scale-out runs from a manager of the Swarm" }
-    return output(listOf("docker", "node", "inspect", "--format", "{{.Status.Addr}} {{.Description.Hostname}}") + ids)
-        .lines().filter { it.isNotBlank() }
-        .associate { it.substringBefore(" ") to it.substringAfter(" ") }
+    val format = "{{.Status.Addr}} {{.Description.Hostname}} {{with .ManagerStatus}}{{.Addr}}{{end}}"
+    return nodesByAddress(output(listOf("docker", "node", "inspect", "--format", format) + ids))
 }
+
+/**
+ * The hostnames by address of [inspected] (a node per line: address, hostname and, if a manager, its manager address
+ * with the port). Docker gives 0.0.0.0 as the address of the leader: its manager address instead
+ */
+fun nodesByAddress(inspected: String): Map<String, String> =
+    inspected.lines().filter { it.isNotBlank() }.associate { line ->
+        val (address, hostname, manager) = line.trim().split(" ") + ""
+        (if (address == "0.0.0.0") manager.substringBeforeLast(":") else address) to hostname
+    }
 
 /** The tasks of [stack] that failed or were rejected: their service and a description (node, state, error) */
 private fun failedTasks(stack: String): List<Pair<String, String>> =

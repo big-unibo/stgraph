@@ -23,4 +23,13 @@ class ScaleOutConfTest {
             assertEquals(system == "graphix", "GraphixQueryTranslatorExtension" in conf)
         }
     }
+
+    /** Docker gives 0.0.0.0 as the address of the leader (a worker has no manager address) */
+    @Test
+    fun nodes() {
+        val expected = mapOf("192.168.30.102" to "node2", "192.168.30.103" to "node3", "192.168.30.104" to "node4")
+        for (leader in listOf("0.0.0.0", "192.168.30.102")) {
+            assertEquals(expected, nodesByAddress("$leader node2 192.168.30.102:2377\n192.168.30.103 node3 \n192.168.30.104 node4 192.168.30.104:2377\n"))
+        }
+    }
 }
